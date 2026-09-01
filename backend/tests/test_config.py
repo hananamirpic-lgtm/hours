@@ -52,3 +52,42 @@ def test_secrets_are_not_repr_readable(settings):
     dumped = repr(settings)
     assert settings.jwt_secret_key.get_secret_value() not in dumped
     assert settings.encryption_key.get_secret_value() not in dumped
+
+
+@pytest.mark.parametrize(
+    ("provided", "expected"),
+    [
+        # A managed database (Render, Heroku) hands out the bare `postgres://` scheme.
+        (
+            "postgres://user:pw@host:5432/db",
+            "postgresql+psycopg://user:pw@host:5432/db",
+        ),
+        # SQLAlchemy's own preferred alias, still without a driver.
+        (
+            "postgresql://user:pw@host:5432/db",
+            "postgresql+psycopg://user:pw@host:5432/db",
+        ),
+        # Already correct: left exactly as given.
+        (
+            "postgresql+psycopg://user:pw@host:5432/db",
+            "postgresql+psycopg://user:pw@host:5432/db",
+        ),
+        # Another driver named explicitly is not ours to rewrite.
+        (
+            "postgresql+asyncpg://user:pw@host:5432/db",
+            "postgresql+asyncpg://user:pw@host:5432/db",
+        ),
+    ],
+)
+def test_database_url_scheme_normalized(monkeypatch, provided, expected):
+    """A platform-provided `postgres://`/`postgresql://` URL is upgraded to `postgresql+psycopg://`."""
+    monkeypatch.setenv("DATABASE_URL", provided)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.database_url == expected
+
+
+def test_database_url_non_postgres_left_alone(monkeypatch):
+    """A non-PostgreSQL URL (e.g. a SQLite test URL) is passed through unchanged."""
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.database_url == "sqlite+pysqlite:///:memory:"

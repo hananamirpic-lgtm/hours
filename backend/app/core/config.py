@@ -1,4 +1,4 @@
-﻿"""Application settings.
+"""Application settings.
 
 Every value comes from the environment. Secrets carry no default: a missing secret is a startup
 failure rather than a silent fallback, because a development default has a way of surviving into
@@ -143,6 +143,23 @@ class Settings(BaseSettings):
     def _reject_short_secrets(cls, value: SecretStr) -> SecretStr:
         if len(value.get_secret_value()) < MIN_SECRET_LENGTH:
             raise ValueError(f"must be at least {MIN_SECRET_LENGTH} characters")
+        return value
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        """Rewrite a bare ``postgres://`` or ``postgresql://`` URL to ``postgresql+psycopg://``.
+
+        A managed database (Render, Heroku and others) hands out a ``postgres://…`` URL, but the app
+        talks to PostgreSQL through psycopg 3 and SQLAlchemy needs the driver named in the scheme.
+        Normalising here means the URL the platform provides works as-is, with no manual editing and
+        no scheme mismatch at connect time. A URL that already names a driver (``postgresql+psycopg``,
+        ``postgresql+asyncpg``, …) or targets another database entirely (a SQLite test URL) is left
+        untouched, so this only ever upgrades the two ambiguous PostgreSQL schemes.
+        """
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix) :]
         return value
 
     @property

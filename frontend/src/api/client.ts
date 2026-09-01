@@ -12,7 +12,18 @@
 
 import type { ApiErrorBody } from './types';
 
-const API_BASE = '/api';
+/**
+ * Base URL every request is prefixed with.
+ *
+ * Configurable at build time through `VITE_API_BASE_URL` so a production static build can call a
+ * backend on a different origin (e.g. `https://hours-api.onrender.com/api`). It defaults to `/api`,
+ * which is what local development and the docker-compose flow rely on: the Vite dev server proxies
+ * `/api` to the API container, so the browser sees one origin and no VITE_API_BASE_URL is needed.
+ *
+ * A trailing slash is trimmed so the `${API_BASE}${path}` joins below produce exactly one slash —
+ * paths already start with `/`, and a base of `.../api/` would otherwise double it.
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
 
 let accessTokenGetter: () => string | null = () => null;
 
