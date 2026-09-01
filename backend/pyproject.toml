@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hours-api"
+version = "0.1.0"
+description = "Employee management system API — attendance, payroll, billing"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "pydantic==2.10.4",
+    "pydantic-settings==2.7.0",
+    "sqlalchemy==2.0.36",
+    "psycopg[binary]==3.2.3",
+    "alembic==1.14.0",
+    "redis==5.2.1",
+    "boto3==1.35.90",
+    "cryptography==44.0.0",
+    # Authentication. bcrypt directly rather than through passlib: passlib is unmaintained and its
+    # bcrypt backend misreads the version of bcrypt 4.x, which turns every hash into a warning.
+    "bcrypt==4.2.1",
+    "pyjwt==2.10.1",
+    "pyotp==2.9.0",
+    # QR generation (Requirement 8). `qrcode` over Pillow renders the code; the printable PDF sheet
+    # is written directly in `app.services.qr` with no native dependency. The design names WeasyPrint
+    # for the rich Hebrew RTL exports of milestone 9, which is where that dependency belongs.
+    "qrcode[pil]==8.0",
+    # Scheduled jobs (Requirement 14). APScheduler runs the daily and weekly notification jobs in the
+    # API process for milestone 1 (design "Background work: APScheduler in milestone 1"); the cloud
+    # target moves them to a dedicated runner, which is why the scheduler is a thin wrapper over the
+    # job functions in `app.services.jobs` rather than the jobs living inside it.
+    "apscheduler==3.11.0",
+    # Export (Requirement 19). `openpyxl` writes the Excel workbook with typed number and date cells
+    # (Requirement 19.1); it is pure Python and carries no native dependency. `weasyprint` renders the
+    # PDF from HTML, which is the reason the design chose it: laying Hebrew out right-to-left is a
+    # solved problem in an HTML+CSS engine and a hand-rolled PDF writer gets it wrong (Requirement
+    # 19.3). WeasyPrint needs Pango/cairo at runtime, present in the Linux container the app deploys
+    # to; the HTML the renderer produces is what carries the RTL correctness and is testable without
+    # them.
+    "openpyxl==3.1.5",
+    "weasyprint==63.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "pytest-timeout==2.3.1",
+    "httpx==0.28.1",
+    "hypothesis==6.123.2",
+    "ruff==0.8.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning:app.*"]
+# A hung fixture must fail its test rather than block the run forever.
+timeout = 60
+markers = [
+    "integration: needs a live PostgreSQL (TEST_DATABASE_URL); applied to tests/integration",
+    "slow: a longer-running test, such as the report performance target (Requirement 24.2)",
+    "performance: needs a live PostgreSQL (TEST_DATABASE_URL); applied to tests/performance",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+
+[tool.ruff.lint.isort]
+# `sample_models` is the test suite's own support module. Pytest puts the tests directory on sys.path,
+# so it is imported as a top-level name; without this it would be filed under third-party imports.
+known-first-party = ["app", "auth_support", "document_support", "export_support", "sample_models"]

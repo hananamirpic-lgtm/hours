@@ -1,0 +1,1705 @@
+/*
+ * Logical properties only (inline-start / inline-end, never left / right), so one stylesheet
+ * serves both Hebrew right-to-left and English left-to-right.
+ */
+
+:root {
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-text: #16202c;
+  --color-muted: #5a6b7d;
+  --color-border: #dfe4ea;
+  --color-up: #1a7f4b;
+  --color-down: #b3261e;
+  --radius: 10px;
+  --space: 8px;
+
+  color-scheme: light;
+  font-family: system-ui, 'Segoe UI', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.page {
+  max-inline-size: 760px;
+  margin-inline: auto;
+  padding: calc(var(--space) * 3);
+}
+
+.page__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-block-end: calc(var(--space) * 3);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.subtitle {
+  margin-block: calc(var(--space) / 2) 0;
+  color: var(--color-muted);
+}
+
+/* At least 44px in both directions, per the mobile requirement. */
+.button {
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding-inline: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  border-color: var(--color-muted);
+}
+
+.card {
+  padding: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.card__title {
+  margin-block: 0 var(--space);
+  font-size: 1rem;
+}
+
+.status-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-list__item {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+  justify-content: space-between;
+  padding-block: var(--space);
+  border-block-start: 1px solid var(--color-border);
+}
+
+.status-list__item:first-child {
+  border-block-start: none;
+}
+
+.badge {
+  padding-inline: var(--space);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge--up {
+  color: var(--color-up);
+}
+
+.badge--down {
+  color: var(--color-down);
+}
+
+/*
+ * Latency mixes digits with Hebrew text. Isolating it stops the bidirectional algorithm
+ * reordering the number against the unit.
+ */
+.numeric {
+  unicode-bidi: isolate;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================================
+ * Application shell, auth and mobile.
+ *
+ * Everything below uses logical properties (inline-start/-end, block-start/-end) and flow-relative
+ * flexbox, so the whole layout flips for Hebrew from this one stylesheet. There is not a single
+ * `left` or `right` here, which is what lets `document.dir = "rtl"` mirror the interface correctly
+ * without a second set of rules.
+ * ======================================================================== */
+
+:root {
+  --color-primary: #1f6feb;
+  --color-primary-text: #ffffff;
+  --nav-inline-size: 232px;
+  --topbar-block-size: 56px;
+}
+
+.button--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  font-weight: 600;
+}
+
+.button--primary:hover,
+.button--primary:focus-visible {
+  border-color: var(--color-primary);
+  filter: brightness(0.95);
+}
+
+.button--primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The employee primary action: large enough to hit without looking, per the mobile requirement. */
+.button--large {
+  inline-size: 100%;
+  min-block-size: 64px;
+  font-size: 1.15rem;
+}
+
+/* --------------------------------------------------------------------------- forms */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+}
+
+.field__label {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+/* A read-only value shown where a form field would be — the fixed employee and site on a correction. */
+.field__static {
+  min-block-size: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--color-text);
+}
+
+/* The inline edit/delete buttons on a time-entry row. */
+.row-actions {
+  display: inline-flex;
+  gap: calc(var(--space) / 2);
+}
+
+.input {
+  min-block-size: 44px;
+  padding-inline: calc(var(--space) * 1.5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  /* Follows the document direction: Hebrew text starts at the inline-start edge, digits at it too. */
+  text-align: start;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.form__error {
+  margin: 0;
+  color: var(--color-down);
+  font-size: 0.9rem;
+}
+
+/* --------------------------------------------------------------------------- auth screen */
+
+.auth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 100vh;
+  padding: calc(var(--space) * 3);
+}
+
+.auth__card {
+  inline-size: 100%;
+  max-inline-size: 380px;
+}
+
+.auth__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  margin-block-end: var(--space);
+}
+
+.auth__header h1 {
+  font-size: 1.35rem;
+}
+
+/* --------------------------------------------------------------------------- console shell */
+
+.shell {
+  display: flex;
+  min-block-size: 100vh;
+}
+
+/*
+ * The hamburger toggle. Hidden above the mobile breakpoint (the sidebar sits beside the content
+ * there and needs no toggle); the media query below reveals it and turns the nav into a drawer. The
+ * backdrop it pairs with is also only rendered under the breakpoint.
+ */
+.shell__nav-toggle {
+  display: none;
+}
+
+.shell__nav-backdrop {
+  display: none;
+}
+
+.shell__nav {
+  flex: 0 0 var(--nav-inline-size);
+  /* A logical-property border: it lands on the correct edge in both directions automatically. */
+  border-inline-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: calc(var(--space) * 2);
+}
+
+.shell__brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+}
+
+.nav-link {
+  display: block;
+  padding-block: var(--space);
+  padding-inline: calc(var(--space) * 1.5);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  text-decoration: none;
+  /* Text sits at the inline-start edge, so it hugs the correct side in each direction. */
+  text-align: start;
+}
+
+.nav-link:hover,
+.nav-link:focus-visible {
+  background: var(--color-bg);
+}
+
+.nav-link--active {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+}
+
+.shell__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.shell__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  min-block-size: var(--topbar-block-size);
+  padding-inline: calc(var(--space) * 2);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.shell__identity,
+.shell__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+}
+
+.shell__username {
+  font-weight: 600;
+}
+
+.shell__content,
+.page-body {
+  padding: calc(var(--space) * 3);
+  /* Let the content shrink inside the flex column so a wide `.table-wrap` scrolls rather than
+   * stretching the page — the same reason `.shell__main` carries it. */
+  min-inline-size: 0;
+}
+
+.page-body h1 {
+  margin-block: 0 var(--space);
+}
+
+/* ---------------------------------------------------------------------------
+ * Responsive console (mobile / tablet).
+ *
+ * The management console was built desktop-only; below 768px it has to work one-handed on a phone.
+ * Everything here stays in logical properties, so the off-canvas nav slides from the inline-start
+ * edge in both directions — left in English, right in Hebrew — and nothing names `left`/`right`.
+ *
+ * 768px is the primary tablet/phone breakpoint: the fixed sidebar stops sitting beside the content
+ * and becomes a drawer, the top bar wraps, and page padding tightens. A second, narrower 480px rule
+ * lets the top bar stack fully on a small phone. Above 768px the layout is byte-for-byte the desktop
+ * layout — none of these rules apply and the toggle stays hidden.
+ * ======================================================================== */
+
+@media (max-width: 768px) {
+  /* Stack the shell so the (now off-canvas) nav does not reserve a column beside the content. */
+  .shell {
+    flex-direction: column;
+  }
+
+  /* Reveal the hamburger; it clears the 44px target from `.button`. */
+  .shell__nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /*
+   * The sidebar becomes an off-canvas panel pinned to the inline-start edge and the full viewport
+   * height, translated out of view until `--open`. Translating by -100% along the inline axis hides
+   * it toward whichever edge is the start in the current direction; the RTL rule below flips the
+   * sign so it still tucks away off-screen in Hebrew.
+   */
+  .shell__nav {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 60;
+    flex: none;
+    inline-size: min(var(--nav-inline-size), 82vw);
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .shell__nav--open {
+    transform: translateX(0);
+  }
+
+  /* In Hebrew the start edge is the right, so the hidden position is off the right edge. */
+  [dir='rtl'] .shell__nav {
+    transform: translateX(100%);
+  }
+
+  [dir='rtl'] .shell__nav--open {
+    transform: translateX(0);
+  }
+
+  /* A dimming backdrop behind the open drawer; tapping it closes the menu (handled in React). */
+  .shell__nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(16, 24, 33, 0.4);
+  }
+
+  /* Tighten the top bar: let it wrap and drop the horizontal padding. */
+  .shell__topbar {
+    flex-wrap: wrap;
+    padding-inline: var(--space);
+  }
+
+  /* Search takes the full width on its own line so it stays usable. */
+  .global-search {
+    flex-basis: 100%;
+    order: 3;
+    max-inline-size: none;
+  }
+
+  /* Less cramping around the page content. */
+  .shell__content,
+  .page-body {
+    padding: calc(var(--space) * 2);
+  }
+
+  /* The drawer/modal fills the width and needs less padding so forms fit. */
+  .drawer {
+    padding: calc(var(--space) * 2);
+  }
+
+  /* Collapse the multi-column grids to a single column on a narrow screen. */
+  .detail-grid,
+  .stat-grid,
+  .attention-list {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  /* On a small phone let identity and actions each take a full line under the search. */
+  .shell__topbar {
+    align-items: flex-start;
+    padding-block: var(--space);
+  }
+
+  .shell__identity {
+    flex-wrap: wrap;
+  }
+
+  .shell__actions {
+    inline-size: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* --------------------------------------------------------------------------- mobile shell */
+
+.mobile {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100vh;
+}
+
+.mobile__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  padding: var(--space) calc(var(--space) * 2);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.mobile__brand {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.mobile__content {
+  flex: 1;
+  padding: calc(var(--space) * 3);
+}
+
+.mobile-home {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+  align-items: stretch;
+  text-align: center;
+}
+
+.mobile-home__greeting {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.full-page {
+  min-block-size: 100vh;
+}
+
+/* ===========================================================================
+ * Management console screens (Task 13): list views, cards, forms, dialogs.
+ *
+ * Logical properties throughout, so the whole thing mirrors for Hebrew from these rules alone —
+ * tables align to the inline-start edge, the drawer slides from the inline-end edge, and nothing
+ * names `left` or `right`.
+ * ======================================================================== */
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: calc(var(--space) * 3);
+}
+
+.page-header__actions {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+}
+
+/* --------------------------------------------------------------------------- list toolbar */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: center;
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.toolbar__search {
+  flex: 1 1 220px;
+  min-inline-size: 180px;
+}
+
+.toolbar__filter {
+  min-block-size: 44px;
+  padding-inline: calc(var(--space) * 1.5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.select {
+  min-block-size: 44px;
+  padding-inline: calc(var(--space) * 1.5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+/* --------------------------------------------------------------------------- table */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: calc(var(--space) * 1.25) calc(var(--space) * 1.5);
+  text-align: start;
+  border-block-end: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.table th {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tbody tr:hover,
+.table tbody tr:focus-within {
+  background: var(--color-bg);
+}
+
+.table tbody tr:last-child td {
+  border-block-end: none;
+}
+
+.table__empty {
+  padding: calc(var(--space) * 3);
+  text-align: center;
+  color: var(--color-muted);
+}
+
+/* --------------------------------------------------------------------------- pagination */
+
+.pagination {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+  justify-content: flex-end;
+  margin-block-start: calc(var(--space) * 2);
+}
+
+.pagination__info {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  unicode-bidi: isolate;
+}
+
+/* --------------------------------------------------------------------------- status pills */
+
+.pill {
+  display: inline-block;
+  padding-inline: var(--space);
+  padding-block: calc(var(--space) / 4);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+}
+
+.pill--active {
+  color: var(--color-up);
+  border-color: var(--color-up);
+}
+
+.pill--warn {
+  color: #8a5a00;
+  border-color: #d8a200;
+}
+
+.pill--muted {
+  color: var(--color-muted);
+}
+
+.pill--danger {
+  color: var(--color-down);
+  border-color: var(--color-down);
+}
+
+/* --------------------------------------------------------------------------- drawer / modal */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 33, 0.4);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+
+.drawer {
+  inline-size: min(560px, 100%);
+  block-size: 100%;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-inline-start: 1px solid var(--color-border);
+  padding: calc(var(--space) * 3);
+  box-shadow: 0 0 24px rgba(16, 24, 33, 0.15);
+}
+
+.drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.drawer__title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.drawer__section {
+  margin-block: calc(var(--space) * 2) 0;
+  padding-block-start: calc(var(--space) * 2);
+  border-block-start: 1px solid var(--color-border);
+}
+
+.drawer__section-title {
+  margin-block: 0 var(--space);
+  font-size: 1rem;
+}
+
+/* --------------------------------------------------------------------------- detail lists */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space) calc(var(--space) * 2);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 4);
+}
+
+.detail__label {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.detail__value {
+  unicode-bidi: plaintext;
+}
+
+/* --------------------------------------------------------------------------- form layout */
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--space) * 2);
+}
+
+@media (max-width: 520px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form__actions {
+  display: flex;
+  gap: var(--space);
+  justify-content: flex-end;
+  margin-block-start: var(--space);
+}
+
+.checkbox-field {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+}
+
+/* --------------------------------------------------------------------------- photo */
+
+.photo {
+  inline-size: 96px;
+  block-size: 96px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.photo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.photo-row {
+  display: flex;
+  gap: calc(var(--space) * 2);
+  align-items: center;
+}
+
+/* --------------------------------------------------------------------------- misc */
+
+.feedback {
+  margin-block: var(--space) 0;
+  padding: var(--space) calc(var(--space) * 1.5);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.feedback--error {
+  color: var(--color-down);
+  border: 1px solid var(--color-down);
+}
+
+.feedback--success {
+  color: var(--color-up);
+  border: 1px solid var(--color-up);
+}
+
+.state {
+  padding: calc(var(--space) * 3);
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.tab-row {
+  display: flex;
+  gap: var(--space);
+  flex-wrap: wrap;
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.assign-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+  max-block-size: 320px;
+  overflow-y: auto;
+}
+
+.assign-list__item {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+  padding: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.inline-actions {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.button--small {
+  min-block-size: 36px;
+  min-inline-size: auto;
+  padding-inline: var(--space);
+  font-size: 0.85rem;
+}
+
+.button--danger {
+  border-color: var(--color-down);
+  color: var(--color-down);
+}
+
+/* ===========================================================================
+ * Employee mobile scan flow (Task 19).
+ *
+ * Phone-first and one-handed: the primary action is `.button--large` (min 64px block), and every
+ * other control clears the 44px minimum from `.button`. Logical properties throughout, so the whole
+ * flow mirrors for Hebrew from these rules — no `left`/`right` anywhere. Numbers that sit next to
+ * Hebrew text (times, durations) are isolated with `.numeric` so the bidirectional algorithm does
+ * not reorder them.
+ * ======================================================================== */
+
+.status-card {
+  text-align: start;
+}
+
+.status-card__label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.status-card__time {
+  margin-block: calc(var(--space) / 2) 0;
+  color: var(--color-muted);
+}
+
+/* --------------------------------------------------------------------------- scanner */
+
+.scanner {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+  align-items: stretch;
+}
+
+.scanner__frame {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 3 / 4;
+  max-block-size: 70vh;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #000;
+}
+
+.scanner__video {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* A centred aiming square, drawn over the preview. Centred with logical insets so it stays put. */
+.scanner__reticle {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 55%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 3px solid var(--color-primary-text);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+
+.scanner__hint {
+  margin: 0;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.scanner__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+}
+
+/* --------------------------------------------------------------------------- confirmation */
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+  align-items: stretch;
+  text-align: start;
+}
+
+.confirm__headline {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.confirm__line {
+  margin: 0;
+}
+
+.confirm__flags {
+  margin: 0;
+  padding-inline-start: calc(var(--space) * 2);
+}
+
+/* --------------------------------------------------------------------------- conflict */
+
+.conflict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+  align-items: stretch;
+  text-align: start;
+}
+
+.conflict__headline {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.conflict__line {
+  margin: 0;
+}
+
+.conflict__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+  margin-block-start: var(--space);
+}
+
+/* --------------------------------------------------------------------------- history & alerts */
+
+.history,
+.alerts {
+  text-align: start;
+}
+
+.history__title,
+.alerts__title {
+  margin-block: calc(var(--space) * 2) var(--space);
+  font-size: 1rem;
+}
+
+.history__list,
+.alerts__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+}
+
+.history__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  padding-block: var(--space);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.history__row:last-child {
+  border-block-end: none;
+}
+
+.history__hours {
+  font-weight: 600;
+}
+
+.alerts__item {
+  padding: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: #8a5a00;
+}
+
+/* ==========================================================================
+ * Manager hours view (Requirement 18.1). Logical properties throughout, so the
+ * chronological per-employee day lays out correctly in both directions.
+ * ======================================================================== */
+
+/* Filters sit inline; each date field labels its input above it. */
+.hours-filters {
+  align-items: flex-end;
+}
+
+.field--inline {
+  gap: calc(var(--space) / 2);
+}
+
+.hours-days {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 3);
+  margin-block-start: calc(var(--space) * 2);
+}
+
+/* One employee's day. */
+.hours-day {
+  padding: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.hours-day__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+  margin-block-end: calc(var(--space) * 1.5);
+}
+
+.hours-day__who {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space);
+}
+
+.hours-day__name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  unicode-bidi: plaintext;
+}
+
+.hours-day__date {
+  color: var(--color-muted);
+}
+
+.hours-day__total {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space);
+}
+
+.hours-day__total-value {
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+/* One site's slice of the day. */
+.hours-site {
+  margin-block-start: calc(var(--space) * 1.5);
+}
+
+.hours-site__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+  margin-block-end: calc(var(--space) / 2);
+}
+
+.hours-site__name {
+  font-weight: 600;
+  unicode-bidi: plaintext;
+}
+
+.hours-site__subtotal {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.hours-markers {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) / 2);
+}
+
+/* A small marker chip, reused for the manual badge, an anomaly and the multi-site / open-shift note. */
+.tag {
+  display: inline-block;
+  padding-inline: var(--space);
+  padding-block: calc(var(--space) / 4);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.tag--manual {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.tag--anomaly {
+  color: #8a5a00;
+  border-color: #d8a200;
+}
+
+.tag--warn {
+  color: #8a5a00;
+  border-color: #d8a200;
+}
+
+/* --------------------------------------------------------------------------- audit history
+ *
+ * A per-entity change log, one readable line per row, newest first. Composed sentences mix the
+ * reader's language with numeric values (times, dates), so each line is set with `unicode-bidi:
+ * plaintext` to let the bidirectional algorithm order the digits against the surrounding text
+ * without a wrapper per value — the same treatment the hours view gives a site name.
+ */
+
+.audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+}
+
+.audit-entry {
+  unicode-bidi: plaintext;
+  padding-block: calc(var(--space) / 2);
+  border-block-end: 1px solid var(--color-border);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.audit-entry:last-child {
+  border-block-end: none;
+}
+
+/* --------------------------------------------------------------------------- approvals & periods
+ *
+ * The approval screen groups recorded hours by site (then employee) or by employee, with a status
+ * tally and forward-step actions per group; the period screen locks and unlocks months. Both reuse
+ * the card, table, tag and pill primitives above, so what is added here is only the layout that is
+ * specific to them. Logical properties throughout, so Hebrew renders right-to-left unchanged.
+ */
+
+/* A two-choice toggle (group by site / by employee), the buttons sitting flush as one control. */
+.segmented {
+  display: inline-flex;
+  gap: 0;
+}
+
+.segmented .button {
+  border-radius: 0;
+}
+
+.segmented .button:first-child {
+  border-start-start-radius: var(--radius);
+  border-end-start-radius: var(--radius);
+}
+
+.segmented .button:last-child {
+  border-start-end-radius: var(--radius);
+  border-end-end-radius: var(--radius);
+}
+
+.approval-groups {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+}
+
+/* One site or one employee group. */
+.approval-group {
+  padding: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.approval-group__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space);
+  margin-block-end: calc(var(--space) * 1.5);
+}
+
+.approval-group__title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  unicode-bidi: plaintext;
+  margin-inline-end: auto;
+}
+
+/* One employee's block within a site group. */
+.approval-employee {
+  margin-block-start: calc(var(--space) * 1.5);
+}
+
+.approval-employee__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space);
+  margin-block-end: calc(var(--space) / 2);
+}
+
+.approval-employee__name {
+  font-weight: 600;
+  unicode-bidi: plaintext;
+}
+
+.approval-tally {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) / 2);
+}
+
+.approval-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space);
+}
+
+/* The unapproved-entries warning on the period screen, and any warning callout. */
+.feedback--warn {
+  background: #fff8e6;
+  color: #8a5a00;
+  border: 1px solid #d8a200;
+}
+
+.section-title {
+  margin-block: calc(var(--space) * 3) var(--space);
+  font-size: 1.1rem;
+}
+
+/* ===========================================================================
+ * Payroll (Requirement 16). A labelled amount grid for the allowances, deductions and total on the
+ * drill-down card; a text-only button so an employee name in a table cell opens the record; and a
+ * total row that reads heavier than the lines above it. Logical properties throughout, so the whole
+ * thing mirrors for Hebrew from these rules.
+ * ======================================================================== */
+
+/* A name in a payroll row that opens the record: reads as a link, sits in the text flow, keeps the
+ * 44px touch target without the box a `.button` draws. */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent, #1a56db);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+  min-block-size: 44px;
+}
+
+.link-button:hover {
+  text-decoration: none;
+}
+
+/* The allowances/deductions/total block: a label on the inline-start, the amount on the inline-end. */
+.detail__grid {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+  margin: 0;
+}
+
+.detail__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+}
+
+.detail__row dd {
+  margin: 0;
+}
+
+/* The total, whether the last row of the amount grid or the footer of the allocation table. */
+.detail__row--total {
+  font-weight: 600;
+  border-block-start: 1px solid var(--color-border, #d4d4d8);
+  padding-block-start: calc(var(--space) / 2);
+}
+
+/* ===========================================================================
+ * Dashboards (Requirement 18.4, 18.5, 18.6). The administrator home lays the current-month figures
+ * out as a grid of stat cards, then an attention section of counts that each link to a filtered list.
+ * The profitability dashboard reuses the toolbar, feedback and stat-card primitives. Logical
+ * properties throughout, so the whole thing mirrors for Hebrew from these rules.
+ * ======================================================================== */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: calc(var(--space) * 2);
+  margin-block: calc(var(--space) * 2);
+}
+
+.stat-card {
+  padding: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.stat-card__label {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.stat-card__value {
+  margin-block: calc(var(--space) / 2) 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  unicode-bidi: plaintext;
+}
+
+/* The attention section: a list of counts, each a link to the filtered missing-report list. */
+.attention-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space);
+  margin-block: var(--space);
+  padding: 0;
+  list-style: none;
+}
+
+.attention-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  padding: calc(var(--space) * 1.5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+  min-block-size: 44px;
+}
+
+.attention-item:hover,
+.attention-item:focus-visible {
+  border-color: var(--color-muted);
+}
+
+/* A count that needs attention reads heavier and warmer; a zero count stays quiet. */
+.attention-item__count {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.attention-item--active .attention-item__count {
+  color: var(--color-down);
+}
+
+/* --------------------------------------------------------------------------- global search */
+
+/*
+ * The top-bar search and its result popover. Logical properties only, so the box sits and the
+ * popover anchors on the correct inline edge in both Hebrew and English. The container takes the
+ * middle of the top bar; the popover floats beneath it and scrolls if the result is long.
+ */
+.global-search {
+  position: relative;
+  flex: 1 1 auto;
+  max-inline-size: 420px;
+}
+
+.global-search__input {
+  inline-size: 100%;
+}
+
+.global-search__popover {
+  position: absolute;
+  inset-block-start: calc(100% + calc(var(--space) / 2));
+  inset-inline: 0;
+  z-index: 20;
+  max-block-size: 60vh;
+  overflow-y: auto;
+  padding: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(22, 32, 44, 0.12);
+}
+
+.global-search__note {
+  margin: 0;
+  padding: var(--space);
+  color: var(--color-muted);
+}
+
+.global-search__group + .global-search__group {
+  margin-block-start: var(--space);
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: var(--space);
+}
+
+.global-search__group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-inline: calc(var(--space) / 2);
+  margin-block-end: calc(var(--space) / 2);
+}
+
+.global-search__group-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+
+.global-search__group-count {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.global-search__options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.global-search__option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+  padding-block: var(--space);
+  padding-inline: calc(var(--space) * 1.5);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.global-search__option--active {
+  background: var(--color-bg);
+}
+
+.global-search__option-label {
+  font-weight: 500;
+}
+
+.global-search__option-detail {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+/* ===========================================================================
+ * User management and two-factor enrolment (Task 35).
+ *
+ * Logical properties throughout, so the banner and the enrolment card mirror for Hebrew from these
+ * rules alone. The secret and provisioning URI are shown as selectable monospace text — the app
+ * ships no QR generator, and the secret is a credential that must not leave for a third-party QR
+ * service, so manual entry is the path.
+ * ======================================================================== */
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space) calc(var(--space) * 2);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.9rem;
+}
+
+.banner--info {
+  border-block-end-color: var(--color-accent, #1a56db);
+}
+
+.banner__actions {
+  display: flex;
+  gap: var(--space);
+  align-items: center;
+}
+
+.two-factor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+}
+
+.two-factor__secret {
+  display: block;
+  padding: var(--space) calc(var(--space) * 1.5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  font-family: ui-monospace, 'SFMono-Regular', 'Consolas', monospace;
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+  user-select: all;
+}
+
+.two-factor__uri {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.two-factor__uri-value {
+  display: block;
+  margin-block-start: calc(var(--space) / 2);
+  word-break: break-all;
+  user-select: all;
+}
+
+.field__hint {
+  margin-block-start: calc(var(--space) / 2);
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.field--inline {
+  flex-direction: row;
+  gap: var(--space);
+  align-items: center;
+}
+
+/* ==========================================================================
+ * Employee mobile navigation and the "My hours" screen.
+ *
+ * Touch-first: every nav link and control clears the 44px minimum. Logical
+ * properties throughout — no left/right — so the whole thing mirrors for Hebrew
+ * from these rules. Durations sit in `.numeric` (isolated) wherever they meet
+ * Hebrew text so the bidirectional algorithm does not reorder them.
+ * ======================================================================== */
+
+.mobile__nav {
+  display: flex;
+  gap: var(--space);
+  padding: var(--space) calc(var(--space) * 2);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.mobile__nav-link {
+  flex: 1;
+  min-block-size: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--space);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.mobile__nav-link--active {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+}
+
+.my-hours {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+  text-align: start;
+}
+
+.my-hours__title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.my-hours__filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+}
+
+.my-hours__preset {
+  flex: 1 1 auto;
+}
+
+.my-hours__preset--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  font-weight: 600;
+}
+
+.my-hours__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+}
+
+.my-hours__field {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+}
+
+.my-hours__label {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+.my-hours__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+}
+
+.my-hours__total-label {
+  font-weight: 600;
+}
+
+.my-hours__total-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.my-hours__weeks {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+}
+
+.my-hours__week-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+  margin-block-end: calc(var(--space) / 2);
+}
+
+.my-hours__week-title {
+  font-weight: 600;
+}
+
+.my-hours__week-subtotal {
+  font-weight: 700;
+}

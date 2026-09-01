@@ -1,0 +1,438 @@
+"""Employee records and their rate history (Requirement 3, and 16.9 for the resolver).
+
+The service owns every business rule; the router only translates. Nothing here raises an HTTP error
+or commits — the caller's unit of work decides the fate of the change and its audit rows together,
+which is the invariant `app.services.audit` rests on. The one thing that does need care is that a
+uniqueness check and a rate reconciliation happen against a flushed session, so a value written
+earlier in the same transaction is visible to a check made later in it.
+
+Three rules carry the weight.
+
+**Passport uniqueness is over non-terminated employees, checked in code.** Requirement 3.6 says a
+passport is unique across employees who are not terminated, and the database has a partial unique
+index that says the same — but only in PostgreSQL. The unit tests run on SQLite, which has neither
+that partial index nor a way to express it, so the rule is enforced here by a query and reported with
+the conflicting employee named (which the index could never do — it can only reject). The database
+index remains the backstop against a race the application check cannot see.
+
+**Status is the whole lifecycle; nothing is deleted.** Requirement 3.8. A `terminated` employee's row
+stays, so historical time entries keep a valid parent. Termination frees the passport for reuse,
+which is exactly why the uniqueness check excludes terminated rows.
+
+**Rate history is a non-overlapping chain, reconciled from a submitted list.** A client sends the
+history it wants; the service sorts it, checks no two rows overlap, and writes them, replacing what
+was there. The resolver then answers "the rate in force on this date" by finding the one row whose
+period covers it — which is what makes a mid-month rate change split a month correctly (16.9).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date
+
+from sqlalchemy import Select, func, select
+from sqlalchemy.orm import Session, selectinload
+
+from app.core.crypto import get_encryptor
+from app.models.employee import Employee, EmployeeRate, EmployeeStatus
+from app.schemas.employee import (
+    EmployeeCreate,
+    EmployeeRateInput,
+    EmployeeUpdate,
+)
+from app.services.audit import AuditContext, record_change, record_model_changes, snapshot
+
+# --------------------------------------------------------------------------- errors
+# Domain errors, not HTTP errors: a service that knew about status codes could not be called from a
+# scheduled job. Each carries a machine `code` the router lifts into the error envelope, matching how
+# `app.services.auth` structures its failures.
+
+
+class EmployeeError(Exception):
+    """Base for every employee-service failure. `code` is what the front end translates."""
+
+    code = "employee_error"
+
+
+class EmployeeNotFound(EmployeeError):
+    code = "employee_not_found"
+
+    def __init__(self, employee_id: uuid.UUID) -> None:
+        super().__init__(f"no employee {employee_id}")
+        self.employee_id = employee_id
+
+
+class DuplicatePassport(EmployeeError):
+    """A non-terminated employee already holds this passport number (Requirement 3.6).
+
+    Carries the conflicting employee so the router can name them, which the requirement asks for and a
+    bare uniqueness violation could never supply.
+    """
+
+    code = "duplicate_passport"
+
+    def __init__(self, conflicting: Employee) -> None:
+        super().__init__(f"passport already held by employee {conflicting.id}")
+        self.conflicting = conflicting
+
+
+class InvalidStatusTransition(EmployeeError):
+    """A status change the lifecycle does not allow (Requirement 3.4)."""
+
+    code = "invalid_status_transition"
+
+    def __init__(self, current: EmployeeStatus, requested: EmployeeStatus) -> None:
+        super().__init__(f"cannot move from {current} to {requested}")
+        self.current = current
+        self.requested = requested
+
+
+class OverlappingRates(EmployeeError):
+    """Two submitted rate rows cover the same date (Requirement 3.3, 16.9)."""
+
+    code = "overlapping_rates"
+
+
+class InvalidRatePeriod(EmployeeError):
+    """A rate row whose `effective_to` precedes its `effective_from`."""
+
+    code = "invalid_rate_period"
+
+
+# --------------------------------------------------------------------------- status transitions
+
+#: The lifecycle of Requirement 3.4. Active, On Leave, Inactive move freely between one another — an
+#: employee comes back from leave, is stood down, returns. Terminated is the one door that is meant to
+#: be one-way: a terminated employee is off the books, and reinstating them is a rehire (a new record
+#: or an explicit reactivation), not a quiet status flip that would silently re-collide their passport
+#: against the uniqueness rule that let it be reused. A no-op transition (same status) is allowed so a
+#: caller resubmitting the current status is not an error.
+_TERMINAL = EmployeeStatus.TERMINATED
+_REVERSIBLE = frozenset(
+    {EmployeeStatus.ACTIVE, EmployeeStatus.ON_LEAVE, EmployeeStatus.INACTIVE}
+)
+
+
+def _transition_allowed(current: EmployeeStatus, requested: EmployeeStatus) -> bool:
+    if current == requested:
+        return True
+    if current is _TERMINAL:
+        # Leaving terminated is a rehire decision, not a status edit.
+        return False
+    if requested is _TERMINAL:
+        return True
+    return current in _REVERSIBLE and requested in _REVERSIBLE
+
+
+# --------------------------------------------------------------------------- reads
+
+
+def _base_select() -> Select[tuple[Employee]]:
+    return select(Employee).options(selectinload(Employee.rates))
+
+
+def get_employee(session: Session, employee_id: uuid.UUID) -> Employee:
+    """Load one employee with its rate history, or raise `EmployeeNotFound`."""
+    employee = session.scalars(_base_select().where(Employee.id == employee_id)).one_or_none()
+    if employee is None:
+        raise EmployeeNotFound(employee_id)
+    return employee
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeePage:
+    """A page of employees plus the unfiltered-by-paging total, for list rendering."""
+
+    items: Sequence[Employee]
+    total: int
+
+
+def list_employees(
+    session: Session,
+    *,
+    status: EmployeeStatus | None = None,
+    scope_statement: Select[tuple[Employee]] | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> EmployeePage:
+    """A stable-sorted page of employees (Requirement 22.5).
+
+    `scope_statement` lets the router hand in a query already narrowed to the caller's sites; when it
+    is `None` the service lists across all employees, which is the administrator and accounting case.
+    Sort is `(full_name, id)` so the order is total and does not shift between pages when two people
+    share a name.
+    """
+    statement = scope_statement if scope_statement is not None else _base_select()
+    if status is not None:
+        statement = statement.where(Employee.status == status)
+
+    total = session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    ordered = statement.order_by(Employee.full_name, Employee.id).limit(limit).offset(offset)
+    items = list(session.scalars(ordered).unique())
+    return EmployeePage(items=items, total=total)
+
+
+# --------------------------------------------------------------------------- passport uniqueness
+
+
+def _passport_hash(passport_number: str) -> str:
+    """The keyed digest the uniqueness check and the `passport_number_hash` column both key on."""
+    return get_encryptor().deterministic_hash(passport_number)
+
+
+def _find_active_holder(
+    session: Session, passport_hash: str, *, exclude_id: uuid.UUID | None = None
+) -> Employee | None:
+    """A non-terminated employee holding this passport, if any (Requirement 3.6).
+
+    Excludes `exclude_id` so an update that leaves the passport unchanged does not collide with the
+    row being updated. Terminated employees are excluded, which is what lets a recycled passport
+    number be reused once its former holder is off the books.
+    """
+    statement = (
+        select(Employee)
+        .where(Employee.passport_number_hash == passport_hash)
+        .where(Employee.status != EmployeeStatus.TERMINATED)
+    )
+    if exclude_id is not None:
+        statement = statement.where(Employee.id != exclude_id)
+    return session.scalars(statement).first()
+
+
+# --------------------------------------------------------------------------- create
+
+
+def create_employee(session: Session, payload: EmployeeCreate, *, context: AuditContext) -> Employee:
+    """Create an employee, its opening rate if given, and an audit row per field (Requirement 3.9).
+
+    Passport uniqueness is checked before the insert so the conflicting employee can be named; the
+    database's partial unique index is the backstop for the race between the check and the flush.
+    """
+    passport_hash = _passport_hash(payload.passport_number)
+    existing = _find_active_holder(session, passport_hash)
+    if existing is not None:
+        raise DuplicatePassport(existing)
+
+    employee = Employee(
+        full_name=payload.full_name,
+        full_name_en=payload.full_name_en,
+        passport_number=payload.passport_number,
+        passport_number_hash=payload.passport_number,  # DeterministicHash hashes on bind.
+        phone=payload.phone,
+        country=payload.country,
+        date_of_birth=payload.date_of_birth,
+        address=payload.address,
+        emergency_contact_name=payload.emergency_contact_name,
+        emergency_contact_phone=payload.emergency_contact_phone,
+        notes=payload.notes,
+        start_date=payload.start_date,
+        position=payload.position,
+        status=payload.status,
+        photo_key=payload.photo_key,
+    )
+    session.add(employee)
+    # Flush so the row has an id the audit rows and any rate rows can reference, and so the passport
+    # hash is materialised for the uniqueness backstop.
+    session.flush()
+
+    _audit_creation(session, employee, context=context)
+
+    if payload.rate is not None:
+        _write_rate_history(session, employee, [payload.rate], context=context)
+
+    return employee
+
+
+def _audit_creation(session: Session, employee: Employee, *, context: AuditContext) -> None:
+    """One audit row per field set at creation, so a card's origin is as traceable as its edits.
+
+    Diffing against an empty snapshot reuses the same field-by-field machinery an update uses, and the
+    sensitive fields are redacted by the same rule, so a passport number never lands in the audit
+    table even on the create path.
+    """
+    empty = dict.fromkeys(snapshot(employee), None)
+    record_model_changes(session, employee, empty, context=context, reason="employee_created")
+
+
+# --------------------------------------------------------------------------- update
+
+
+#: Attribute names the update path may write. Status is not among them — it moves through
+#: `change_status`, which owns the transition rules — and neither are the rate fields, which the
+#: rates endpoint owns. Passport is handled specially because it drives the uniqueness check and the
+#: hash column.
+_UPDATABLE_FIELDS = (
+    "full_name",
+    "full_name_en",
+    "phone",
+    "country",
+    "date_of_birth",
+    "address",
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "notes",
+    "start_date",
+    "position",
+    "photo_key",
+)
+
+
+def update_employee(
+    session: Session, employee_id: uuid.UUID, payload: EmployeeUpdate, *, context: AuditContext
+) -> Employee:
+    """Apply a partial update, checking passport uniqueness if the passport changes.
+
+    Only the fields present in the request are touched (`exclude_unset`), so a patch that names three
+    fields leaves the rest alone, and only the fields that actually moved produce an audit row.
+    """
+    employee = get_employee(session, employee_id)
+    changes = payload.model_dump(exclude_unset=True)
+
+    before = snapshot(employee)
+
+    if "passport_number" in changes:
+        new_passport = changes["passport_number"]
+        new_hash = _passport_hash(new_passport)
+        if new_hash != employee.passport_number_hash:
+            conflict = _find_active_holder(session, new_hash, exclude_id=employee.id)
+            if conflict is not None:
+                raise DuplicatePassport(conflict)
+        employee.passport_number = new_passport
+        employee.passport_number_hash = new_passport
+
+    for field in _UPDATABLE_FIELDS:
+        if field in changes:
+            setattr(employee, field, changes[field])
+
+    session.flush()
+    record_model_changes(session, employee, before, context=context)
+    return employee
+
+
+# --------------------------------------------------------------------------- status transition
+
+
+def change_status(
+    session: Session,
+    employee_id: uuid.UUID,
+    new_status: EmployeeStatus,
+    *,
+    context: AuditContext,
+    reason: str | None = None,
+) -> Employee:
+    """Move an employee to `new_status`, or raise `InvalidStatusTransition` (Requirement 3.4, 3.8).
+
+    A no-op (same status) is allowed and writes no audit row, so a client resubmitting the current
+    status is harmless. There is no delete: the row stays, its history intact.
+    """
+    employee = get_employee(session, employee_id)
+    current = employee.status
+    if not _transition_allowed(current, new_status):
+        raise InvalidStatusTransition(current, new_status)
+    if current == new_status:
+        return employee
+
+    before = snapshot(employee, fields=["status"])
+    employee.status = new_status
+    session.flush()
+    record_model_changes(
+        session, employee, before, context=context, reason=reason, fields=["status"]
+    )
+    return employee
+
+
+# --------------------------------------------------------------------------- rate history
+
+
+def _validate_rate_chain(rates: Sequence[EmployeeRateInput]) -> list[EmployeeRateInput]:
+    """Sort the submitted rows and reject any that overlap or are internally out of order.
+
+    Overlap is checked on the inclusive `[from, to]` periods, matching both `EmployeeRate.covers` and
+    the database exclusion constraint: a row ending 15 August and a row starting 16 August are fine,
+    but two rows both covering 16 August are not. An open-ended row (`effective_to is None`) may only
+    be the last in the chain, because anything after it would fall inside its still-in-force period.
+    """
+    ordered = sorted(rates, key=lambda rate: rate.effective_from)
+    for rate in ordered:
+        if rate.effective_to is not None and rate.effective_to < rate.effective_from:
+            raise InvalidRatePeriod
+    for earlier, later in zip(ordered, ordered[1:], strict=False):
+        if earlier.effective_to is None or earlier.effective_to >= later.effective_from:
+            raise OverlappingRates
+    return ordered
+
+
+def replace_rate_history(
+    session: Session,
+    employee_id: uuid.UUID,
+    rates: Sequence[EmployeeRateInput],
+    *,
+    context: AuditContext,
+) -> Employee:
+    """Replace an employee's rate history with the submitted, reconciled chain (Requirement 3.3).
+
+    The whole history is replaced rather than appended to, because a client that owns the rates screen
+    is stating the intended history, and reconciling row-by-row would leave a stale row behind on any
+    edit that removed one. The overlap check runs first, so a rejected submission leaves the existing
+    history untouched.
+    """
+    employee = get_employee(session, employee_id)
+    _write_rate_history(session, employee, rates, context=context)
+    return employee
+
+
+def _write_rate_history(
+    session: Session,
+    employee: Employee,
+    rates: Sequence[EmployeeRateInput],
+    *,
+    context: AuditContext,
+) -> None:
+    ordered = _validate_rate_chain(rates)
+
+    for existing in list(employee.rates):
+        session.delete(existing)
+    employee.rates.clear()
+
+    for rate in ordered:
+        employee.rates.append(
+            EmployeeRate(
+                hourly_wage=rate.hourly_wage,
+                overtime_rate=rate.overtime_rate,
+                shabbat_holiday_rate=rate.shabbat_holiday_rate,
+                travel_allowance_daily=rate.travel_allowance_daily,
+                effective_from=rate.effective_from,
+                effective_to=rate.effective_to,
+            )
+        )
+    session.flush()
+
+    # One audit row on the employee marking that pay changed. The rate values themselves are wage
+    # data; the audit records that the history was rewritten and by whom, which is what a dispute
+    # needs, without copying wage figures into a table that is never deleted.
+    record_change(
+        session,
+        entity_type="employees",
+        entity_id=employee.id,
+        field="rates",
+        old_value=None,
+        new_value=f"{len(ordered)} rate period(s)",
+        context=context,
+        reason="rates_updated",
+    )
+
+
+def resolve_rate(employee: Employee, on_date: date) -> EmployeeRate | None:
+    """The rate in force on `on_date`, or `None` if no row covers it (Requirement 16.9).
+
+    Pure: it reads the already-loaded history and picks the one row whose inclusive period covers the
+    date. Because the chain is non-overlapping, at most one row can match; the latest-starting match is
+    returned defensively so a hand-inserted overlap resolves deterministically rather than by load
+    order. This is the function payroll calls per work date to split a mid-month rate change.
+    """
+    covering = [rate for rate in employee.rates if rate.covers(on_date)]
+    if not covering:
+        return None
+    return max(covering, key=lambda rate: rate.effective_from)

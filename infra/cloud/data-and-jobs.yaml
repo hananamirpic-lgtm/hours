@@ -1,0 +1,502 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Hours — managed data layer and scheduled job runner (Task 39, Requirement 20.2, 20.3, 20.7,
+  14, 24.6). Provisions managed PostgreSQL with encryption at rest and automated snapshots, the
+  private document bucket and the encrypted backup bucket, and the EventBridge-scheduled Fargate
+  tasks that fire the daily and weekly notification jobs. The API/web service definitions live in
+  the sibling service template; this template owns the stateful and scheduled pieces the deployment
+  task calls out, because they have a different lifecycle from the stateless tiers and must not be
+  torn down with them.
+
+  No secret appears in this template. The database password is generated into Secrets Manager and
+  the application reads its DATABASE_URL from there — nothing sensitive is ever a template parameter
+  or a default.
+
+# --------------------------------------------------------------------------- parameters
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [staging, production]
+    Description: Which environment this stack is. Tags every resource and sizes a few defaults.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC the database and tasks run in.
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      Private subnets (no direct internet route) for the database and the job runner. The database
+      is never given a public address; it is reachable only from within the VPC.
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: >-
+      The security group the API and job-runner tasks run under. Only this group is allowed to reach
+      PostgreSQL, so nothing else in the VPC can open a connection to the database.
+
+  DbInstanceClass:
+    Type: String
+    Default: db.t3.medium
+    Description: Managed PostgreSQL instance size.
+
+  DbAllocatedStorageGb:
+    Type: Number
+    Default: 50
+    MinValue: 20
+    Description: Initial storage in GiB. Storage autoscaling raises it as needed up to the max below.
+
+  DbMaxAllocatedStorageGb:
+    Type: Number
+    Default: 200
+    Description: Ceiling for storage autoscaling.
+
+  BackupRetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 7
+    MaxValue: 35
+    Description: >-
+      Days of automated daily snapshots and point-in-time recovery to retain (Requirement 20.7).
+      30 matches the retention documented in infra/README.md.
+
+  JobRunnerImage:
+    Type: String
+    Description: >-
+      Full reference of the backend image the scheduled tasks run, e.g.
+      ghcr.io/<owner>/hours/backend:v1.4.0. The same image the API runs; the scheduled task just
+      invokes `python -m app.jobs_runner` instead of uvicorn.
+
+  DocumentsBucketName:
+    Type: String
+    Description: Globally-unique name for the private documents bucket (Requirement 20.3).
+
+  BackupsBucketName:
+    Type: String
+    Description: Globally-unique name for the encrypted logical-backup bucket (Requirement 20.7).
+
+  DailyJobsCron:
+    Type: String
+    Default: "cron(0 16 * * ? *)"
+    Description: >-
+      When the daily batch fires, as an EventBridge cron in UTC. 16:00 UTC is 18:00 in
+      Asia/Jerusalem in winter, matching the app's default daily-jobs hour; adjust per environment.
+
+  WeeklyJobsCron:
+    Type: String
+    Default: "cron(0 5 ? * MON *)"
+    Description: >-
+      When the weekly missing-report summary fires (UTC). 05:00 UTC Monday ~ 07:00 local, matching
+      the app's default weekly hour and weekday.
+
+# --------------------------------------------------------------------------- resources
+Resources:
+  # ----------------------------------------------------------------- encryption key
+  DataKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub "Hours ${Environment} — encryption at rest for the database, documents and backups"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableRootAccountManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  DataKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/hours-${Environment}-data"
+      TargetKeyId: !Ref DataKey
+
+  # ----------------------------------------------------------------- database credentials (generated, never in the template)
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "hours/${Environment}/db"
+      Description: Managed PostgreSQL master credentials for Hours. Password generated, never set by hand.
+      KmsKeyId: !Ref DataKey
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"hours"}'
+        GenerateStringKey: "password"
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\ '
+
+  # ----------------------------------------------------------------- managed PostgreSQL
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "Hours ${Environment} database subnets (private)"
+      SubnetIds: !Ref PrivateSubnetIds
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Hours ${Environment} - PostgreSQL, reachable only from the app group"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppSecurityGroupId
+          Description: PostgreSQL from the API and job-runner tasks only.
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    # Keep the instance if the stack is deleted, and snapshot it on the way out: the ledger of hours,
+    # payroll and billing must never vanish with a stack teardown.
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: "16.11"
+      DBInstanceClass: !Ref DbInstanceClass
+      DBName: hours
+      AllocatedStorage: !Ref DbAllocatedStorageGb
+      MaxAllocatedStorage: !Ref DbMaxAllocatedStorageGb
+      # Encryption at rest with the customer-managed key (Requirement 20.2).
+      StorageEncrypted: true
+      KmsKeyId: !Ref DataKey
+      # Master credentials from the generated secret — no password in the template.
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DbSecurityGroup
+      # Private only: no public endpoint (Requirement 20).
+      PubliclyAccessible: false
+      MultiAZ: !If [IsProduction, true, false]
+      # Automated daily snapshots and point-in-time recovery (Requirement 20.7).
+      BackupRetentionPeriod: !Ref BackupRetentionDays
+      PreferredBackupWindow: "01:00-02:00"
+      PreferredMaintenanceWindow: "sun:02:30-sun:03:30"
+      CopyTagsToSnapshot: true
+      DeletionProtection: !If [IsProduction, true, false]
+      EnablePerformanceInsights: true
+      PerformanceInsightsKMSKeyId: !Ref DataKey
+      Tags:
+        - Key: app
+          Value: hours
+        - Key: environment
+          Value: !Ref Environment
+
+  # The application's DATABASE_URL, assembled from the generated secret and the created endpoint, so
+  # the API and the job runner read one secret and never see the password in plain configuration.
+  DatabaseUrlSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "hours/${Environment}/database-url"
+      Description: SQLAlchemy DATABASE_URL for the Hours API and job runner.
+      KmsKeyId: !Ref DataKey
+      SecretString: !Sub
+        - "postgresql+psycopg://${User}:${Password}@${Endpoint}:5432/hours"
+        - User: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:username}}"
+          Password: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:password}}"
+          Endpoint: !GetAtt Database.Endpoint.Address
+
+  # ----------------------------------------------------------------- private document storage (20.3)
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref DocumentsBucketName
+      # Encrypted at rest with the customer-managed key.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref DataKey
+            BucketKeyEnabled: true
+      # Reachable only by short-lived presigned URL — never public.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: app
+          Value: hours
+        - Key: environment
+          Value: !Ref Environment
+
+  DocumentsBucketTlsOnlyPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt DocumentsBucket.Arn
+              - !Sub "${DocumentsBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+  # ----------------------------------------------------------------- encrypted backup storage (20.7)
+  BackupsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BackupsBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref DataKey
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      # The nightly logical dump keeps a 30-day window, matching the managed snapshot retention.
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-dumps
+            Status: Enabled
+            ExpirationInDays: !Ref BackupRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+      Tags:
+        - Key: app
+          Value: hours
+        - Key: environment
+          Value: !Ref Environment
+
+  # ----------------------------------------------------------------- scheduled job runner (Requirement 14)
+  JobsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/hours/${Environment}/jobs"
+      RetentionInDays: 30
+
+  JobsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "hours-${Environment}-jobs"
+
+  # The task role the running container assumes: read the two secrets it needs, use the key to
+  # decrypt them, and read/write the document and backup buckets. Least privilege — no more.
+  JobsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: hours-jobs-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSecrets
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DatabaseUrlSecret
+              - Sid: UseKey
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt DataKey.Arn
+              - Sid: DocumentsAndBackups
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DocumentsBucket.Arn
+                  - !Sub "${DocumentsBucket.Arn}/*"
+                  - !GetAtt BackupsBucket.Arn
+                  - !Sub "${BackupsBucket.Arn}/*"
+
+  # The execution role ECS uses to pull the image, write logs and inject the secret at start.
+  JobsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-database-url-secret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseUrlSecret
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !GetAtt DataKey.Arn
+
+  # One task definition; the two schedules pass a different command (daily vs weekly). The container
+  # runs the backend image with SCHEDULER_ENABLED unset — it never starts the in-process scheduler;
+  # it runs one batch and exits, and EventBridge is the only thing that decides when.
+  JobsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "hours-${Environment}-jobs"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt JobsExecutionRole.Arn
+      TaskRoleArn: !GetAtt JobsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: jobs
+          Image: !Ref JobRunnerImage
+          # Overridden per schedule to `daily` or `weekly`; a default so a manual run does something.
+          Command: ["python", "-m", "app.jobs_runner", "daily"]
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: APP_TIMEZONE
+              Value: Asia/Jerusalem
+            # The dedicated runner owns the jobs, so the in-process scheduler stays off everywhere.
+            - Name: SCHEDULER_ENABLED
+              Value: "false"
+            - Name: S3_BUCKET_DOCUMENTS
+              Value: !Ref DocumentsBucketName
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Ref DatabaseUrlSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref JobsLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: jobs
+
+  # EventBridge Scheduler needs a role to run the task on the cluster.
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: run-jobs-task
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref JobsTaskDefinition
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt JobsTaskRole.Arn
+                  - !GetAtt JobsExecutionRole.Arn
+
+  DailyJobsSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "hours-${Environment}-daily-jobs"
+      Description: Fires the daily notification batch (no-checkout, over-maximum, document expiry).
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      ScheduleExpression: !Ref DailyJobsCron
+      ScheduleExpressionTimezone: UTC
+      Target:
+        Arn: !GetAtt JobsCluster.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        EcsParameters:
+          TaskDefinitionArn: !Ref JobsTaskDefinition
+          LaunchType: FARGATE
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              AssignPublicIp: DISABLED
+              Subnets: !Ref PrivateSubnetIds
+              SecurityGroups:
+                - !Ref AppSecurityGroupId
+        Input: |
+          {"containerOverrides":[{"name":"jobs","command":["python","-m","app.jobs_runner","daily"]}]}
+        RetryPolicy:
+          MaximumRetryAttempts: 2
+
+  WeeklyJobsSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "hours-${Environment}-weekly-jobs"
+      Description: Fires the weekly missing-report summary.
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      ScheduleExpression: !Ref WeeklyJobsCron
+      ScheduleExpressionTimezone: UTC
+      Target:
+        Arn: !GetAtt JobsCluster.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        EcsParameters:
+          TaskDefinitionArn: !Ref JobsTaskDefinition
+          LaunchType: FARGATE
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              AssignPublicIp: DISABLED
+              Subnets: !Ref PrivateSubnetIds
+              SecurityGroups:
+                - !Ref AppSecurityGroupId
+        Input: |
+          {"containerOverrides":[{"name":"jobs","command":["python","-m","app.jobs_runner","weekly"]}]}
+        RetryPolicy:
+          MaximumRetryAttempts: 2
+
+# --------------------------------------------------------------------------- conditions
+Conditions:
+  IsProduction: !Equals [!Ref Environment, production]
+
+# --------------------------------------------------------------------------- outputs
+Outputs:
+  DatabaseEndpoint:
+    Description: PostgreSQL endpoint address (private).
+    Value: !GetAtt Database.Endpoint.Address
+
+  DatabaseUrlSecretArn:
+    Description: Secrets Manager ARN of the assembled DATABASE_URL the app reads.
+    Value: !Ref DatabaseUrlSecret
+
+  DataKeyArn:
+    Description: KMS key encrypting the database, documents and backups at rest.
+    Value: !GetAtt DataKey.Arn
+
+  DocumentsBucketName:
+    Description: Private, encrypted documents bucket.
+    Value: !Ref DocumentsBucket
+
+  BackupsBucketName:
+    Description: Encrypted, versioned logical-backup bucket.
+    Value: !Ref BackupsBucket
+
+  JobsClusterArn:
+    Description: ECS cluster the scheduled job runner uses.
+    Value: !GetAtt JobsCluster.Arn
