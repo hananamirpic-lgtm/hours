@@ -22,17 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { downloadSiteQr, regenerateSiteQr, siteKeys, type QrAction } from '@/api/sites';
 import type { SiteResponse } from '@/api/types';
 import { toError } from '@/lib/apiError';
-
-function triggerBrowserDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
+import { triggerBrowserDownload } from '@/lib/download';
 
 export function SiteQrPanel({
   site,

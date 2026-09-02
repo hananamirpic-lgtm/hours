@@ -518,6 +518,37 @@ h1 {
   font-weight: 600;
 }
 
+/* The employee "My photo" screen: the current photo, a file picker, and status. Flow-relative so it
+ * mirrors for Hebrew from these rules alone; the .photo / .photo-row / .feedback classes are shared
+ * with the console. */
+.mobile-profile {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+  align-items: stretch;
+}
+
+.mobile-profile__title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.mobile-profile .photo-row {
+  justify-content: center;
+}
+
+.mobile-profile__field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+}
+
+.mobile-profile__label {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
 .full-page {
   min-block-size: 100vh;
 }
@@ -1702,4 +1733,29 @@ h1 {
 
 .my-hours__week-subtotal {
   font-weight: 700;
+}
+
+/* -------------------------------------------------------------------------- print (Requirement 18.7)
+ * The by-employee report's "Download PDF" opens a self-contained document in a new window and prints
+ * that, so the main app never needs to reshape itself for print. This block is a light safeguard for
+ * the rare case the app window itself is sent to the printer: drop the interactive toolbar (filters
+ * and download buttons carry no meaning on paper) and let tables break cleanly across pages. Logical
+ * properties throughout, so it holds in both writing directions and does not disturb screen styles. */
+@media print {
+  .toolbar,
+  .inline-actions {
+    display: none;
+  }
+
+  .table-wrap {
+    overflow: visible;
+  }
+
+  .table {
+    page-break-inside: auto;
+  }
+
+  .table tr {
+    page-break-inside: avoid;
+  }
 }

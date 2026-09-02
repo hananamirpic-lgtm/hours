@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import (
     AdminCaller,
@@ -34,6 +34,7 @@ from app.api.deps import (
     PersonnelReaderCaller,
     api_error,
 )
+from app.core.storage import DOWNLOAD_URL_TTL_SECONDS, ObjectStorage, get_object_storage
 from app.models.employee import Employee, EmployeeStatus
 from app.schemas.employee import (
     EmployeeCreate,
@@ -44,6 +45,7 @@ from app.schemas.employee import (
     EmployeeStatusUpdate,
     EmployeeUpdate,
 )
+from app.schemas.photo import PhotoUrlResponse
 from app.schemas.site import EmployeeSitesResponse, EmployeeSitesUpdate
 from app.services import document as document_service
 from app.services import employee as employee_service
@@ -175,6 +177,32 @@ def read_employee(
     except employee_service.EmployeeError as error:
         raise _raise_for(error) from error
     return _card_dict(employee, caller, session)
+
+
+@router.get(
+    "/{employee_id}/photo-url",
+    response_model=PhotoUrlResponse,
+    summary="A short-lived signed URL for an employee's photo",
+    description=(
+        "Returns a signed URL the card renders the photo from, or null when none is on file. Readable "
+        "by the same roles that read the card (Requirement 3.1); the photo is not a wage field, so it "
+        "is not redacted. The employee row holds the object key, never a public URL, so the image is "
+        "only ever reachable through this short-lived signed link (Requirement 20.3)."
+    ),
+    responses={HTTPStatus.NOT_FOUND: {"description": "No employee with that id"}},
+)
+def read_employee_photo_url(
+    employee_id: uuid.UUID,
+    caller: PersonnelReaderCaller,  # noqa: ARG001 - the type is the guard
+    session: DbSession,
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+) -> PhotoUrlResponse:
+    try:
+        employee_service.get_employee(session, employee_id)
+    except employee_service.EmployeeError as error:
+        raise _raise_for(error) from error
+    url = employee_service.photo_download_url(session, employee_id, storage=storage)
+    return PhotoUrlResponse(url=url, expires_in_seconds=DOWNLOAD_URL_TTL_SECONDS)
 
 
 # --------------------------------------------------------------------------- writes

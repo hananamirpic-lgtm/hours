@@ -49,6 +49,14 @@ export function MobileShell() {
         >
           {t('mobileNav.myHours')}
         </NavLink>
+        <NavLink
+          to="/m/profile"
+          className={({ isActive }) =>
+            `mobile__nav-link${isActive ? ' mobile__nav-link--active' : ''}`
+          }
+        >
+          {t('mobileNav.profile')}
+        </NavLink>
       </nav>
       <main className="mobile__content">
         <Outlet />

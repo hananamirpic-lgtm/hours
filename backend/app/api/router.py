@@ -13,6 +13,7 @@ from app.api.routers import (
     employees,
     exports,
     health,
+    me_photo,
     notifications,
     payroll,
     periods,
@@ -34,6 +35,7 @@ api_router.include_router(documents.router)
 api_router.include_router(clients.router)
 api_router.include_router(sites.router)
 api_router.include_router(scans.router)
+api_router.include_router(me_photo.router)
 api_router.include_router(time_entries.router)
 api_router.include_router(periods.router)
 api_router.include_router(payroll.router)

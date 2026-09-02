@@ -124,6 +124,16 @@ export const completeUpload = (
 export const getDocumentDownloadUrl = (documentId: string): Promise<{ url: string; expires_in_seconds: number }> =>
   apiFetch<{ url: string; expires_in_seconds: number }>(`/documents/${documentId}/download-url`);
 
+/**
+ * A short-lived signed URL for an employee's photo, or { url: null } when none is on file
+ * (GET /api/employees/{id}/photo-url). Readable by the same roles that read the card; the card
+ * renders the returned URL as an <img>. The photo lives in private storage, so the URL is short-lived.
+ */
+export const getEmployeePhotoUrl = (
+  employeeId: string,
+): Promise<{ url: string | null; expires_in_seconds: number }> =>
+  apiFetch<{ url: string | null; expires_in_seconds: number }>(`/employees/${employeeId}/photo-url`);
+
 export const deleteDocument = (documentId: string): Promise<void> =>
   apiFetch<void>(`/documents/${documentId}`, { method: 'DELETE' });
 

@@ -107,6 +107,28 @@ def get_object_storage_client():  # noqa: ANN201 - botocore builds the client ty
     )
 
 
+@lru_cache
+def get_object_storage_presign_client():  # noqa: ANN201 - botocore builds the client type at runtime
+    """Cached S3 client used only to *sign* presigned URLs, built against the public endpoint.
+
+    A presigned URL embeds the endpoint host it was signed for, and it is followed by the browser —
+    which, behind Docker, cannot resolve the internal service name the API talks to. So the signing
+    client points at `s3_presign_endpoint_url` (the public host when configured, else the same
+    internal endpoint). Only URL generation uses this client; every real S3 operation the API
+    performs — head_bucket, get_object, put_object — stays on the internal client above. Same
+    credentials and signing version, so the signature the public host validates is identical.
+    """
+    settings = get_settings()
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.s3_presign_endpoint_url,
+        aws_access_key_id=settings.s3_access_key_id.get_secret_value(),
+        aws_secret_access_key=settings.s3_secret_access_key.get_secret_value(),
+        region_name=settings.s3_region,
+        config=BotoConfig(signature_version="s3v4"),
+    )
+
+
 def check_object_storage(settings: Settings) -> ProbeResult:
     """Confirm the documents bucket is reachable and the credentials are accepted."""
     started = time.perf_counter()

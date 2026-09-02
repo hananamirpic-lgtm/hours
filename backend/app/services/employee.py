@@ -27,6 +27,7 @@ period covers it — which is what makes a mid-month rate change split a month c
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -35,7 +36,9 @@ from datetime import date
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import storage as storage_module
 from app.core.crypto import get_encryptor
+from app.core.storage import ObjectStorage
 from app.models.employee import Employee, EmployeeRate, EmployeeStatus
 from app.schemas.employee import (
     EmployeeCreate,
@@ -62,6 +65,18 @@ class EmployeeNotFound(EmployeeError):
     def __init__(self, employee_id: uuid.UUID) -> None:
         super().__init__(f"no employee {employee_id}")
         self.employee_id = employee_id
+
+
+class NoEmployeeForCaller(EmployeeError):
+    """The caller's login is not linked to an employee, so it has no photo of its own.
+
+    Only the employee role carries an `employee_id`; a manager or accounting login has none and no
+    personal record to attach a photo to. Mirrors `app.services.scan.NoEmployeeForCaller` so the
+    self-service photo path refuses a not-linked caller exactly the way the scan path does — the
+    router maps it to a 403.
+    """
+
+    code = "no_employee_for_caller"
 
 
 class DuplicatePassport(EmployeeError):
@@ -436,3 +451,104 @@ def resolve_rate(employee: Employee, on_date: date) -> EmployeeRate | None:
     if not covering:
         return None
     return max(covering, key=lambda rate: rate.effective_from)
+
+
+# --------------------------------------------------------------------------- self-service photo
+# The employee mobile app lets a signed-in employee replace their *own* profile photo (Requirement
+# 3.1, employee-facing). Two steps so the bytes never cross the API (Requirements 4.3, 20.3):
+# `begin_photo_upload` mints a constrained presigned URL, the client PUTs straight to storage, and
+# `complete_photo_upload` verifies the stored bytes before setting `photo_key`. A profile photo is a
+# face, not a passport scan, so the accepted set is images only — a PDF is refused at both the presign
+# guard and the server-side verification, even though it is a valid *document* type. Nothing here
+# commits; the router owns the transaction, so the `photo_key` change and its audit row share a fate.
+
+
+def begin_photo_upload(
+    session: Session,
+    employee_id: uuid.UUID,
+    *,
+    mime_type: str,
+    storage: ObjectStorage,
+) -> storage_module.PresignedUpload:
+    """Issue a constrained presigned upload URL for the caller's own profile photo.
+
+    The declared type is checked against the image set (`image/jpeg`, `image/png`) *before* a URL is
+    minted, so a PDF or any other type is refused up front rather than caught only after an upload —
+    `ensure_image_type` raises `UnsupportedFileType`, which the router maps to a 400. The employee is
+    loaded to confirm it exists (a not-linked caller never reaches here; the router resolves the
+    employee id from the caller). The presigned URL pins the content type and caps the size, and the
+    real bytes are verified again at completion.
+    """
+    employee = get_employee(session, employee_id)
+    content_type = storage_module.ensure_image_type(mime_type)
+    file_key = storage.new_key(employee.id, f"photo.{_image_extension(content_type)}")
+    return storage.presign_upload(file_key, content_type)
+
+
+def complete_photo_upload(
+    session: Session,
+    employee_id: uuid.UUID,
+    *,
+    file_key: str,
+    mime_type: str,
+    storage: ObjectStorage,
+    context: AuditContext,
+) -> Employee:
+    """Verify an uploaded image and set it as the caller's own profile photo (Requirement 3.1, 4.2).
+
+    The verification is the point: the declared type is re-checked as an image (a PDF completion is
+    refused here even if a URL had somehow been obtained for it), then `storage.verify_upload` reads
+    the stored bytes back and confirms the object exists, is within the 10 MB cap, and really is its
+    declared image type by magic number. Only then is `photo_key` set and the change audited under
+    reason ``photo_uploaded``. A verification failure raises a storage error the router maps to a 4xx
+    and leaves the employee's existing photo untouched.
+
+    Replacing a photo deletes the previous object best-effort: the row is the record of truth, so a
+    storage hiccup on the old key must not block the new photo being recorded.
+    """
+    employee = get_employee(session, employee_id)
+    declared = storage_module.ensure_image_type(mime_type)
+    verified = storage.verify_upload(file_key, declared)
+
+    previous_key = employee.photo_key
+    before = snapshot(employee, fields=["photo_key"])
+    employee.photo_key = verified.file_key
+    session.flush()
+    record_model_changes(
+        session, employee, before, context=context, reason="photo_uploaded", fields=["photo_key"]
+    )
+
+    # Remove the object the photo replaced, if any, and only if it actually changed. Best-effort: the
+    # `photo_key` on the row is what matters, and a failure to delete the old bytes must not fail the
+    # request. A missing `delete` on the storage double is tolerated for the same reason.
+    if previous_key and previous_key != verified.file_key:
+        delete = getattr(storage, "delete", None)
+        if callable(delete):
+            with contextlib.suppress(Exception):
+                delete(previous_key)
+
+    return employee
+
+
+def photo_download_url(
+    session: Session,
+    employee_id: uuid.UUID,
+    *,
+    storage: ObjectStorage,
+) -> str | None:
+    """A short-lived signed GET URL for the caller's own photo, or ``None`` if they have none.
+
+    The mobile screen renders the URL as an ``<img>`` and a ``None`` as a placeholder. Like every
+    signed URL, minting it is the grant, so the caller's ownership must have been established before
+    this is reached — the router resolves the employee from the caller, so the URL is always for the
+    caller's own photo.
+    """
+    employee = get_employee(session, employee_id)
+    if not employee.photo_key:
+        return None
+    return storage.presign_download(employee.photo_key)
+
+
+def _image_extension(content_type: str) -> str:
+    """The file extension for a stored photo, from its verified image content type."""
+    return "png" if content_type == "image/png" else "jpg"

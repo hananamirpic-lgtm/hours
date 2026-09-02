@@ -19,6 +19,7 @@
 
 import type {
   DashboardReport,
+  EmployeeReport,
   MissingReportsResult,
   ProfitabilityReport,
 } from './types';
@@ -41,11 +42,18 @@ export interface MissingReportsParams {
   siteId?: string | null;
 }
 
+export interface EmployeeReportParams {
+  year: number;
+  month: number;
+  employeeId?: string | null;
+}
+
 export const reportKeys = {
   all: ['reports'] as const,
   dashboard: () => ['reports', 'dashboard'] as const,
   profitability: (params: ProfitabilityParams) => ['reports', 'profitability', params] as const,
   missingReports: (params: MissingReportsParams) => ['reports', 'missing-reports', params] as const,
+  byEmployee: (params: EmployeeReportParams) => ['reports', 'by-employee', params] as const,
 };
 
 /** The administrator home dashboard for the current month (Requirement 18.5, 18.6). */
@@ -86,4 +94,20 @@ export const readMissingReports = (params: MissingReportsParams): Promise<Missin
     search.set('site_id', params.siteId);
   }
   return apiFetch<MissingReportsResult>(`/reports/missing-reports?${search.toString()}`);
+};
+
+/**
+ * Each employee's hours (and, for a finance reader, cost) for a month (GET /api/reports/by-employee).
+ * Open to admin, accounting and site managers; the server strips cost from a manager's payload, so
+ * the screen renders and exports it only where present.
+ */
+export const readEmployeeReport = (params: EmployeeReportParams): Promise<EmployeeReport> => {
+  const search = new URLSearchParams({
+    year: String(params.year),
+    month: String(params.month),
+  });
+  if (params.employeeId) {
+    search.set('employee_id', params.employeeId);
+  }
+  return apiFetch<EmployeeReport>(`/reports/by-employee?${search.toString()}`);
 };

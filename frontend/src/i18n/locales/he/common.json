@@ -625,6 +625,22 @@
       "profit": "רווח גולמי",
       "siteCount": "אתרים"
     },
+    "byEmployee": {
+      "tab": "לפי עובד",
+      "employee": "עובד",
+      "regular": "רגילות",
+      "overtime": "שעות נוספות",
+      "shabbat": "שבת",
+      "holiday": "חג",
+      "total": "סה\"כ",
+      "cost": "עלות",
+      "totalsRow": "סה\"כ",
+      "downloadCsv": "הורדת CSV",
+      "downloadPdf": "הורדת PDF",
+      "empty": "אין שעות לחודש זה.",
+      "printTitle": "שעות לפי עובד — {{period}}",
+      "filtersPeriod": "תקופה: {{period}}"
+    },
     "missing": {
       "tab": "דיווחים חסרים",
       "empty": "אין דיווחים חסרים בטווח זה.",
@@ -656,7 +672,20 @@
   "mobileNav": {
     "label": "מקטעים",
     "home": "בית",
-    "myHours": "השעות שלי"
+    "myHours": "השעות שלי",
+    "profile": "פרופיל"
+  },
+  "myPhoto": {
+    "title": "התמונה שלי",
+    "current": "תמונת הפרופיל שלך",
+    "none": "אין עדיין תמונה",
+    "choose": "בחרו תמונה (JPEG או PNG, עד 10MB)",
+    "upload": "העלאת תמונה",
+    "uploading": "מעלה…",
+    "updated": "התמונה שלך עודכנה.",
+    "tooLarge": "התמונה חורגת מהמגבלה של 10MB.",
+    "wrongType": "בחרו תמונת JPEG או PNG.",
+    "error": "לא ניתן היה להעלות את התמונה. נסו שוב."
   },
   "myHours": {
     "title": "השעות שלי",

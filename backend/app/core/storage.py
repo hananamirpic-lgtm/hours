@@ -29,7 +29,7 @@ import uuid
 from dataclasses import dataclass
 
 from app.core.config import get_settings
-from app.repositories.health import get_object_storage_client
+from app.repositories.health import get_object_storage_client, get_object_storage_presign_client
 
 # --------------------------------------------------------------------------- allowed types and size
 
@@ -45,6 +45,12 @@ _SIGNATURES: dict[str, tuple[bytes, ...]] = {
 
 #: The MIME types an upload may declare. Anything else is refused before a URL is issued.
 ALLOWED_MIME_TYPES: frozenset[str] = frozenset(_SIGNATURES)
+
+#: The image subset, for flows that accept a photo rather than a document. A profile photo is a face,
+#: not a passport scan, so a PDF is refused even though it is an allowed *document* type. Kept here
+#: beside the signatures so the presign guard and the post-upload check read the same set and cannot
+#: drift; every member is also in `ALLOWED_MIME_TYPES`, so the signatures already cover it.
+IMAGE_MIME_TYPES: frozenset[str] = frozenset({"image/jpeg", "image/png"})
 
 #: Requirement 4.2: 10 MB per file, to the byte.
 MAX_FILE_BYTES: int = 10 * 1024 * 1024
@@ -143,6 +149,19 @@ def ensure_supported_type(mime_type: str) -> str:
     return normalised
 
 
+def ensure_image_type(mime_type: str) -> str:
+    """Return `mime_type` if it is JPEG or PNG, else raise `UnsupportedFileType`.
+
+    The narrower gate for a profile photo: a PDF is a valid *document* but not a valid photo, so it is
+    refused here even though `ensure_supported_type` would accept it. Both the presign step and the
+    server-side verification go through this, so a PDF cannot slip past either.
+    """
+    normalised = mime_type.strip().lower()
+    if normalised not in IMAGE_MIME_TYPES:
+        raise UnsupportedFileType(mime_type)
+    return normalised
+
+
 def _matches_signature(mime_type: str, head: bytes) -> bool:
     return any(head.startswith(signature) for signature in _SIGNATURES.get(mime_type, ()))
 
@@ -158,8 +177,16 @@ class ObjectStorage:
     health probe already builds and caches.
     """
 
-    def __init__(self, client=None, *, bucket: str | None = None) -> None:  # noqa: ANN001
+    def __init__(self, client=None, *, bucket: str | None = None, presign_client=None) -> None:  # noqa: ANN001
         self._client = client if client is not None else get_object_storage_client()
+        # A separate client for signing browser-facing URLs, built against the public endpoint (see
+        # `get_object_storage_presign_client`). Falls back to the main client when not provided — a
+        # test's fake passes one client and uses it for everything, which is correct for a fake.
+        self._presign_client = (
+            presign_client
+            if presign_client is not None
+            else (get_object_storage_presign_client() if client is None else client)
+        )
         self._bucket = bucket if bucket is not None else get_settings().s3_bucket_documents
 
     def new_key(self, employee_id: uuid.UUID, file_name: str) -> str:
@@ -204,7 +231,7 @@ class ObjectStorage:
         type here narrows the abuse surface and the post-upload check closes it.
         """
         content_type = ensure_supported_type(mime_type)
-        url = self._client.generate_presigned_url(
+        url = self._presign_client.generate_presigned_url(
             "put_object",
             Params={"Bucket": self._bucket, "Key": file_key, "ContentType": content_type},
             ExpiresIn=UPLOAD_URL_TTL_SECONDS,
@@ -228,7 +255,7 @@ class ObjectStorage:
         if file_name:
             # Ask the browser to download under the original name rather than the opaque key.
             params["ResponseContentDisposition"] = f'attachment; filename="{file_name}"'
-        return self._client.generate_presigned_url(
+        return self._presign_client.generate_presigned_url(
             "get_object", Params=params, ExpiresIn=DOWNLOAD_URL_TTL_SECONDS
         )
 

@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     encryption_key: SecretStr = Field(description="AES-256 key material for encrypted columns")
 
     s3_endpoint_url: str = Field(description="S3-compatible endpoint; MinIO locally")
+    #: Endpoint used only to build browser-facing presigned URLs. The two differ behind Docker: the
+    #: API reaches MinIO at the internal `s3_endpoint_url` (e.g. http://minio:9000), but a presigned
+    #: URL is followed by the *browser*, which can only reach the published port (http://localhost:9000).
+    #: Defaults to `s3_endpoint_url` so a single-endpoint deployment (real S3, or same-host) is
+    #: unaffected; set it to the public host locally so the direct upload/download from the browser works.
+    s3_public_endpoint_url: str | None = Field(
+        default=None, description="Public S3 endpoint for presigned URLs"
+    )
     s3_access_key_id: SecretStr = Field(description="Object storage access key")
     s3_secret_access_key: SecretStr = Field(description="Object storage secret key")
     s3_bucket_documents: str = Field(description="Bucket holding employee documents")
@@ -161,6 +169,16 @@ class Settings(BaseSettings):
             if value.startswith(prefix):
                 return "postgresql+psycopg://" + value[len(prefix) :]
         return value
+
+    @property
+    def s3_presign_endpoint_url(self) -> str:
+        """The endpoint presigned URLs are built against — the public one when set, else the internal.
+
+        Presigned URLs are followed by the browser, so behind Docker they must point at the published
+        host, not the internal service name. When `s3_public_endpoint_url` is unset the two are the
+        same (real S3, or a same-host deployment), so nothing changes there.
+        """
+        return self.s3_public_endpoint_url or self.s3_endpoint_url
 
     @property
     def readiness_deadline_seconds(self) -> float:

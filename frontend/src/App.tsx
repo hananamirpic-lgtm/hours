@@ -30,6 +30,7 @@ import { TwoFactorGate } from '@/app/users/TwoFactorGate';
 import { ChangePasswordGate } from '@/app/auth/ChangePasswordGate';
 import { MobileHomePage } from '@/app/MobileHomePage';
 import { MobileMyHoursPage } from '@/app/MobileMyHoursPage';
+import { MobileProfilePage } from '@/app/MobileProfilePage';
 import { MobileShell } from '@/app/MobileShell';
 import { NotFoundPage } from '@/app/NotFoundPage';
 import { PlaceholderPage } from '@/app/PlaceholderPage';
@@ -61,6 +62,7 @@ export default function App() {
       >
         <Route index element={<MobileHomePage />} />
         <Route path="history" element={<MobileMyHoursPage />} />
+        <Route path="profile" element={<MobileProfilePage />} />
         <Route path="alerts" element={<PlaceholderPage titleKey="mobile.alerts" />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

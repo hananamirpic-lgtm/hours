@@ -862,6 +862,44 @@ export interface ProfitabilityReport {
 }
 
 /**
+ * One employee's hours (and, for a finance reader, cost) for a month (GET /api/reports/by-employee),
+ * mirroring `EmployeeReportRow`. The four bucket minute totals and their sum are integers the screen
+ * renders through `formatDuration`; both employee name forms are carried so a row labels in either
+ * language (Requirement 21.5). `cost` is a raw decimal string for a finance caller and `null` for a
+ * site manager, whose payload the server strips of wage — a null means "not permitted to see", so the
+ * screen omits the cost entirely rather than showing a zero.
+ */
+export interface EmployeeReportRow {
+  employee_id: string;
+  employee_name: string;
+  employee_name_en: string;
+  regular_minutes: number;
+  overtime_minutes: number;
+  shabbat_minutes: number;
+  holiday_minutes: number;
+  total_minutes: number;
+  cost: string | null;
+}
+
+/**
+ * Each employee's hours (and cost) for the selected month (GET /api/reports/by-employee), mirroring
+ * `EmployeeReportResponse`. The envelope (`year`, `month`, `filters`, `currency`) states the period
+ * and filters applied and the currency ILS, so the response — and any export built from it — is
+ * self-describing (Requirement 18.7). `total_cost`, like each row's `cost`, is a raw decimal string
+ * for a finance reader and `null` for a site manager; when it is null the screen shows and exports no
+ * cost at all, keeping the manager view wage-free.
+ */
+export interface EmployeeReport {
+  year: number;
+  month: number;
+  filters: ReportFiltersApplied;
+  currency: string;
+  rows: EmployeeReportRow[];
+  total_minutes: number;
+  total_cost: string | null;
+}
+
+/**
  * The attention counts the administrator home dashboard heads (Requirement 18.6), mirroring
  * `DashboardAttentionResponse`. Three current-month counts — employees without a check-out, without a
  * check-in, and days missing entirely — each of which the dashboard links to the missing-report list

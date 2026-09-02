@@ -625,6 +625,22 @@
       "profit": "Gross profit",
       "siteCount": "Sites"
     },
+    "byEmployee": {
+      "tab": "By employee",
+      "employee": "Employee",
+      "regular": "Regular",
+      "overtime": "Overtime",
+      "shabbat": "Shabbat",
+      "holiday": "Holiday",
+      "total": "Total",
+      "cost": "Cost",
+      "totalsRow": "Total",
+      "downloadCsv": "Download CSV",
+      "downloadPdf": "Download PDF",
+      "empty": "No hours for this month.",
+      "printTitle": "Hours by employee — {{period}}",
+      "filtersPeriod": "Period: {{period}}"
+    },
     "missing": {
       "tab": "Missing reports",
       "empty": "No missing reports for this range.",
@@ -656,7 +672,20 @@
   "mobileNav": {
     "label": "Sections",
     "home": "Home",
-    "myHours": "My hours"
+    "myHours": "My hours",
+    "profile": "Profile"
+  },
+  "myPhoto": {
+    "title": "My photo",
+    "current": "Your profile photo",
+    "none": "No photo yet",
+    "choose": "Choose a photo (JPEG or PNG, up to 10 MB)",
+    "upload": "Upload photo",
+    "uploading": "Uploading…",
+    "updated": "Your photo has been updated.",
+    "tooLarge": "The photo exceeds the 10 MB limit.",
+    "wrongType": "Choose a JPEG or PNG image.",
+    "error": "The photo could not be uploaded. Try again."
   },
   "myHours": {
     "title": "My hours",

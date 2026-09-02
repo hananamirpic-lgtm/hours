@@ -9,11 +9,11 @@
  * concern. Upload is administrator-only, gated by `canManage` and enforced by the server.
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { createUploadUrl, employeeKeys, putToStorage, updateEmployee } from '@/api/employees';
+import { createUploadUrl, employeeKeys, getEmployeePhotoUrl, putToStorage, updateEmployee } from '@/api/employees';
 import type { EmployeeResponse } from '@/api/types';
 import { toError } from '@/lib/apiError';
 
@@ -31,6 +31,15 @@ export function EmployeePhoto({
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
+
+  // Fetch a short-lived signed URL to render the photo, only when one is on file. Keyed on the
+  // photo_key so a fresh upload (which changes the key) refetches and shows the new image.
+  const photo = useQuery({
+    queryKey: [...employeeKeys.detail(employee.id), 'photo-url', employee.photo_key],
+    queryFn: () => getEmployeePhotoUrl(employee.id),
+    enabled: Boolean(employee.photo_key),
+  });
+  const photoUrl = photo.data?.url ?? null;
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -70,9 +79,13 @@ export function EmployeePhoto({
 
   return (
     <div>
-      <div className="photo photo--placeholder" role="img" aria-label={t('employee.photo')}>
-        {employee.photo_key ? t('employee.photoOnFile') : t('employee.noPhoto')}
-      </div>
+      {photoUrl ? (
+        <img className="photo" src={photoUrl} alt={t('employee.photo')} />
+      ) : (
+        <div className="photo photo--placeholder" role="img" aria-label={t('employee.photo')}>
+          {employee.photo_key ? t('employee.photoOnFile') : t('employee.noPhoto')}
+        </div>
+      )}
       {canManage ? (
         <div style={{ marginBlockStart: 'var(--space)' }}>
           <input
