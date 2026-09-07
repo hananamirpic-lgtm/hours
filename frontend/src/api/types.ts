@@ -361,7 +361,6 @@ export interface SiteResponse {
   manager_user_id: string | null;
   address: string | null;
   start_date: string | null;
-  end_date: string | null;
   status: SiteStatus;
   qr_mode: QrMode;
   assignment_mode: AssignmentMode;
@@ -380,7 +379,6 @@ export interface SiteCreate {
   client_id: string;
   address?: string | null;
   start_date?: string | null;
-  end_date?: string | null;
   notes?: string | null;
   status?: SiteStatus;
   qr_mode?: QrMode;
