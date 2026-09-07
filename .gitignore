@@ -1,6 +1,9 @@
 # Secrets and local environment
 .env
 .env.local
+.env.prod
+.env.*.local
+infra/poc/.env.prod
 *.pem
 *.key
 

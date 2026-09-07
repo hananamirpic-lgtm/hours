@@ -1,0 +1,106 @@
+# Production POC overlay for a single EC2 host (Tel Aviv, il-central-1).
+#
+# This is the low-cost proof-of-concept topology, distinct from the production
+# CloudFormation stack under infra/cloud/. It runs the whole system on one EC2
+# box with docker compose, fronted by CloudFront. See infra/poc/RUNBOOK.md.
+#
+# Usage on the EC2 host (compose merges the two files, this one winning):
+#   docker compose -f docker-compose.yml -f infra/poc/docker-compose.prod.yml up -d
+#
+# Differences from the local docker-compose.yml:
+#   - api and web run the PROD image targets (pulled from ECR by tag), not dev.
+#   - web is the nginx-served built SPA (port 80), not the Vite dev server.
+#   - Caddy is the single public entry point: it terminates TLS with an internal
+#     cert and routes /api/* -> api, everything else -> web. CloudFront is the
+#     public HTTPS front; Caddy gives HTTPS on the origin hop.
+#   - No mailhog: mail goes to Amazon SES over SMTP (see .env.prod).
+#   - Postgres, Redis and MinIO keep their data on the mounted /data EBS volume,
+#     so an api/web upgrade never touches the database (DB preserved across
+#     upgrades, transparent to users).
+#   - Everything restarts unless-stopped, and logs are rotated so they cannot
+#     fill the disk (the usual "the box mysteriously died" cause).
+#   - The in-process scheduler runs here (single instance), enabled via .env.prod.
+
+name: hours
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/poc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *default-logging
+
+  api:
+    # Pulled from ECR by tag on the host; the tag is written by deploy.sh.
+    # Build is not used on the box, but is kept so `docker compose build` works locally.
+    image: ${API_IMAGE:?set API_IMAGE to the ECR image, e.g. <acct>.dkr.ecr.il-central-1.amazonaws.com/hours-api:vX.Y.Z}
+    build:
+      context: ./backend
+      target: prod
+    restart: unless-stopped
+    # No published port: only Caddy reaches the api, on the internal network.
+    ports: []
+    environment:
+      # In-process scheduler runs on this single instance (no dedicated runner in the POC).
+      SCHEDULER_ENABLED: "true"
+      # TLS terminates at CloudFront and at Caddy, so pin browsers to HTTPS.
+      HSTS_ENABLED: "true"
+    env_file:
+      - ./infra/poc/.env.prod
+    logging: *default-logging
+
+  web:
+    image: ${WEB_IMAGE:?set WEB_IMAGE to the ECR image, e.g. <acct>.dkr.ecr.il-central-1.amazonaws.com/hours-web:vX.Y.Z}
+    build:
+      context: ./frontend
+      target: prod
+    restart: unless-stopped
+    ports: []
+    logging: *default-logging
+
+  postgres:
+    restart: unless-stopped
+    # Keep the port closed to the world; only the api (same compose network) needs it.
+    ports: []
+    volumes:
+      - /data/postgres:/var/lib/postgresql/data
+    logging: *default-logging
+
+  redis:
+    restart: unless-stopped
+    ports: []
+    volumes:
+      - /data/redis:/data
+    logging: *default-logging
+
+  minio:
+    restart: unless-stopped
+    # Console/API ports stay internal; documents are served to the browser via presigned
+    # URLs through CloudFront + Caddy, not by exposing MinIO directly.
+    ports: []
+    volumes:
+      - /data/minio:/data
+    logging: *default-logging
+
+  # mailhog is intentionally not part of the production overlay; SES handles mail.
+  mailhog:
+    profiles: ["donotstart"]
+
+volumes:
+  caddy_data:
+  caddy_config:
