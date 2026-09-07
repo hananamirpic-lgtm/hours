@@ -26,6 +26,7 @@ const MANAGERS: UserRole[] = ['site_manager', 'accounting'];
 export const CONSOLE_NAV: NavItem[] = [
   { to: '/', labelKey: 'nav.dashboard', roles: MANAGERS },
   { to: '/employees', labelKey: 'nav.employees', roles: MANAGERS },
+  { to: '/staffing-companies', labelKey: 'nav.staffingCompanies', roles: [] },
   { to: '/clients', labelKey: 'nav.clients', roles: [] },
   { to: '/sites', labelKey: 'nav.sites', roles: MANAGERS },
   { to: '/hours', labelKey: 'nav.hours', roles: MANAGERS },

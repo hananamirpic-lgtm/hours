@@ -37,6 +37,7 @@ export interface EmployeeDay {
   employeeId: string;
   employeeName: string;
   employeeNameEn: string;
+  employeeNumber: string | null;
   workDate: string;
   siteGroups: SiteGroup[];
   /** The day's total minutes across every site (Requirement 11.2). */
@@ -74,6 +75,7 @@ export const groupEntries = (entries: TimeEntryListItem[]): EmployeeDay[] => {
         employeeId: entry.employee_id,
         employeeName: entry.employee_name,
         employeeNameEn: entry.employee_name_en,
+        employeeNumber: entry.employee_number,
         workDate: entry.work_date,
         siteGroups: [],
         totalMinutes: 0,

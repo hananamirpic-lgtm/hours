@@ -55,6 +55,7 @@ from app.schemas.site import (
     SiteUpdate,
 )
 from app.services import qr as qr_service
+from app.services import settings as settings_service
 from app.services import site as site_service
 
 router = APIRouter(prefix="/sites", tags=["sites"])
@@ -245,7 +246,11 @@ def download_qr(
     except site_service.SiteError as error:
         raise _raise_for(error) from error
 
-    rendered = qr_service.render_site_qr(site)
+    public_app_url = settings_service.get_str(session, "public_app_url")
+    if not public_app_url.strip():
+        raise api_error(HTTPStatus.BAD_REQUEST, "public_app_url_not_configured")
+
+    rendered = qr_service.render_site_qr(site, public_app_url=public_app_url)
     if site.qr_mode is QrMode.SEPARATE and action is None:
         raise api_error(HTTPStatus.BAD_REQUEST, "qr_action_required")
 

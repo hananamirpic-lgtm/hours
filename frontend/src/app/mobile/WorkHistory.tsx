@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 
 import { formatDate, formatDuration } from '@/lib/format';
 import { useLanguage } from '@/lib/useLanguage';
+import { HindiHelper } from '@/components/HindiHelper';
 
 /** One day of the employee's history: the local work date and the minutes worked across all sites. */
 export interface DayHistory {
@@ -36,9 +37,15 @@ export function WorkHistory({ days }: WorkHistoryProps) {
 
   return (
     <section className="history" aria-label={t('mobile.history')}>
-      <h2 className="history__title">{t('mobile.history')}</h2>
+      <h2 className="history__title">
+        {t('mobile.history')}
+        <HindiHelper textKey="mobile.history" />
+      </h2>
       {days.length === 0 ? (
-        <p className="subtitle">{t('mobile.noHistory')}</p>
+        <p className="subtitle">
+          {t('mobile.noHistory')}
+          <HindiHelper textKey="mobile.noHistory" />
+        </p>
       ) : (
         <ul className="history__list">
           {days.map((day) => (

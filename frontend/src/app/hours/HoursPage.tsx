@@ -330,10 +330,16 @@ export function HoursPage() {
 }
 
 /** An option label: the reader's-language name first, the other in parentheses to disambiguate. */
-const employeeLabel = (language: Language, name: string, nameEn: string): string => {
+const employeeLabel = (
+  language: Language,
+  name: string,
+  nameEn: string,
+  employeeNumber?: string | null,
+): string => {
   const primary = language === 'he' ? name : nameEn;
   const secondary = language === 'he' ? nameEn : name;
-  return primary === secondary ? primary : `${primary} (${secondary})`;
+  const base = primary === secondary ? primary : `${primary} (${secondary})`;
+  return employeeNumber ? `${base} #${employeeNumber}` : base;
 };
 
 interface RowActions {
@@ -358,7 +364,7 @@ function DayCard({
       <header className="hours-day__header">
         <div className="hours-day__who">
           <span className="hours-day__name">
-            {employeeLabel(language, day.employeeName, day.employeeNameEn)}
+            {employeeLabel(language, day.employeeName, day.employeeNameEn, day.employeeNumber)}
           </span>
           <span className="hours-day__date">{formatDate(language, day.workDate)}</span>
           {day.siteCount > 1 ? (

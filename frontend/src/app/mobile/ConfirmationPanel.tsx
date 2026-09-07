@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import type { ScanResult } from '@/api/types';
 import { formatTime } from '@/lib/format';
 import { useLanguage } from '@/lib/useLanguage';
+import { HindiHelper } from '@/components/HindiHelper';
 
 interface ConfirmationPanelProps {
   result: ScanResult;
@@ -37,26 +38,37 @@ export function ConfirmationPanel({ result, siteName, onDone }: ConfirmationPane
 
   return (
     <div className="confirm feedback feedback--success" role="alert">
-      <p className="confirm__headline">{t(`scan.confirm.${result.action}`)}</p>
+      <p className="confirm__headline">
+        {t(`scan.confirm.${result.action}`)}
+        <HindiHelper textKey={`scan.confirm.${result.action}`} />
+      </p>
 
       {siteName ? (
-        <p className="confirm__line">{t('scan.confirm.atSite', { site: siteName })}</p>
+        <p className="confirm__line">
+          {t('scan.confirm.atSite', { site: siteName })}
+          <HindiHelper textKey="scan.confirm.atSite" params={{ site: siteName }} />
+        </p>
       ) : null}
 
       <p className="confirm__line">
         {t('scan.confirm.atTime')} <span className="numeric">{time}</span>
+        <HindiHelper textKey="scan.confirm.atTime" />
       </p>
 
       {result.flags.length > 0 ? (
         <ul className="confirm__flags">
           {result.flags.map((flag) => (
-            <li key={flag}>{t([`scan.flag.${flag}`, 'scan.flag.generic'])}</li>
+            <li key={flag}>
+              {t([`scan.flag.${flag}`, 'scan.flag.generic'])}
+              <HindiHelper textKey={[`scan.flag.${flag}`, 'scan.flag.generic']} />
+            </li>
           ))}
         </ul>
       ) : null}
 
       <button type="button" className="button button--primary button--large" onClick={onDone}>
         {t('common.close')}
+        <HindiHelper textKey="common.close" />
       </button>
     </div>
   );

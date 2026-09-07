@@ -238,9 +238,10 @@ def test_dashboard_reports_current_month_figures(session: Session):
     """Requirement 18.5: the dashboard shows the current month's headline figures.
 
     The brief's two-site day placed in the current month: one employee at 35 ₪ working 4.5 h at Site A
-    (60 ₪) and 5.0 h at Site B (75 ₪). Billing is 270 + 375 = 645, cost 332.50, profit 312.50, and the
-    total hours are 570 minutes. Payroll and billing are computed first, as production runs them, so
-    the by-site totals the dashboard reads exist.
+    (60 ₪) and 5.0 h at Site B (75 ₪), with the 30-minute gap between the two shifts split 15/15 and
+    paid and billed at both sites, so A is worked 4.75 h and B 5.25 h. Billing is 285 + 393.75 =
+    678.75, cost 350.00, profit 328.75, and the total hours are 600 minutes. Payroll and billing are
+    computed first, as production runs them, so the by-site totals the dashboard reads exist.
     """
     today = date.today()
     work_day = _weekday_in_month(today)  # a Sun–Thu day, clear of the Shabbat window
@@ -267,10 +268,10 @@ def test_dashboard_reports_current_month_figures(session: Session):
     assert report.currency == "ILS"
     assert report.active_employees == 1
     assert report.active_sites == 2
-    assert report.total_minutes == 570
-    assert report.total_billing == Decimal("645.00")
-    assert report.total_cost == Decimal("332.50")
-    assert report.total_profit == Decimal("312.50")
+    assert report.total_minutes == 600
+    assert report.total_billing == Decimal("678.75")
+    assert report.total_cost == Decimal("350.00")
+    assert report.total_profit == Decimal("328.75")
 
 
 def test_active_counts_exclude_non_active(session: Session):

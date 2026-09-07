@@ -29,6 +29,7 @@ import {
   mePhotoKeys,
 } from '@/api/mePhoto';
 import { toError } from '@/lib/apiError';
+import { HindiHelper } from '@/components/HindiHelper';
 
 /** The image types a profile photo may be, matching the server's image-only rule. */
 const ALLOWED = ['image/jpeg', 'image/png'];
@@ -82,24 +83,32 @@ export function MobileProfilePage() {
 
   return (
     <section className="mobile-profile">
-      <h1 className="mobile-profile__title">{t('myPhoto.title')}</h1>
+      <h1 className="mobile-profile__title">
+        {t('myPhoto.title')}
+        <HindiHelper textKey="myPhoto.title" />
+      </h1>
 
       <div className="photo-row">
         {photoQuery.isPending ? (
           <div className="photo photo--placeholder" role="img" aria-label={t('myPhoto.current')}>
             {t('common.loading')}
+            <HindiHelper textKey="common.loading" />
           </div>
         ) : photoUrl ? (
           <img className="photo" src={photoUrl} alt={t('myPhoto.current')} />
         ) : (
           <div className="photo photo--placeholder" role="img" aria-label={t('myPhoto.current')}>
             {t('myPhoto.none')}
+            <HindiHelper textKey="myPhoto.none" />
           </div>
         )}
       </div>
 
       <label className="mobile-profile__field">
-        <span className="mobile-profile__label">{t('myPhoto.choose')}</span>
+        <span className="mobile-profile__label">
+          {t('myPhoto.choose')}
+          <HindiHelper textKey="myPhoto.choose" />
+        </span>
         <input
           ref={fileRef}
           type="file"
@@ -111,11 +120,17 @@ export function MobileProfilePage() {
         />
       </label>
 
-      {upload.isPending ? <p className="subtitle">{t('myPhoto.uploading')}</p> : null}
+      {upload.isPending ? (
+        <p className="subtitle">
+          {t('myPhoto.uploading')}
+          <HindiHelper textKey="myPhoto.uploading" />
+        </p>
+      ) : null}
 
       {upload.isSuccess && !upload.isPending ? (
         <p className="feedback" role="status">
           {t('myPhoto.updated')}
+          <HindiHelper textKey="myPhoto.updated" />
         </p>
       ) : null}
 

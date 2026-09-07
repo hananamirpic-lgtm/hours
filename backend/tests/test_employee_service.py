@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.models.change_log import REDACTED, ChangeLog
 from app.models.employee import Employee, EmployeeStatus
+from app.models.staffing_company import StaffingCompany
 from app.schemas.employee import EmployeeCreate, EmployeeRateInput, EmployeeUpdate
 from app.services import employee as employee_service
 from app.services.audit import AuditContext
@@ -47,7 +48,17 @@ def _rate(
     )
 
 
-def _create_payload(passport: str = "A1234567", **overrides) -> EmployeeCreate:
+def _make_staffing_company(session: Session) -> StaffingCompany:
+    """A minimal staffing company to satisfy the mandatory employee link (Requirement 2.1)."""
+    company = StaffingCompany(name="Acme Staffing", contact_person="Dana Levi")
+    session.add(company)
+    session.flush()
+    return company
+
+
+def _create_payload(
+    passport: str = "A1234567", *, staffing_company_id: uuid.UUID | None = None, **overrides
+) -> EmployeeCreate:
     fields: dict[str, object] = {
         "full_name": "Ahmed Khalil",
         "full_name_en": "Ahmed Khalil",
@@ -57,12 +68,16 @@ def _create_payload(passport: str = "A1234567", **overrides) -> EmployeeCreate:
         "emergency_contact_name": "Layla Khalil",
         "emergency_contact_phone": "+972500000001",
         "start_date": date(2025, 1, 1),
+        "staffing_company_id": staffing_company_id or uuid.uuid4(),
     }
     fields.update(overrides)
     return EmployeeCreate(**fields)
 
 
 def _make_employee(session: Session, **overrides) -> Employee:
+    # A staffing company must exist for the mandatory link, unless the caller supplied one.
+    if "staffing_company_id" not in overrides:
+        overrides["staffing_company_id"] = _make_staffing_company(session).id
     employee = employee_service.create_employee(session, _create_payload(**overrides), context=_context())
     session.commit()
     return employee
@@ -113,7 +128,13 @@ def test_a_terminated_employees_passport_can_be_reused(session: Session):
     session.commit()
 
     reused = employee_service.create_employee(
-        session, _create_payload(passport="A1234567", full_name="Someone Else"), context=_context()
+        session,
+        _create_payload(
+            passport="A1234567",
+            full_name="Someone Else",
+            staffing_company_id=first.staffing_company_id,
+        ),
+        context=_context(),
     )
     session.commit()
 

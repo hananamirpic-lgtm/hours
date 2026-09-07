@@ -64,7 +64,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.user import AppLanguage, User
+from app.models.user import AppLanguage, User, UserRole
 from app.services.audit import AuditContext, record_change, record_model_changes, snapshot
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,13 @@ LOCK_DURATION = timedelta(minutes=15)
 #: defence and must not depend on a schema having validated first. The bcrypt 72-byte ceiling is
 #: enforced by `hash_password`, which this maps rather than duplicates.
 MIN_PASSWORD_LENGTH = 8
+
+#: The employee login uses a short numeric PIN rather than the console roles' longer password: an
+#: employee signs in on a phone with a 4-digit number as username, and a matching 4-8 digit PIN is the
+#: usable second half. Enforced only for the employee role; every other role keeps `MIN_PASSWORD_LENGTH`
+#: and the schema's 72-byte ceiling. "Digits" means 0-9 only, so the PIN is numeric like the username.
+EMPLOYEE_PASSWORD_MIN_DIGITS = 4
+EMPLOYEE_PASSWORD_MAX_DIGITS = 8
 
 #: Codes either side of the current 30-second step that are still accepted, absorbing clock skew
 #: between the server and the user's phone. One step each way is the usual setting; more turns a
@@ -155,6 +162,17 @@ class NewPasswordTooShort(AuthError):
     check lives here too because the service is called directly in tests and must not trust a caller
     to have validated. Reuses the `validation_error` code the front end already translates rather
     than adding a message for a case the form prevents.
+    """
+
+    code = "validation_error"
+
+
+class NewPasswordInvalid(AuthError):
+    """The new password does not meet the rule for the caller's role.
+
+    For an employee the password must be 4-8 digits (0-9 only); the check lives here as well as in the
+    schema because the service is called directly in tests and must not trust a caller to have
+    validated. Reuses the `validation_error` code the front end already translates.
     """
 
     code = "validation_error"
@@ -511,6 +529,23 @@ def set_language(session: Session, *, user: User, language: AppLanguage, context
     return user
 
 
+def _validate_new_password(user: User, new_password: str) -> None:
+    """Enforce the password rule for the caller's role, raising a distinct refusal on failure.
+
+    An employee login uses a numeric PIN of `EMPLOYEE_PASSWORD_MIN_DIGITS`-`EMPLOYEE_PASSWORD_MAX_DIGITS`
+    digits (0-9 only), matching its numeric username; every other role keeps the console minimum of
+    `MIN_PASSWORD_LENGTH` (the bcrypt 72-byte ceiling is the schema's and `hash_password`'s concern).
+    """
+    if user.role is UserRole.EMPLOYEE:
+        if not new_password.isdigit():
+            raise NewPasswordInvalid
+        if not (EMPLOYEE_PASSWORD_MIN_DIGITS <= len(new_password) <= EMPLOYEE_PASSWORD_MAX_DIGITS):
+            raise NewPasswordInvalid
+        return
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        raise NewPasswordTooShort
+
+
 def change_password(
     session: Session,
     *,
@@ -538,8 +573,7 @@ def change_password(
     """
     if not verify_password(current_password, user.password_hash):
         raise CurrentPasswordIncorrect
-    if len(new_password) < MIN_PASSWORD_LENGTH:
-        raise NewPasswordTooShort
+    _validate_new_password(user, new_password)
     if verify_password(new_password, user.password_hash):
         raise NewPasswordMustDiffer
 

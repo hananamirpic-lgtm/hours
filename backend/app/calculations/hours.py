@@ -156,6 +156,40 @@ class _MinuteRun:
     is_holiday: bool
 
 
+#: The maximum gap between one shift's check-out and the next shift's check-in, on the same day, that
+#: is paid as travel time and split evenly between the two shifts (Requirement 4.12). A fixed business
+#: rule, not a tunable setting, so it lives here as a constant. A gap over this, or a non-positive gap
+#: (which includes a same-instant move-sites transition), earns no travel time.
+TRAVEL_TIME_CAP_MINUTES = 30
+TRAVEL_TIME_CAP_SECONDS = TRAVEL_TIME_CAP_MINUTES * 60
+
+
+def _travel_minutes_by_entry(ordered: list[DayEntry]) -> dict[object, int]:
+    """Whole travel minutes to add to each entry, from qualifying gaps between consecutive shifts.
+
+    The entries are already sorted by check-in. For each consecutive pair, the gap is
+    ``next.check_in − prev.check_out`` in whole seconds. When ``0 < gap <= cap`` it is split so no
+    time is lost: the previous shift gets ``gap // 2`` seconds and the next gets the remainder,
+    ``gap − gap // 2``, the two summing to the full gap (Requirement 4.3, 4.4). A gap over the cap
+    adds nothing (Requirement 4.5); a non-positive gap adds nothing, which naturally excludes a
+    same-instant transition whose gap is exactly zero (Requirement 4.2, 4.6).
+
+    Seconds are accumulated per entry and converted to whole minutes once at the end, so a middle
+    shift that receives seconds from both its neighbours rounds its combined total rather than each
+    half independently (Requirement 4.7). Travel is paid time but not premium, so the caller books it
+    as ordinary minutes; this function only decides how many.
+    """
+    seconds_by_key: dict[object, int] = {}
+    for prev, nxt in zip(ordered, ordered[1:], strict=False):
+        gap = int((nxt.check_in_at - prev.check_out_at).total_seconds())
+        if gap <= 0 or gap > TRAVEL_TIME_CAP_SECONDS:
+            continue
+        prev_half = gap // 2
+        seconds_by_key[prev.key] = seconds_by_key.get(prev.key, 0) + prev_half
+        seconds_by_key[nxt.key] = seconds_by_key.get(nxt.key, 0) + (gap - prev_half)
+    return {key: seconds // 60 for key, seconds in seconds_by_key.items()}
+
+
 def classify_day(
     entries: Iterable[DayEntry],
     settings: ClassificationSettings,
@@ -175,9 +209,16 @@ def classify_day(
     # Step 2: reduce each entry, in order, to a run of whole minutes tagged premium/ordinary. Each run
     # is a maximal stretch of minutes of one kind within one entry, so a Friday shift that crosses
     # 16:00 becomes an ordinary run followed by a Shabbat run, both keyed to the same entry.
+    travel = _travel_minutes_by_entry(ordered)
     runs: list[_MinuteRun] = []
     for entry in ordered:
         runs.extend(_split_entry_into_runs(entry, settings))
+        # Travel time earned by the gaps touching this shift is booked as ordinary (never premium)
+        # minutes attributed to the shift, appended in its chronological position so it fills the
+        # regular bucket and spills to overtime on the same basis as clocked minutes (Requirement 4.9).
+        added = travel.get(entry.key, 0)
+        if added:
+            runs.append(_MinuteRun(key=entry.key, minutes=added, is_premium=False, is_holiday=False))
 
     # Steps 3 and 4: walk the runs once, in chronological order, accumulating the four buckets per
     # entry. Only ordinary minutes count toward the threshold; premium minutes are booked to their

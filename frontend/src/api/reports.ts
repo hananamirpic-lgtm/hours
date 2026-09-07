@@ -22,6 +22,7 @@ import type {
   EmployeeReport,
   MissingReportsResult,
   ProfitabilityReport,
+  StaffingCompanyReport,
 } from './types';
 
 import { apiFetch } from './client';
@@ -48,12 +49,20 @@ export interface EmployeeReportParams {
   employeeId?: string | null;
 }
 
+export interface StaffingCompanyReportParams {
+  year: number;
+  month: number;
+  staffingCompanyId: string;
+}
+
 export const reportKeys = {
   all: ['reports'] as const,
   dashboard: () => ['reports', 'dashboard'] as const,
   profitability: (params: ProfitabilityParams) => ['reports', 'profitability', params] as const,
   missingReports: (params: MissingReportsParams) => ['reports', 'missing-reports', params] as const,
   byEmployee: (params: EmployeeReportParams) => ['reports', 'by-employee', params] as const,
+  byStaffingCompany: (params: StaffingCompanyReportParams) =>
+    ['reports', 'by-staffing-company', params] as const,
 };
 
 /** The administrator home dashboard for the current month (Requirement 18.5, 18.6). */
@@ -110,4 +119,21 @@ export const readEmployeeReport = (params: EmployeeReportParams): Promise<Employ
     search.set('employee_id', params.employeeId);
   }
   return apiFetch<EmployeeReport>(`/reports/by-employee?${search.toString()}`);
+};
+
+
+/**
+ * Total hours and payment for one staffing company for a month (GET /api/reports/by-staffing-company).
+ * Payment is `null` when the company has no hourly rate set; the screen renders that as unavailable.
+ * Finance data — administrators and accounting only.
+ */
+export const readStaffingCompanyReport = (
+  params: StaffingCompanyReportParams,
+): Promise<StaffingCompanyReport> => {
+  const search = new URLSearchParams({
+    year: String(params.year),
+    month: String(params.month),
+    staffing_company_id: params.staffingCompanyId,
+  });
+  return apiFetch<StaffingCompanyReport>(`/reports/by-staffing-company?${search.toString()}`);
 };

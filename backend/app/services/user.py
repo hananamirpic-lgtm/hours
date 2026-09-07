@@ -84,6 +84,17 @@ class SiteScopeNotApplicable(UserError):
     code = "site_scope_not_applicable"
 
 
+class NotEmployeeLogin(UserError):
+    """A password-reset was aimed at a login whose role is not employee (Requirement 8.5).
+
+    Only an employee login is reset to the shared initial password from the Employees tab; resetting
+    an administrator, site manager or accounting login to "1234" would be a security regression, so
+    the service refuses it and the router maps the code to a 400.
+    """
+
+    code = "not_employee_login"
+
+
 # --------------------------------------------------------------------------- reads
 
 
@@ -159,6 +170,10 @@ def _find_username_holder(
 
 # --------------------------------------------------------------------------- create
 
+#: The initial password for an auto-provisioned employee login; the employee is forced to change it
+#: on first login (`must_change_password`). Requirement 3.3.
+INITIAL_EMPLOYEE_PASSWORD = "1234"
+
 
 def create_user(session: Session, payload: UserCreate, *, context: AuditContext) -> User:
     """Create a login and, for a site manager, its site scope (Requirement 1, 2.1, 2.3).
@@ -197,6 +212,117 @@ def create_user(session: Session, payload: UserCreate, *, context: AuditContext)
     if payload.role is UserRole.SITE_MANAGER and payload.site_ids:
         _write_site_scope(session, user.id, payload.site_ids, context=context)
 
+    return user
+
+
+def create_employee_login(
+    session: Session, *, number: str, employee_id: uuid.UUID, context: AuditContext
+) -> User:
+    """Auto-provision the employee-role login for a new employee (Requirement 3.1, 3.3, 3.4).
+
+    The login's `username` *is* the employee number, its password is the initial
+    `INITIAL_EMPLOYEE_PASSWORD` hashed by `app.core.security`, its role is `employee`, and
+    `must_change_password` is true so the person forced to pick their own password on first login
+    (the same forced-change gate `create_user` relies on for a non-admin). Username uniqueness is
+    checked first and raises the reused `DuplicateUsername` (Requirement 3.2) so a pre-existing
+    login is left untouched; the database's `uq_users_username` is the backstop for the race between
+    the check and the flush. The creation is audited exactly as `create_user` audits its own.
+
+    Like the rest of the service layer this never commits and never raises an HTTP error — the
+    caller (`app.services.employee.create_employee`, inside the router-owned transaction) decides the
+    fate of the login and its audit rows together (Requirement 7.2).
+    """
+    existing = _find_username_holder(session, number)
+    if existing is not None:
+        raise DuplicateUsername(existing)
+
+    user = User(
+        username=number,
+        password_hash=hash_password(INITIAL_EMPLOYEE_PASSWORD),
+        role=UserRole.EMPLOYEE,
+        employee_id=employee_id,
+        is_active=True,
+        must_change_password=True,
+    )
+    session.add(user)
+    # Flush so the row has an id the audit rows can reference — mirrors `create_user`.
+    session.flush()
+
+    _audit_creation(session, user, context=context)
+
+    return user
+
+
+def find_login_for_employee(session: Session, employee_id: uuid.UUID) -> User | None:
+    """The `User` login linked to an employee, if any (its `employee_id` matches). None otherwise.
+
+    A read the Employees tab uses to find which login an admin action (a password reset) applies to.
+    An employee has at most one linked login (`uq_users_employee_id`), so `.first()` is exact.
+    """
+    return session.scalars(select(User).where(User.employee_id == employee_id)).first()
+
+
+def disable_employee_login(
+    session: Session, employee_id: uuid.UUID, *, context: AuditContext
+) -> User | None:
+    """Disable the login linked to a terminated employee (Requirement 4.4, 4.5).
+
+    Finds the `User` whose `employee_id` matches. If there is none, or it is already inactive, this is
+    a no-op and returns without change, so re-terminating an employee is harmless. Otherwise it sets
+    `is_active` false and bumps `token_version` in one act — the same pair `deactivate` uses — so any
+    token already issued for that login fails on its next validation (Requirement 20.8, applied to a
+    termination). Never commits; the caller (`app.services.employee.change_status`) owns the
+    transaction and the audit rows together (Requirement 7.2).
+    """
+    user = session.scalars(select(User).where(User.employee_id == employee_id)).first()
+    if user is None or not user.is_active:
+        return user
+
+    before = snapshot(user, fields=["is_active"])
+    user.is_active = False
+    user.token_version += 1
+    session.flush()
+    record_model_changes(
+        session, user, before, context=context, reason="employee_terminated", fields=["is_active"]
+    )
+    return user
+
+
+def reset_employee_login_password(
+    session: Session, user_id: uuid.UUID, *, context: AuditContext
+) -> User:
+    """Reset an employee login to the initial password, admin-initiated (Requirement 8.1-8.3, 8.5).
+
+    The Employees-tab action for an employee who has forgotten their password. Refuses a target whose
+    role is not `employee` with `NotEmployeeLogin` (Requirement 8.5) — the shared "1234" belongs only
+    to an employee login. Otherwise the password becomes `INITIAL_EMPLOYEE_PASSWORD` hashed,
+    `must_change_password` is set true so the person is forced to pick their own on the next login,
+    and `token_version` is bumped by one so any session already open ends at once. The reset is
+    audited under `password_reset`, matching how `update_user` names a reset. Never commits; the
+    router owns the transaction and its audit rows.
+    """
+    user = get_user(session, user_id)
+    if user.role is not UserRole.EMPLOYEE:
+        raise NotEmployeeLogin
+
+    before = snapshot(user)
+    user.password_hash = hash_password(INITIAL_EMPLOYEE_PASSWORD)
+    user.must_change_password = True
+    # End any session established under the forgotten password, the same immediacy a deactivation or
+    # an admin reset gives (Requirement 8.3, 20.8 applied to a reset).
+    user.token_version += 1
+    session.flush()
+    record_model_changes(session, user, before, context=context)
+    record_change(
+        session,
+        entity_type="users",
+        entity_id=user.id,
+        field="password",
+        old_value=None,
+        new_value="reset",
+        context=context,
+        reason="password_reset",
+    )
     return user
 
 

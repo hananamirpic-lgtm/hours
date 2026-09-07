@@ -225,11 +225,10 @@ def test_a_flat_month_of_212_hours_at_35_totals_7420(payroll_client, sign_in, se
 
 
 def test_the_briefs_two_site_day_allocates_157_50_and_175_00(payroll_client, sign_in, session: Session):
-    """Requirement 16.8: 4.5 h at Site A and 5.0 h at Site B at 35 ₪ split 157.50 / 175.00.
-
-    The rate card is flat (regular = overtime = 35), so the day's 9.5 h — which exceeds the 8-hour
-    threshold — costs the same whether the last 1.5 h is regular or overtime, and the per-site costs
-    are exactly hours × 35: Site A 157.50, Site B 175.00, summing to the worked pay 332.50.
+    """Requirement 16.8 with the travel-time split: the 11:30->12:00 gap is exactly 30 minutes, at the
+    travel cap, so it is paid and split 15/15 between the two sites. Site A becomes 4.75 h and Site B
+    5.25 h; at the flat 35 ₪ rate that is 166.25 / 183.75, summing to the worked pay 350.00 (the day's
+    9.5 clocked hours plus the half-hour of travel).
     """
     headers, _ = sign_in(UserRole.ADMIN)
     employee = _make_employee(session)
@@ -247,11 +246,11 @@ def test_the_briefs_two_site_day_allocates_157_50_and_175_00(payroll_client, sig
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert Decimal(body["total_pay"]) == Decimal("332.50")
+    assert Decimal(body["total_pay"]) == Decimal("350.00")
     by_site = {alloc["site_id"]: Decimal(alloc["cost"]) for alloc in body["allocations"]}
-    assert by_site[str(site_a.id)] == Decimal("157.50")
-    assert by_site[str(site_b.id)] == Decimal("175.00")
-    assert sum(by_site.values()) == Decimal("332.50")
+    assert by_site[str(site_a.id)] == Decimal("166.25")
+    assert by_site[str(site_b.id)] == Decimal("183.75")
+    assert sum(by_site.values()) == Decimal("350.00")
 
 
 def test_allocations_sum_exactly_to_the_worked_pay(payroll_client, sign_in, session: Session):

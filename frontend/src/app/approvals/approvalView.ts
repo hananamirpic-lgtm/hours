@@ -38,6 +38,7 @@ export interface SiteEmployeeGroup extends GroupBucket {
   employeeId: string;
   employeeName: string;
   employeeNameEn: string;
+  employeeNumber: string | null;
 }
 
 /** One site: its employees' entries, and the site-wide tally. */
@@ -52,6 +53,7 @@ export interface EmployeeApprovalGroup extends GroupBucket {
   employeeId: string;
   employeeName: string;
   employeeNameEn: string;
+  employeeNumber: string | null;
 }
 
 const emptyTally = (): StatusTally => ({
@@ -103,6 +105,7 @@ export const groupBySite = (entries: TimeEntryListItem[]): SiteApprovalGroup[] =
         employeeId: entry.employee_id,
         employeeName: entry.employee_name,
         employeeNameEn: entry.employee_name_en,
+        employeeNumber: entry.employee_number,
         entries: [],
         entryIds: [],
         tally: emptyTally(),
@@ -129,6 +132,7 @@ export const groupByEmployee = (entries: TimeEntryListItem[]): EmployeeApprovalG
         employeeId: entry.employee_id,
         employeeName: entry.employee_name,
         employeeNameEn: entry.employee_name_en,
+        employeeNumber: entry.employee_number,
         entries: [],
         entryIds: [],
         tally: emptyTally(),

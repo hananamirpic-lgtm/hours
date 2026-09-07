@@ -931,6 +931,73 @@ def test_a_too_short_new_password_is_refused(session: Session, make_user):
         )
 
 
+def test_an_employee_may_set_a_four_to_eight_digit_pin(session: Session, make_user):
+    """An employee's password is a 4-8 digit numeric PIN, matching its numeric username."""
+    from app.core.security import verify_password
+
+    for pin in ("1357", "12345678"):
+        user = make_user(role=UserRole.EMPLOYEE, must_change_password=True)
+        auth_service.change_password(
+            session,
+            user=user,
+            current_password=DEFAULT_PASSWORD,
+            new_password=pin,
+            context=CONTEXT,
+        )
+        assert user.must_change_password is False
+        assert verify_password(pin, user.password_hash)
+
+
+def test_an_employee_pin_shorter_than_four_digits_is_refused(session: Session, make_user):
+    user = make_user(role=UserRole.EMPLOYEE)
+    with pytest.raises(auth_service.NewPasswordInvalid):
+        auth_service.change_password(
+            session,
+            user=user,
+            current_password=DEFAULT_PASSWORD,
+            new_password="123",
+            context=CONTEXT,
+        )
+
+
+def test_an_employee_pin_longer_than_eight_digits_is_refused(session: Session, make_user):
+    user = make_user(role=UserRole.EMPLOYEE)
+    with pytest.raises(auth_service.NewPasswordInvalid):
+        auth_service.change_password(
+            session,
+            user=user,
+            current_password=DEFAULT_PASSWORD,
+            new_password="123456789",
+            context=CONTEXT,
+        )
+
+
+def test_an_employee_pin_with_non_digits_is_refused(session: Session, make_user):
+    """"Digits" means 0-9 only, so a 4-8 character password with a letter is refused."""
+    user = make_user(role=UserRole.EMPLOYEE)
+    with pytest.raises(auth_service.NewPasswordInvalid):
+        auth_service.change_password(
+            session,
+            user=user,
+            current_password=DEFAULT_PASSWORD,
+            new_password="12ab",
+            context=CONTEXT,
+        )
+
+
+def test_a_console_role_still_requires_eight_characters(session: Session, make_user):
+    """The employee PIN rule does not weaken the console roles: a 4-digit password is still refused."""
+    user = make_user(role=UserRole.ACCOUNTING)
+    with pytest.raises(auth_service.NewPasswordTooShort):
+        auth_service.change_password(
+            session,
+            user=user,
+            current_password=DEFAULT_PASSWORD,
+            new_password="1234",
+            context=CONTEXT,
+        )
+
+
 def test_changing_the_password_is_audited(session: Session, make_user):
     user = make_user(role=UserRole.SITE_MANAGER)
     auth_service.change_password(

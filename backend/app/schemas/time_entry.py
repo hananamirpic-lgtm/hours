@@ -70,6 +70,9 @@ class TimeEntryListItem(BaseModel):
     #: (Requirement 21.5). Names are not money fields, so they are served to every hours reader.
     employee_name: str
     employee_name_en: str
+    #: The employee's 4-digit login number, shown alongside the name (Requirement 6). Null for a
+    #: record that predates the number. Not a money field, so it is served to every hours reader.
+    employee_number: str | None = None
 
     site_id: uuid.UUID
     site_name: str

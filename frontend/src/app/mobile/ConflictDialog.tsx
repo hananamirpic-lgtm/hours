@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import type { ConflictState } from './scanFlow';
 import { formatTime } from '@/lib/format';
 import { useLanguage } from '@/lib/useLanguage';
+import { HindiHelper } from '@/components/HindiHelper';
 
 interface ConflictDialogProps {
   conflict: ConflictState;
@@ -38,23 +39,33 @@ export function ConflictDialog({ conflict, busy, onTransition, onEndAndMove, onC
 
   return (
     <div className="conflict feedback feedback--error" role="alertdialog" aria-label={t('scan.conflict.title')}>
-      <p className="conflict__headline">{t('scan.conflict.title')}</p>
+      <p className="conflict__headline">
+        {t('scan.conflict.title')}
+        <HindiHelper textKey="scan.conflict.title" />
+      </p>
       <p className="conflict__line">
         {conflict.since
           ? t('scan.conflict.openSince', { site: conflict.siteName })
           : t('scan.conflict.open', { site: conflict.siteName })}
         {conflict.since ? <span className="numeric"> {formatTime(language, conflict.since)}</span> : null}
+        <HindiHelper
+          textKey={conflict.since ? 'scan.conflict.openSince' : 'scan.conflict.open'}
+          params={{ site: conflict.siteName }}
+        />
       </p>
 
       <div className="conflict__actions">
         <button type="button" className="button button--primary button--large" onClick={onTransition} disabled={busy}>
           {t('scan.conflict.checkOutAndMove', { site: conflict.siteName })}
+          <HindiHelper textKey="scan.conflict.checkOutAndMove" params={{ site: conflict.siteName }} />
         </button>
         <button type="button" className="button button--large" onClick={onEndAndMove} disabled={busy}>
           {t('scan.conflict.endAndMove')}
+          <HindiHelper textKey="scan.conflict.endAndMove" />
         </button>
         <button type="button" className="button button--large" onClick={onCancel} disabled={busy}>
           {t('common.cancel')}
+          <HindiHelper textKey="common.cancel" />
         </button>
       </div>
     </div>

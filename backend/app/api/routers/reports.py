@@ -25,11 +25,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import DbSession, FinanceCaller, HoursReaderCaller
+from app.api.deps import DbSession, FinanceCaller, HoursReaderCaller, api_error
 from app.schemas.reports import (
     ClientReportResponse,
     ClientReportRowResponse,
@@ -44,6 +45,7 @@ from app.schemas.reports import (
     ReportFiltersApplied,
     SiteReportResponse,
     SiteReportRowResponse,
+    StaffingCompanyReportResponse,
 )
 from app.services import reports as reports_service
 
@@ -64,6 +66,7 @@ def _filters_applied(filters: reports_service.ReportFilters) -> ReportFiltersApp
         site_id=filters.site_id,
         client_id=filters.client_id,
         project=filters.project,
+        staffing_company_id=filters.staffing_company_id,
     )
 
 
@@ -98,6 +101,7 @@ def report_by_employee(
             employee_id=row.employee_id,
             employee_name=row.employee_name,
             employee_name_en=row.employee_name_en,
+            employee_number=row.employee_number,
             regular_minutes=row.regular_minutes,
             overtime_minutes=row.overtime_minutes,
             shabbat_minutes=row.shabbat_minutes,
@@ -261,6 +265,51 @@ def report_profitability(
     )
 
 
+# --------------------------------------------------------------------------- by staffing company (Req 4)
+
+
+@router.get(
+    "/by-staffing-company",
+    response_model=StaffingCompanyReportResponse,
+    summary="Total hours and payment for one staffing company",
+    description=(
+        "Total worked hours for a month across the employees currently linked to the staffing "
+        "company, and the payment computed from the company's single flat hourly rate (Requirement "
+        "4). When the company has no rate, payment is null — the front end shows it as unavailable "
+        "rather than zero. Administrators and accounting only, since payment is finance data "
+        "(Requirement 2.5). Figures are in ILS (Requirement 18.7)."
+    ),
+    responses={HTTPStatus.NOT_FOUND: {"description": "No staffing company with that id"}},
+)
+def report_by_staffing_company(
+    caller: FinanceCaller,  # noqa: ARG001 — the type is the guard
+    session: DbSession,
+    year: _YEAR,
+    month: _MONTH,
+    staffing_company_id: uuid.UUID,
+) -> StaffingCompanyReportResponse:
+    from app.services.staffing_company import StaffingCompanyNotFound
+
+    filters = reports_service.ReportFilters(
+        year=year, month=month, staffing_company_id=staffing_company_id
+    )
+    try:
+        report = reports_service.report_by_staffing_company(session, filters=filters)
+    except StaffingCompanyNotFound as error:
+        raise api_error(HTTPStatus.NOT_FOUND, error.code) from error
+    return StaffingCompanyReportResponse(
+        year=year,
+        month=month,
+        filters=_filters_applied(filters),
+        currency=reports_service.CURRENCY,
+        company_id=report.company_id,
+        company_name=report.company_name,
+        hourly_rate=report.hourly_rate,
+        total_minutes=report.total_minutes,
+        total_payment=report.total_payment,
+    )
+
+
 # --------------------------------------------------------------------------- dashboard (18.5, 18.6)
 
 
@@ -344,6 +393,7 @@ def report_missing_reports(
                 employee_id=finding.employee_id,
                 employee_name=finding.employee_name,
                 employee_name_en=finding.employee_name_en,
+                employee_number=finding.employee_number,
                 work_date=finding.work_date,
                 site_id=finding.site_id,
                 site_name=finding.site_name,

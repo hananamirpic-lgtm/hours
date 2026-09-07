@@ -25,6 +25,7 @@ import { PayrollPage } from '@/app/payroll/PayrollPage';
 import { PeriodsPage } from '@/app/periods/PeriodsPage';
 import { ReportsPage } from '@/app/reports/ReportsPage';
 import { SitesPage } from '@/app/sites/SitesPage';
+import { StaffingCompaniesPage } from '@/app/staffingCompanies/StaffingCompaniesPage';
 import { UsersPage } from '@/app/users/UsersPage';
 import { TwoFactorGate } from '@/app/users/TwoFactorGate';
 import { ChangePasswordGate } from '@/app/auth/ChangePasswordGate';
@@ -82,6 +83,7 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="staffing-companies" element={<StaffingCompaniesPage />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="sites" element={<SitesPage />} />
         <Route path="hours" element={<HoursPage />} />

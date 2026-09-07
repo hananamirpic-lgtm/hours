@@ -42,6 +42,21 @@ class ScanRequest(BaseModel):
     client_nonce: str | None = Field(default=None, max_length=200)
 
 
+class SelfCheckInRequest(BaseModel):
+    """The body of `POST /api/scans/self-check-in`: the id of the site to open a no-QR shift at.
+
+    The employee has no QR to scan (the camera is broken, or no code is reachable), so they *pick* a
+    site instead. Only the site id is accepted; like `ScanRequest` there is no timestamp — the server
+    time is authoritative (Requirement 9.2) — and no location field, and `extra="forbid"` turns an
+    unknown field into a 422 rather than a silent drop (Requirement 9.6). The site must be one the
+    employee is assigned to, which the service enforces; the schema only shapes the input.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    site_id: uuid.UUID
+
+
 class ScanAction(enum.StrEnum):
     """What the server did with a scan, reported back so the client can confirm it.
 
@@ -130,3 +145,28 @@ class WorkHistoryResponse(BaseModel):
     """
 
     days: list[WorkHistoryDay] = Field(default_factory=list)
+
+
+class AssignedSite(BaseModel):
+    """One site the caller may open a no-QR shift at, as `GET /api/scans/my-sites` returns each.
+
+    Deliberately spare: an id the self-check-in request sends back and a name to show in the picker.
+    No billing rate, no client, no status — the employee is choosing where they are working, not
+    administering the site. Serialised straight from the service's `AssignedSite`.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class MySitesResponse(BaseModel):
+    """The body of `GET /api/scans/my-sites`: the caller's own assigned sites for the picker.
+
+    A wrapper around the list, matching the other scan responses. An empty `sites` means the caller
+    is assigned to no active site — or is a login not linked to an employee — and the self-check-in
+    picker shows that there is nowhere to check in without a QR.
+    """
+
+    sites: list[AssignedSite] = Field(default_factory=list)

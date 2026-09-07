@@ -64,7 +64,7 @@ from app.core.config import get_settings
 from app.core.qr_token import InvalidToken, SiteToken, parse
 from app.models.employee import Employee
 from app.models.period_lock import PeriodLock
-from app.models.site import AssignmentMode, EmployeeSite, Site
+from app.models.site import AssignmentMode, EmployeeSite, Site, SiteStatus
 from app.models.time_entry import TimeEntry, TimeEntrySource, TimeEntryStatus
 from app.schemas.scan import ScanAction, ScanRequest
 from app.services import settings as settings_service
@@ -77,6 +77,13 @@ FLAG_UNASSIGNED_SITE = "unassigned_site"
 #: forgotten check-out inflates a day silently; the flag surfaces it for a manager to correct rather
 #: than paying or billing the inflated hours (Requirement 10.5, design "Implausible-duration flag").
 FLAG_IMPLAUSIBLE_DURATION = "implausible_duration"
+
+#: The anomaly flag an employee self check-in (no QR) carries. A shift opened without scanning a site
+#: code has no presence proof — the employee simply asserted where they are — so it is recorded but
+#: flagged for a manager to approve by hand, and it never auto-approves on check-out (that path is
+#: reserved for clean QR scans). This is the deliberate trade for letting an employee open a shift
+#: when the camera is broken or no code is reachable.
+FLAG_SELF_REPORTED = "self_reported"
 
 #: Default duplicate window when the setting is absent, matching the seeded default (Requirement 9.3).
 _DEFAULT_DUPLICATE_WINDOW_SECONDS = 60
@@ -139,6 +146,18 @@ class UnassignedSiteRejected(ScanError):
     """A strict-mode site refused a check-in by an employee not assigned to it (Requirement 7.4)."""
 
     code = "unassigned_site_rejected"
+
+
+class SelfCheckInSiteNotAssigned(ScanError):
+    """An employee tried to self-check-in (no QR) to a site they are not assigned to.
+
+    Stricter than a QR scan's open-mode allowance, on purpose: a QR scan proves presence at the site
+    regardless of assignment, but a self check-in has no such proof, so the assignment *is* the
+    presence signal — an employee may only open a no-QR shift at a site they are expected to work.
+    A site they are not assigned to is refused outright rather than flagged.
+    """
+
+    code = "self_check_in_site_not_assigned"
 
 
 class OpenShiftElsewhere(ScanError):
@@ -645,11 +664,15 @@ def _check_out(
     entry: TimeEntry,
     moment: datetime,
     context: AuditContext,
+    auto_approve: bool = True,
 ) -> ScanOutcome:
     """Close an open entry: write the check-out time and the total, flagging an implausible duration.
 
     The single write for a check-out, shared by the unified scan (a scan at the site of the open
-    shift) and the explicit button (`POST /api/scans/checkout`). The steps:
+    shift) and the explicit button (`POST /api/scans/checkout`). `auto_approve` defaults to True so a
+    normal check-out auto-approves a clean QR-scanned shift (see the trust-model comment below); the
+    system-transition close passes it False, because a transitioned-away entry represents an
+    interrupted shift a manager may want to review and must stay DRAFT. The steps:
 
     * Reject a check-out that is not strictly after its check-in (Requirement 10.3), matching the
       database `check_out_after_check_in` constraint but failing with a translatable code first.
@@ -696,6 +719,32 @@ def _check_out(
         # test engine.
         entry.flags = [*entry.flags, FLAG_IMPLAUSIBLE_DURATION]
 
+    # Trust model for auto-approval (Requirement 15.1, 15.2): a *clean* QR scan is proof of presence.
+    # The employee physically presented a valid, current site code to open the shift and closed it
+    # normally, so the completed shift is trusted and approved automatically — sparing a manager from
+    # rubber-stamping every routine day. Anything anomalous is deliberately excluded and left DRAFT
+    # for review: a check-in at a site the employee is not assigned to (`unassigned_site`), a shift
+    # long enough to be implausible (`implausible_duration`, just set above), or any other flag the
+    # entry carries. Only a `qr_scan` source qualifies — a self-reported or manually-entered shift
+    # has no presence proof and must still be approved by hand. Only a still-DRAFT entry is touched,
+    # so a shift a manager already advanced (or that is already Approved/Locked) is left alone.
+    #
+    # The status is set here, before `record_model_changes` snapshots the diff against `before`
+    # (taken at the top of this function), so the auto-approval is captured in the audit trail as a
+    # status change. It is set directly on the entry rather than through `period.validate_transition`
+    # on purpose: DRAFT → APPROVED is a two-rung jump the ladder rejects, and the presence proof is
+    # the authority for skipping the intermediate Review rung on a clean scan. Only a *normal*
+    # check-out auto-approves: the system-transition close passes `auto_approve=False`, because a
+    # transitioned-away entry represents an interrupted shift a manager may want to review, so those
+    # stay DRAFT even though their source is still `qr_scan` at this point in the close.
+    if (
+        auto_approve
+        and entry.source is TimeEntrySource.QR_SCAN
+        and not entry.flags
+        and entry.status is TimeEntryStatus.DRAFT
+    ):
+        entry.status = TimeEntryStatus.APPROVED
+
     # Completing an entry gives it a range the exclusion constraint checks against every other
     # completed entry for this employee; a close that would overlap one is refused naming it
     # (Requirement 11.7). This is the normal check-out's backstop, and the seam of a transition (a
@@ -734,6 +783,99 @@ def check_out(
         raise NoOpenShift("no open shift to check out of")
 
     return _check_out(session, entry=open_entry, moment=moment, context=context)
+
+
+# --------------------------------------------------------------------------- self check-in (no QR)
+
+
+def self_check_in(
+    session: Session,
+    *,
+    employee_id: uuid.UUID | None,
+    site_id: uuid.UUID,
+    context: AuditContext,
+    now: datetime | None = None,
+) -> ScanOutcome:
+    """Open a shift the employee reports themselves, with no QR, for `POST /api/scans/self-check-in`.
+
+    The fallback when there is no QR to scan — the camera is broken, or no code is reachable — so the
+    employee opens a shift by *picking* a site rather than scanning it. Because nothing proves the
+    employee is actually at the site (a QR scan is that proof; a self-report is not), the entry is
+    recorded as `manual`, marked `is_manual`, flagged `self_reported`, and left DRAFT: it must be
+    approved by a manager by hand, and it never auto-approves on check-out (the auto-approve in
+    `_check_out` is scoped to `qr_scan`, so a `manual` entry is excluded there by construction).
+
+    The guards mirror a scan check-in, with one deliberately *stricter* rule. Employee active, site
+    active, period not open-locked — all as a scan enforces. But assignment: a scan at an open-mode
+    site admits an unassigned employee (flagging it); a self check-in does **not**. Without a QR the
+    assignment is the only presence signal we have, so the employee may only self-check-in to a site
+    they are assigned to; an unassigned site is refused with `SelfCheckInSiteNotAssigned` rather than
+    flagged. A login not linked to an employee cannot self-check-in.
+
+    Only one shift may be open at a time. If the employee already has an open shift, the request is
+    refused: an open shift elsewhere raises `OpenShiftElsewhere` naming that site, so the mobile app
+    can offer the same transition-or-cancel choice a scan conflict does. (This reuses the scan
+    conflict rather than inventing a second "already open" error — the simpler correct behaviour, and
+    the one the front end already knows how to handle.)
+    """
+    if employee_id is None:
+        raise NoEmployeeForCaller("caller is not linked to an employee")
+
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
+
+    # Lock the employee row first, serialising a self-check-in racing a scan by the same person, the
+    # same way `resolve_scan` does before it reads the open entry.
+    employee = resolve_employee_locked(session, employee_id)
+
+    site = session.get(Site, site_id)
+    if site is None:
+        # No QR to resolve, so a missing site is the plain "site not active" refusal a scan would
+        # give for a site that cannot take a check-in — there is nothing to open a shift against.
+        raise SiteNotActive(f"site {site_id} does not exist")
+
+    # One shift at a time: refuse if the employee already has an open shift, naming the other site so
+    # the mobile app can offer transition or cancel, exactly as a scan conflict does (Requirement
+    # 11.4).
+    open_entry = open_entry_for(session, employee.id)
+    if open_entry is not None:
+        other_site = session.get(Site, open_entry.site_id)
+        raise OpenShiftElsewhere(open_entry, other_site if other_site is not None else site)
+
+    # The scan guards: active employee, active site, open period.
+    if not employee.can_check_in:
+        raise EmployeeNotActive(f"employee status is {employee.status}")
+    if not site.can_check_in:
+        raise SiteNotActive(f"site status is {site.status}")
+
+    work_date = _local_work_date(moment, get_settings().app_timezone)
+    if is_period_locked(session, work_date):
+        raise PeriodLocked(f"{work_date:%Y-%m} is locked")
+
+    # The stricter assignment rule: without a QR, the assignment is the presence signal, so an
+    # unassigned site is refused rather than flagged (contrast `_check_in`'s open-mode allowance).
+    if not _is_assigned(session, employee.id, site.id):
+        raise SelfCheckInSiteNotAssigned(f"employee not assigned to site {site.id}")
+
+    entry = TimeEntry(
+        employee_id=employee.id,
+        site_id=site.id,
+        work_date=work_date,
+        check_in_at=moment,
+        source=TimeEntrySource.MANUAL,
+        is_manual=True,
+        manual_reason="self check-in (no QR)",
+        status=TimeEntryStatus.DRAFT,
+        flags=[FLAG_SELF_REPORTED],
+    )
+    session.add(entry)
+    # Flush so the entry has an id the audit rows reference, guarding the one-open-entry index the
+    # same way a scan check-in does; the caller commits.
+    _flush_guarding_overlap(session, employee_id=employee.id, new_entry=entry)
+
+    empty = dict.fromkeys(snapshot(entry), None)
+    record_model_changes(session, entry, empty, context=context, reason="self_check_in")
+
+    return ScanOutcome(entry=entry, action=ScanAction.CHECK_IN, at=entry.check_in_at)
 
 
 # --------------------------------------------------------------------------- transition and move
@@ -857,7 +999,11 @@ def _close_for_transition(
     move, which is the honest account of who did what.
     """
     before = snapshot(entry)
-    outcome = _check_out(session, entry=entry, moment=moment, context=context)
+    # A transition close must not auto-approve: the entry's source is still `qr_scan` at this point
+    # (it is flipped to `system_transition` just below), so without this the clean-QR auto-approve in
+    # `_check_out` would approve an interrupted shift a manager may want to review. Pass
+    # `auto_approve=False` to leave it DRAFT.
+    outcome = _check_out(session, entry=entry, moment=moment, context=context, auto_approve=False)
     entry.source = TimeEntrySource.SYSTEM_TRANSITION
     session.flush()
     # A second audit pass over the same before-snapshot records the source change (and re-states the
@@ -911,6 +1057,45 @@ def current_open_shift(session: Session, employee_id: uuid.UUID | None) -> TimeE
     if employee_id is None:
         return None
     return open_entry_for(session, employee_id)
+
+
+# --------------------------------------------------------------------------- my assigned sites
+
+
+@dataclass(frozen=True, slots=True)
+class AssignedSite:
+    """One site the caller is assigned to, as `GET /api/scans/my-sites` returns it.
+
+    Just an id and a name — enough for the mobile self-check-in picker to list the sites the employee
+    may open a no-QR shift at, and nothing more. No billing rate, no client, no status detail: the
+    employee picks a site, they do not administer it.
+    """
+
+    id: uuid.UUID
+    name: str
+
+
+def my_assigned_sites(session: Session, employee_id: uuid.UUID | None) -> list[AssignedSite]:
+    """The caller's own assigned sites (id and name), for the self-check-in picker (Requirement 7.1).
+
+    Always self-scoped: it reads the sites the *caller's* linked employee is assigned to, never
+    another person's, and a login with no linked employee gets an empty list — the same quiet
+    empty-read shape `current_open_shift` and `recent_work_history` use for a not-linked caller. Only
+    active sites are returned, since an inactive site cannot take a check-in anyway, so offering it in
+    the picker would only lead to a refusal. Ordered by name so the picker reads predictably.
+    """
+    if employee_id is None:
+        return []
+    statement = (
+        select(Site.id, Site.name)
+        .join(EmployeeSite, EmployeeSite.site_id == Site.id)
+        .where(
+            EmployeeSite.employee_id == employee_id,
+            Site.status == SiteStatus.ACTIVE,
+        )
+        .order_by(Site.name, Site.id)
+    )
+    return [AssignedSite(id=row.id, name=row.name) for row in session.execute(statement)]
 
 
 # --------------------------------------------------------------------------- recent work history

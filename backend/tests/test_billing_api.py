@@ -240,15 +240,17 @@ def _calculate_payroll(billing_client, headers, employee: Employee) -> None:
 # ===================================================================== the brief's example
 
 
-def test_the_briefs_example_bills_645_costs_332_50_profits_312_50(
+def test_the_briefs_example_bills_678_75_costs_350_profits_328_75(
     billing_client, sign_in, session: Session
 ):
-    """Requirement 17.1, 17.4: the brief's two-site day bills 645 ₪, costs 332.50 ₪, profits 312.50 ₪.
+    """Requirement 17.1, 17.4, 18.x: the brief's two-site day bills 678.75 ₪, costs 350 ₪, profits 328.75 ₪.
 
     One client, two sites: Site A billed at 60 ₪, Site B at 75 ₪. The employee works 07:00–11:30 at A
-    (4.5 h) and 12:00–17:00 at B (5.0 h), paid a flat 35 ₪. Payroll allocates the cost 157.50 at A and
-    175.00 at B (332.50 total); billing bills 4.5 × 60 = 270.00 at A and 5.0 × 75 = 375.00 at B
-    (645.00 total); profit is 645.00 − 332.50 = 312.50.
+    (4.5 h) and 12:00–17:00 at B (5.0 h), paid a flat 35 ₪. The 30-minute gap between check-out at A
+    and check-in at B is split 15/15 and paid at both sites (travel time is both paid and billed), so
+    A is worked 4.75 h and B 5.25 h. Payroll allocates the cost 166.25 at A and 183.75 at B (350.00
+    total); billing bills 4.75 × 60 = 285.00 at A and 5.25 × 75 = 393.75 at B (678.75 total); profit is
+    678.75 − 350.00 = 328.75.
     """
     headers, _ = sign_in(UserRole.ADMIN)
     employee = _make_employee(session)
@@ -268,18 +270,18 @@ def test_the_briefs_example_bills_645_costs_332_50_profits_312_50(
     body = response.json()
 
     by_site = {s["site_id"]: s for s in body["sites"]}
-    assert Decimal(by_site[str(site_a.id)]["billing"]) == Decimal("270.00")
-    assert Decimal(by_site[str(site_b.id)]["billing"]) == Decimal("375.00")
-    assert Decimal(by_site[str(site_a.id)]["cost"]) == Decimal("157.50")
-    assert Decimal(by_site[str(site_b.id)]["cost"]) == Decimal("175.00")
+    assert Decimal(by_site[str(site_a.id)]["billing"]) == Decimal("285.00")
+    assert Decimal(by_site[str(site_b.id)]["billing"]) == Decimal("393.75")
+    assert Decimal(by_site[str(site_a.id)]["cost"]) == Decimal("166.25")
+    assert Decimal(by_site[str(site_b.id)]["cost"]) == Decimal("183.75")
 
-    assert Decimal(body["total_billing"]) == Decimal("645.00")
-    assert Decimal(body["total_cost"]) == Decimal("332.50")
-    assert Decimal(body["total_profit"]) == Decimal("312.50")
+    assert Decimal(body["total_billing"]) == Decimal("678.75")
+    assert Decimal(body["total_cost"]) == Decimal("350.00")
+    assert Decimal(body["total_profit"]) == Decimal("328.75")
 
     assert len(body["clients"]) == 1
-    assert Decimal(body["clients"][0]["billing"]) == Decimal("645.00")
-    assert Decimal(body["clients"][0]["profit"]) == Decimal("312.50")
+    assert Decimal(body["clients"][0]["billing"]) == Decimal("678.75")
+    assert Decimal(body["clients"][0]["profit"]) == Decimal("328.75")
 
 
 # ===================================================================== mid-month site-rate change

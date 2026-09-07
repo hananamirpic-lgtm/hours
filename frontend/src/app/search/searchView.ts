@@ -66,11 +66,22 @@ export interface FlatResults {
   count: number;
 }
 
-/** A label in the reader's language, with the other form appended only when it differs. */
-export const employeeLabel = (language: Language, name: string, nameEn: string): string => {
+/**
+ * A label in the reader's language, with the other name form appended only when it differs, and the
+ * employee's 4-digit number appended when present (Requirement 6). The number goes last so the
+ * name reads first: "Name (OtherForm) #2047", or "Name #2047" when both forms match, or just the
+ * name when there is no number.
+ */
+export const employeeLabel = (
+  language: Language,
+  name: string,
+  nameEn: string,
+  employeeNumber?: string | null,
+): string => {
   const primary = language === 'he' ? name : nameEn;
   const secondary = language === 'he' ? nameEn : name;
-  return primary === secondary ? primary : `${primary} (${secondary})`;
+  const base = primary === secondary ? primary : `${primary} (${secondary})`;
+  return employeeNumber ? `${base} #${employeeNumber}` : base;
 };
 
 /** The console path a chosen hit opens, carrying the id so the screen can focus it. */

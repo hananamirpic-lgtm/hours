@@ -882,3 +882,159 @@ def test_history_range_sums_a_multi_site_day_across_sites(scans_client, sign_in,
     assert len(days) == 1
     assert days[0]["work_date"] == "2025-03-10"
     assert days[0]["total_minutes"] == 210
+
+# --------------------------------------------------------------------------- auto-approve (Change 1)
+
+
+def _assign_api(session: Session, employee: Employee, site: Site) -> None:
+    from app.models.site import EmployeeSite
+
+    session.add(
+        EmployeeSite(employee_id=employee.id, site_id=site.id, assigned_from=date(2025, 1, 1))
+    )
+    session.commit()
+
+
+def test_clean_qr_check_out_ends_approved(scans_client, sign_in, session: Session):
+    """A clean QR check-in then check-out ends APPROVED without a manual step."""
+    employee = _make_employee(session)
+    site = _make_site(session)
+    _assign_api(session, employee, site)  # assigned, so no unassigned_site flag
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    scans_client.post("/api/scans", json={"qr_token": _token_for(site)}, headers=headers)
+    # Age the open entry so the checkout is well outside the duplicate window.
+    entry = session.scalars(select_time_entries(employee.id)).one()
+    entry.check_in_at = datetime.now(UTC) - timedelta(hours=1)
+    session.commit()
+
+    response = scans_client.post("/api/scans/checkout", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["action"] == "check_out"
+
+    session.expire_all()
+    closed = session.scalars(select_time_entries(employee.id)).one()
+    assert closed.status is TimeEntryStatus.APPROVED
+    assert not closed.flags
+
+
+def test_flagged_qr_shift_stays_draft(scans_client, sign_in, session: Session):
+    """An unassigned open-mode check-in stays DRAFT after check-out."""
+    employee = _make_employee(session)
+    site = _make_site(session, assignment_mode=AssignmentMode.OPEN)  # unassigned -> flagged
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    scans_client.post("/api/scans", json={"qr_token": _token_for(site)}, headers=headers)
+    entry = session.scalars(select_time_entries(employee.id)).one()
+    entry.check_in_at = datetime.now(UTC) - timedelta(hours=1)
+    session.commit()
+
+    response = scans_client.post("/api/scans/checkout", headers=headers)
+    assert response.status_code == 200, response.text
+    assert "unassigned_site" in response.json()["flags"]
+
+    session.expire_all()
+    closed = session.scalars(select_time_entries(employee.id)).one()
+    assert closed.status is TimeEntryStatus.DRAFT
+
+
+# --------------------------------------------------------------------------- self check-in (no QR) over HTTP
+
+
+def test_self_check_in_creates_a_flagged_draft_entry(scans_client, sign_in, session: Session):
+    """POST /api/scans/self-check-in opens a self-reported DRAFT shift for an assigned site."""
+    employee = _make_employee(session)
+    site = _make_site(session)
+    _assign_api(session, employee, site)
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    response = scans_client.post(
+        "/api/scans/self-check-in", json={"site_id": str(site.id)}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["action"] == "check_in"
+    assert body["site_id"] == str(site.id)
+    assert body["is_open"] is True
+    assert "self_reported" in body["flags"]
+
+    entry = session.scalars(select_time_entries(employee.id)).one()
+    assert entry.status is TimeEntryStatus.DRAFT
+    assert entry.source is TimeEntrySource.MANUAL
+    assert entry.is_manual is True
+
+
+def test_self_check_in_to_unassigned_site_is_rejected(scans_client, sign_in, session: Session):
+    """A self check-in to a site the employee is not assigned to is a 409."""
+    employee = _make_employee(session)
+    site = _make_site(session, assignment_mode=AssignmentMode.OPEN)  # no assignment row
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    response = scans_client.post(
+        "/api/scans/self-check-in", json={"site_id": str(site.id)}, headers=headers
+    )
+    assert response.status_code == 409
+    assert _code(response) == "self_check_in_site_not_assigned"
+    assert list(session.scalars(select_time_entries(employee.id))) == []
+
+
+def test_self_check_in_then_checkout_stays_draft(scans_client, sign_in, session: Session):
+    """A self-reported shift never auto-approves: after check-out it is still DRAFT."""
+    employee = _make_employee(session)
+    site = _make_site(session)
+    _assign_api(session, employee, site)
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    scans_client.post("/api/scans/self-check-in", json={"site_id": str(site.id)}, headers=headers)
+    entry = session.scalars(select_time_entries(employee.id)).one()
+    entry.check_in_at = datetime.now(UTC) - timedelta(hours=1)
+    session.commit()
+
+    response = scans_client.post("/api/scans/checkout", headers=headers)
+    assert response.status_code == 200, response.text
+
+    session.expire_all()
+    closed = session.scalars(select_time_entries(employee.id)).one()
+    assert closed.status is TimeEntryStatus.DRAFT
+    assert "self_reported" in closed.flags
+
+
+def test_self_check_in_rejects_an_unknown_field(scans_client, sign_in, session: Session):
+    """extra='forbid': a location field on a self check-in is a 422 unknown field."""
+    employee = _make_employee(session)
+    site = _make_site(session)
+    _assign_api(session, employee, site)
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    response = scans_client.post(
+        "/api/scans/self-check-in",
+        json={"site_id": str(site.id), "latitude": 32.1},
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
+def test_my_sites_returns_the_callers_assigned_active_sites(scans_client, sign_in, session: Session):
+    """GET /api/scans/my-sites lists the caller's assigned active sites, id and name only."""
+    employee = _make_employee(session)
+    assigned = _make_site(session, number="S-assigned")
+    other = _make_site(session, number="S-other")  # not assigned
+    _assign_api(session, employee, assigned)
+    headers, _ = _employee_login(sign_in, session, employee)
+
+    response = scans_client.get("/api/scans/my-sites", headers=headers)
+    assert response.status_code == 200, response.text
+    sites = response.json()["sites"]
+    ids = {s["id"] for s in sites}
+    assert str(assigned.id) in ids
+    assert str(other.id) not in ids
+    # id and name only.
+    assert set(sites[0].keys()) == {"id", "name"}
+
+
+def test_my_sites_is_empty_for_a_login_with_no_employee(scans_client, sign_in, session: Session):
+    """An admin login carries no employee_id, so it has no assigned sites of its own."""
+    headers, _ = sign_in(UserRole.ADMIN)
+    response = scans_client.get("/api/scans/my-sites", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["sites"] == []

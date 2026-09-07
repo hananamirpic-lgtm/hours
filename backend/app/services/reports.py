@@ -56,6 +56,7 @@ from app.models.billing import BillingRecord
 from app.models.employee import Employee, EmployeeStatus
 from app.models.payroll import PayrollRecord, PayrollSiteAllocation
 from app.models.site import EmployeeSite, Site, SiteStatus
+from app.models.staffing_company import StaffingCompany
 from app.models.time_entry import TimeEntry
 
 #: The currency every report states its figures in (Requirement 18.7). The system is single-currency
@@ -87,6 +88,9 @@ class ReportFilters:
     site_id: uuid.UUID | None = None
     client_id: uuid.UUID | None = None
     project: str | None = None
+    #: Narrows the by-staffing-company report to one provider (Requirement 4.1). None for the other
+    #: reports, which do not use it.
+    staffing_company_id: uuid.UUID | None = None
 
 
 # --------------------------------------------------------------------------- by employee (18.1)
@@ -106,6 +110,7 @@ class EmployeeReportRow:
     employee_id: uuid.UUID
     employee_name: str
     employee_name_en: str
+    employee_number: str | None
     regular_minutes: int
     overtime_minutes: int
     shabbat_minutes: int
@@ -160,7 +165,7 @@ def report_by_employee(
         conditions.append(PayrollRecord.employee_id == filters.employee_id)
 
     statement = (
-        select(PayrollRecord, Employee.full_name, Employee.full_name_en)
+        select(PayrollRecord, Employee.full_name, Employee.full_name_en, Employee.employee_number)
         .join(Employee, Employee.id == PayrollRecord.employee_id)
         .where(*conditions)
         .order_by(Employee.full_name, PayrollRecord.employee_id)
@@ -169,11 +174,12 @@ def report_by_employee(
     rows: list[EmployeeReportRow] = []
     total_minutes = 0
     total_cost = _ZERO
-    for record, name, name_en in session.execute(statement):
+    for record, name, name_en, number in session.execute(statement):
         row = EmployeeReportRow(
             employee_id=record.employee_id,
             employee_name=name,
             employee_name_en=name_en,
+            employee_number=number,
             regular_minutes=record.regular_minutes,
             overtime_minutes=record.overtime_minutes,
             shabbat_minutes=record.shabbat_minutes,
@@ -214,6 +220,7 @@ def _employee_report_scoped(
             PayrollRecord.employee_id,
             Employee.full_name,
             Employee.full_name_en,
+            Employee.employee_number,
             func.coalesce(func.sum(PayrollSiteAllocation.regular_minutes), 0),
             func.coalesce(func.sum(PayrollSiteAllocation.overtime_minutes), 0),
             func.coalesce(func.sum(PayrollSiteAllocation.shabbat_minutes), 0),
@@ -223,20 +230,23 @@ def _employee_report_scoped(
         .join(PayrollRecord, PayrollRecord.id == PayrollSiteAllocation.payroll_record_id)
         .join(Employee, Employee.id == PayrollRecord.employee_id)
         .where(*conditions)
-        .group_by(PayrollRecord.employee_id, Employee.full_name, Employee.full_name_en)
+        .group_by(
+            PayrollRecord.employee_id, Employee.full_name, Employee.full_name_en, Employee.employee_number
+        )
         .order_by(Employee.full_name, PayrollRecord.employee_id)
     )
 
     rows: list[EmployeeReportRow] = []
     total_minutes = 0
     total_cost = _ZERO
-    for employee_id, name, name_en, regular, overtime, shabbat, holiday, cost in session.execute(
+    for employee_id, name, name_en, number, regular, overtime, shabbat, holiday, cost in session.execute(
         statement
     ):
         row = EmployeeReportRow(
             employee_id=employee_id,
             employee_name=name,
             employee_name_en=name_en,
+            employee_number=number,
             regular_minutes=int(regular),
             overtime_minutes=int(overtime),
             shabbat_minutes=int(shabbat),
@@ -543,6 +553,7 @@ class MissingReportFinding:
     employee_id: uuid.UUID
     employee_name: str
     employee_name_en: str
+    employee_number: str | None
     work_date: date
     site_id: uuid.UUID
     site_name: str
@@ -693,6 +704,7 @@ def _classify_day(
             employee_id=employee.id,
             employee_name=employee.full_name,
             employee_name_en=employee.full_name_en,
+            employee_number=employee.employee_number,
             work_date=day,
             site_id=site.id,
             site_name=site.name,
@@ -845,3 +857,78 @@ __all__ = [
     "report_by_site",
     "report_profitability",
 ]
+
+
+# --------------------------------------------------------------------------- by staffing company (Req 4)
+
+
+@dataclass(frozen=True, slots=True)
+class StaffingCompanyReport:
+    """Total worked hours and payment for one staffing company over a period (Requirement 4).
+
+    `total_minutes` is the sum of worked minutes over the period for the employees currently linked to
+    the company; `total_payment` is `total_minutes / 60` multiplied by the company's single flat
+    `hourly_rate`, or `None` when the company has no rate set — the report shows payment as unavailable
+    rather than zero (Requirement 4.7). `total_payment` uses the company's flat rate, never an
+    individual employee's pay rate (Requirement 4.5).
+    """
+
+    company_id: uuid.UUID
+    company_name: str
+    hourly_rate: Decimal | None
+    total_minutes: int
+    total_payment: Decimal | None
+
+    @property
+    def total_hours(self) -> Decimal:
+        """Worked minutes expressed as hours, for the payment computation and the response."""
+        return (Decimal(self.total_minutes) / Decimal(60)).quantize(Decimal("0.01"))
+
+
+def report_by_staffing_company(
+    session: Session, *, filters: ReportFilters
+) -> StaffingCompanyReport:
+    """Hours and payment for one staffing company for a month (Requirement 4).
+
+    Minutes are summed from `payroll_records` for the month, joined to `Employee` and narrowed to the
+    employees currently linked to the company — the same source the by-employee report reads, so the
+    two reconcile. Payment is the resulting hours times the company's flat `hourly_rate`; a company
+    with no rate yields `None` (presented as unavailable, never zero). The company must exist; a
+    missing id raises `StaffingCompanyNotFound` so the router can answer 404.
+    """
+    company = session.get(StaffingCompany, filters.staffing_company_id)
+    if company is None:
+        from app.services.staffing_company import StaffingCompanyNotFound
+
+        raise StaffingCompanyNotFound(filters.staffing_company_id)
+
+    total_minutes = session.scalar(
+        select(
+            func.coalesce(
+                func.sum(
+                    PayrollRecord.regular_minutes
+                    + PayrollRecord.overtime_minutes
+                    + PayrollRecord.shabbat_minutes
+                    + PayrollRecord.holiday_minutes
+                ),
+                0,
+            )
+        )
+        .join(Employee, Employee.id == PayrollRecord.employee_id)
+        .where(PayrollRecord.year == filters.year, PayrollRecord.month == filters.month)
+        .where(Employee.staffing_company_id == company.id)
+    ) or 0
+
+    if company.hourly_rate is not None:
+        total_hours = Decimal(total_minutes) / Decimal(60)
+        total_payment = (total_hours * company.hourly_rate).quantize(Decimal("0.01"))
+    else:
+        total_payment = None
+
+    return StaffingCompanyReport(
+        company_id=company.id,
+        company_name=company.name,
+        hourly_rate=company.hourly_rate,
+        total_minutes=int(total_minutes),
+        total_payment=total_payment,
+    )

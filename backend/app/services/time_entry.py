@@ -85,6 +85,7 @@ class TimeEntryRow:
     entry: TimeEntry
     employee_name: str
     employee_name_en: str
+    employee_number: str | None
     site_name: str
 
 
@@ -210,7 +211,7 @@ def _labelled_statement(filtered: Select[tuple[TimeEntry]]):
     """
     entry_ids = filtered.with_only_columns(TimeEntry.id).scalar_subquery()
     return (
-        select(TimeEntry, Employee.full_name, Employee.full_name_en, Site.name)
+        select(TimeEntry, Employee.full_name, Employee.full_name_en, Employee.employee_number, Site.name)
         .join(Employee, Employee.id == TimeEntry.employee_id)
         .join(Site, Site.id == TimeEntry.site_id)
         .where(TimeEntry.id.in_(entry_ids))
@@ -228,11 +229,12 @@ def _dialect_name(session: Session) -> str:
 
 
 def _row_of(row: Row) -> TimeEntryRow:
-    entry, employee_name, employee_name_en, site_name = row
+    entry, employee_name, employee_name_en, employee_number, site_name = row
     return TimeEntryRow(
         entry=entry,
         employee_name=employee_name,
         employee_name_en=employee_name_en,
+        employee_number=employee_number,
         site_name=site_name,
     )
 

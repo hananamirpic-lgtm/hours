@@ -34,6 +34,7 @@ from app.core.storage import (
 from app.models.document import DocumentType
 from app.models.notification import Notification, NotificationSeverity
 from app.models.setting import Setting, SettingValueType
+from app.models.staffing_company import StaffingCompany
 from app.models.user import User, UserRole
 from app.schemas.document import DocumentUploadComplete, DocumentUploadInit
 from app.schemas.employee import EmployeeCreate
@@ -48,6 +49,9 @@ def _context(actor: uuid.UUID | None = None) -> AuditContext:
 
 
 def _make_employee(session: Session) -> uuid.UUID:
+    company = StaffingCompany(name="Acme Staffing", contact_person="Dana Levi")
+    session.add(company)
+    session.flush()
     payload = EmployeeCreate(
         full_name="Ahmed Khalil",
         full_name_en="Ahmed Khalil",
@@ -57,6 +61,7 @@ def _make_employee(session: Session) -> uuid.UUID:
         emergency_contact_name="Layla Khalil",
         emergency_contact_phone="+972500000001",
         start_date=date(2025, 1, 1),
+        staffing_company_id=company.id,
     )
     employee = employee_service.create_employee(session, payload, context=_context())
     session.commit()

@@ -84,6 +84,7 @@ class Employee(Base):
     __table_args__ = (
         Index("ix_employees_status", "status"),
         Index("ix_employees_full_name", "full_name"),
+        Index("ix_employees_staffing_company_id", "staffing_company_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -105,8 +106,19 @@ class Employee(Base):
     )
     passport_number_hash: Mapped[str] = mapped_column(DeterministicHash, nullable=False)
 
+    #: Auto-generated 4-digit identifier in the range 2000–2999 that doubles as the employee's login
+    #: username (Requirements 2.1, 2.5, 3.1). Plain `Text`, not encrypted, so it is indexable and can
+    #: be shown directly. Uniqueness is over non-terminated employees only (Requirement 2.3): the
+    #: `WHERE status <> 'terminated'` partial unique index `uq_employees_employee_number_not_terminated`
+    #: lives in migration 0006 (PostgreSQL only), and the employee service backstops it in application
+    #: code for the SQLite unit-test engine — mirroring exactly how `passport_number_hash` is handled.
+    #: The index is deliberately not declared in `__table_args__`, for the reason this module states
+    #: above: load-bearing database objects that SQLAlchemy cannot express belong to the migration.
+    employee_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     phone: Mapped[str] = mapped_column("phone_encrypted", EncryptedString, nullable=False)
-    country: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Optional since migration 0006 (Requirement 1.5): the application schema decides mandatory fields.
+    country: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     #: Optional (Requirement 3.2). Sensitive, so encrypted; `EncryptedDate` keeps it a real `date`.
     date_of_birth: Mapped[date | None] = mapped_column(
@@ -114,10 +126,10 @@ class Employee(Base):
     )
     address: Mapped[str | None] = mapped_column("address_encrypted", EncryptedString, nullable=True)
 
-    #: Emergency contact is mandatory (Requirement 3.1). The name is not sensitive; the phone is.
-    emergency_contact_name: Mapped[str] = mapped_column(Text, nullable=False)
-    emergency_contact_phone: Mapped[str] = mapped_column(
-        "emergency_contact_phone_encrypted", EncryptedString, nullable=False
+    #: Optional since migration 0006 (Requirement 1.5). The name is not sensitive; the phone is.
+    emergency_contact_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emergency_contact_phone: Mapped[str | None] = mapped_column(
+        "emergency_contact_phone_encrypted", EncryptedString, nullable=True
     )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -126,6 +138,18 @@ class Employee(Base):
     #: never lost.
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     position: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: The staffing company that supplies this employee (Requirement 2). Nullable at the database level
+    #: so employees created before this feature stay valid (the migration leaves them null); the
+    #: "a new employee must select a company" rule is enforced on create in `EmployeeCreate`, not by a
+    #: NOT NULL constraint. The foreign key is declared here, on the side that owns it — the same way
+    #: `employee_rates.employee_id` is declared where it points at `employees`, so it resolves on the
+    #: SQLite unit-test engine that builds the schema from metadata.
+    staffing_company_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("staffing_companies.id", name="fk_employees_staffing_company_id"),
+        nullable=True,
+    )
 
     status: Mapped[EmployeeStatus] = mapped_column(
         _enum_column(EmployeeStatus, "employee_status"), nullable=False, default=EmployeeStatus.ACTIVE

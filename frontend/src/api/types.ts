@@ -151,7 +151,10 @@ export interface EmployeeListItem {
   id: string;
   full_name: string;
   full_name_en: string;
-  country: string;
+  /** The auto-generated 4-digit login number, or null for a record that predates it. */
+  employee_number: string | null;
+  staffing_company_id: string | null;
+  country: string | null;
   position: string | null;
   status: EmployeeStatus;
   start_date: string;
@@ -186,14 +189,17 @@ export interface EmployeeResponse {
   id: string;
   full_name: string;
   full_name_en: string;
+  /** The auto-generated 4-digit login number, or null for a record that predates it. */
+  employee_number: string | null;
+  staffing_company_id: string | null;
   photo_key: string | null;
   passport_number: string;
   phone: string;
-  country: string;
+  country: string | null;
   date_of_birth: string | null;
   address: string | null;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
   notes: string | null;
   start_date: string;
   position: string | null;
@@ -214,9 +220,11 @@ export interface EmployeeCreate {
   full_name_en: string;
   passport_number: string;
   phone: string;
-  country: string;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
+  /** Mandatory on create (Requirement 2.1-2.3); optional on update via EmployeeUpdate. */
+  staffing_company_id: string;
+  country?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
   start_date: string;
   position?: string | null;
   date_of_birth?: string | null;
@@ -450,6 +458,25 @@ export interface WorkHistoryResponse {
   days: WorkHistoryDay[];
 }
 
+/**
+ * One site the caller is assigned to, from GET /api/scans/my-sites. Just an id and a name — enough
+ * for the self-check-in picker to list where the employee may open a no-QR shift, and nothing more
+ * (no billing, no client): the employee is choosing where they work, not administering the site.
+ */
+export interface AssignedSite {
+  id: string;
+  name: string;
+}
+
+/**
+ * The body of GET /api/scans/my-sites: the caller's own assigned active sites for the self-check-in
+ * picker. An empty `sites` means the employee is assigned to no active site — or is a login not
+ * linked to an employee — and the picker shows there is nowhere to check in without a QR.
+ */
+export interface MySitesResponse {
+  sites: AssignedSite[];
+}
+
 // --------------------------------------------------------------------------- time entries (hours view)
 
 /** The approval status of a time entry (Requirement 15.1), mirroring `TimeEntryStatus` on the backend. */
@@ -459,7 +486,7 @@ export type TimeEntryStatus = 'draft' | 'review' | 'approved' | 'locked';
 export type TimeEntrySource = 'qr_scan' | 'manual' | 'system_transition';
 
 /** The anomaly markers an entry may carry; the hours view surfaces them and filters on them. */
-export type TimeEntryFlag = 'unassigned_site' | 'implausible_duration';
+export type TimeEntryFlag = 'unassigned_site' | 'implausible_duration' | 'self_reported';
 
 /**
  * One recorded shift as the hours view reads it (GET /api/time-entries). Locale-neutral: ISO
@@ -472,6 +499,7 @@ export interface TimeEntryListItem {
   employee_id: string;
   employee_name: string;
   employee_name_en: string;
+  employee_number: string | null;
   site_id: string;
   site_name: string;
   work_date: string;
@@ -873,6 +901,7 @@ export interface EmployeeReportRow {
   employee_id: string;
   employee_name: string;
   employee_name_en: string;
+  employee_number: string | null;
   regular_minutes: number;
   overtime_minutes: number;
   shabbat_minutes: number;
@@ -947,6 +976,7 @@ export interface MissingReportFinding {
   employee_id: string;
   employee_name: string;
   employee_name_en: string;
+  employee_number: string | null;
   work_date: string;
   site_id: string;
   site_name: string;
@@ -1015,4 +1045,43 @@ export interface SearchResults {
   employees: SearchGroup<EmployeeSearchHit>;
   sites: SearchGroup<SiteSearchHit>;
   clients: SearchGroup<ClientSearchHit>;
+}
+
+// --------------------------------------------------------------------------- staffing companies
+
+export interface StaffingCompanyListItem {
+  id: string;
+  name: string;
+  contact_person: string;
+  hourly_rate: string | null;
+}
+
+export interface StaffingCompanyResponse {
+  id: string;
+  name: string;
+  contact_person: string;
+  hourly_rate: string | null;
+  telephone: string | null;
+  comments: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StaffingCompanyCreate {
+  name: string;
+  contact_person: string;
+  hourly_rate?: string | null;
+  telephone?: string | null;
+  comments?: string | null;
+}
+
+export type StaffingCompanyUpdate = Partial<StaffingCompanyCreate>;
+
+/** The by-staffing-company report: total hours and payment (null payment => no rate set). */
+export interface StaffingCompanyReport {
+  company_id: string;
+  company_name: string;
+  hourly_rate: string | null;
+  total_minutes: number;
+  total_payment: string | null;
 }

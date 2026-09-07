@@ -11,16 +11,17 @@
  * returns (e.g. a duplicate username), so the words live here, not on the server.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { AppLanguage, UserCreate, UserResponse, UserRole, UserUpdate } from '@/api/types';
 import { createUser, updateUser, userKeys } from '@/api/users';
-import { employeeKeys, listEmployees } from '@/api/employees';
 import { toError } from '@/lib/apiError';
 
-const ROLES: UserRole[] = ['admin', 'site_manager', 'accounting', 'employee'];
+// Employee logins are provisioned automatically from the Employees tab (Requirement 5), so they are
+// not offered here — the Users tab manages only the three console roles.
+const ROLES: UserRole[] = ['admin', 'site_manager', 'accounting'];
 const LANGUAGES: AppLanguage[] = ['he', 'en'];
 
 interface Fields {
@@ -28,7 +29,6 @@ interface Fields {
   password: string;
   role: UserRole;
   language: AppLanguage;
-  employeeId: string;
 }
 
 const fromUser = (user: UserResponse): Fields => ({
@@ -36,7 +36,6 @@ const fromUser = (user: UserResponse): Fields => ({
   password: '',
   role: user.role,
   language: user.language,
-  employeeId: user.employee_id ?? '',
 });
 
 const emptyFields: Fields = {
@@ -44,7 +43,6 @@ const emptyFields: Fields = {
   password: '',
   role: 'site_manager',
   language: 'he',
-  employeeId: '',
 };
 
 export function UserForm({
@@ -68,17 +66,6 @@ export function UserForm({
     (event: { target: { value: string } }) =>
       setFields((prev) => ({ ...prev, [key]: event.target.value as Fields[K] }));
 
-  // The list of employees to link an employee-role login to. Loaded only when the role calls for it,
-  // and only on create — the link is set once, when the login is made. A directory list, no sensitive
-  // fields, so a large workforce still loads cheaply here.
-  const needsEmployee = fields.role === 'employee' && !editing;
-  // limit is the endpoint's maximum: the list caps at 200 per page (a higher value is a 422), which
-  // is plenty for a link picker over the active directory.
-  const employeeList = useQuery({
-    queryKey: employeeKeys.list({ status: 'active', limit: 200, offset: 0 }),
-    queryFn: () => listEmployees({ status: 'active', limit: 200, offset: 0 }),
-    enabled: needsEmployee,
-  });
 
   const mutation = useMutation({
     mutationFn: async (): Promise<UserResponse> => {
@@ -99,11 +86,6 @@ export function UserForm({
         role: fields.role,
         language: fields.language,
       };
-      // An employee login is meaningful only when tied to a person: the mobile app shows that
-      // employee's own scans and hours, which it finds through this link.
-      if (fields.role === 'employee') {
-        payload.employee_id = fields.employeeId || null;
-      }
       return createUser(payload);
     },
     onSuccess: async (saved) => {
@@ -175,23 +157,6 @@ export function UserForm({
         </label>
       </div>
 
-      {needsEmployee ? (
-        <label className="field">
-          <span className="field__label">{t('user.linkedEmployee')}</span>
-          <select className="input" value={fields.employeeId} onChange={set('employeeId')} required>
-            <option value="">{t('user.selectEmployee')}</option>
-            {(employeeList.data?.items ?? []).map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {t('assignment.employeeOption', {
-                  name: employee.full_name,
-                  nameEn: employee.full_name_en,
-                })}
-              </option>
-            ))}
-          </select>
-          <span className="field__hint">{t('user.linkedEmployeeHint')}</span>
-        </label>
-      ) : null}
 
       {fields.role === 'site_manager' && !editing ? (
         <p className="subtitle">{t('user.assignSitesAfter')}</p>

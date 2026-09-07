@@ -50,6 +50,7 @@ from app.schemas.site import EmployeeSitesResponse, EmployeeSitesUpdate
 from app.services import document as document_service
 from app.services import employee as employee_service
 from app.services import site as site_service
+from app.services import user as user_service
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -66,6 +67,7 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     employee_service.InvalidStatusTransition.code: HTTPStatus.CONFLICT,
     employee_service.OverlappingRates.code: HTTPStatus.BAD_REQUEST,
     employee_service.InvalidRatePeriod.code: HTTPStatus.BAD_REQUEST,
+    employee_service.NoEmployeeNumberAvailable.code: HTTPStatus.CONFLICT,
 }
 
 
@@ -292,6 +294,56 @@ def change_status(
         raise _raise_for(error) from error
     session.refresh(employee)
     return _card_dict(employee, caller, session)
+
+
+# --------------------------------------------------------------------------- password reset
+# Admin-only reset of an employee's login back to the initial password, for an employee who has
+# forgotten theirs (Requirement 8). Lives on the employees router because the Employees tab is where
+# employee logins are managed; the Users tab no longer touches them.
+
+_USER_ERROR_STATUS: dict[str, HTTPStatus] = {
+    user_service.UserNotFound.code: HTTPStatus.NOT_FOUND,
+    user_service.NotEmployeeLogin.code: HTTPStatus.BAD_REQUEST,
+    user_service.DuplicateUsername.code: HTTPStatus.CONFLICT,
+}
+
+
+@router.post(
+    "/{employee_id}/reset-password",
+    response_model=None,
+    summary="Reset an employee's login password to the initial password",
+    description=(
+        "Resets the employee's login to the initial password and forces a change on next login "
+        "(Requirement 8). Any open session for that login ends at once. Admin only."
+    ),
+    responses={
+        HTTPStatus.NOT_FOUND: {"description": "No employee, or no login linked to the employee"},
+        HTTPStatus.BAD_REQUEST: {"description": "The linked login is not an employee login"},
+    },
+    status_code=HTTPStatus.NO_CONTENT,
+)
+def reset_employee_password(
+    employee_id: uuid.UUID,
+    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    session: DbSession,
+    context: AuthenticatedContext,
+) -> None:
+    try:
+        employee_service.get_employee(session, employee_id)
+    except employee_service.EmployeeError as error:
+        raise _raise_for(error) from error
+
+    login = user_service.find_login_for_employee(session, employee_id)
+    if login is None:
+        raise api_error(HTTPStatus.NOT_FOUND, user_service.UserNotFound.code)
+
+    try:
+        user_service.reset_employee_login_password(session, login.id, context=context)
+        session.commit()
+    except user_service.UserError as error:
+        session.rollback()
+        status = _USER_ERROR_STATUS.get(error.code, HTTPStatus.BAD_REQUEST)
+        raise api_error(status, error.code) from error
 
 
 # --------------------------------------------------------------------------- rates

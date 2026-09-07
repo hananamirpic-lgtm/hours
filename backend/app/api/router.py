@@ -22,6 +22,7 @@ from app.api.routers import (
     search,
     settings,
     sites,
+    staffing_companies,
     time_entries,
     users,
 )
@@ -34,6 +35,7 @@ api_router.include_router(employees.router)
 api_router.include_router(documents.router)
 api_router.include_router(clients.router)
 api_router.include_router(sites.router)
+api_router.include_router(staffing_companies.router)
 api_router.include_router(scans.router)
 api_router.include_router(me_photo.router)
 api_router.include_router(time_entries.router)

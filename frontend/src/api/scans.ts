@@ -14,15 +14,17 @@
  * (close the old, open the new atomically) or `end-and-move` (close the old with no departure QR).
  */
 
-import type { ScanResult, ScanStatusResponse, WorkHistoryResponse } from './types';
+import type { MySitesResponse, ScanResult, ScanStatusResponse, WorkHistoryResponse } from './types';
 
 import { apiFetch } from './client';
 
-export type { WorkHistoryDay, WorkHistoryResponse } from './types';
+export type { AssignedSite, MySitesResponse, WorkHistoryDay, WorkHistoryResponse } from './types';
 
 export const scanKeys = {
   status: ['scans', 'status'] as const,
   history: ['scans', 'history'] as const,
+  /** The caller's own assigned sites, for the self-check-in picker (Requirement 7.1). */
+  mySites: ['scans', 'my-sites'] as const,
   /**
    * A distinct key for the my-hours page's *ranged* history, keyed on the from/to bounds so it never
    * collides in the cache with the home screen's unfiltered `history` list, and so changing the range
@@ -46,6 +48,20 @@ export const recordScan = (body: ScanBody): Promise<ScanResult> =>
 export const checkOut = (): Promise<ScanResult> =>
   apiFetch<ScanResult>('/scans/checkout', { method: 'POST' });
 
+/**
+ * POST /api/scans/self-check-in — open a shift with no QR by picking a site (Requirement 7, 9).
+ *
+ * The fallback when there is no code to scan: the employee chooses one of their assigned sites and
+ * the server opens a self-reported, manual shift left Draft for a manager to approve — it never
+ * auto-approves. Like a scan the request carries no time and no location; only the site id is sent.
+ * An open shift at another site comes back as a 409 `open_shift_elsewhere` the caller can act on.
+ */
+export const selfCheckIn = (siteId: string): Promise<ScanResult> =>
+  apiFetch<ScanResult>('/scans/self-check-in', {
+    method: 'POST',
+    body: JSON.stringify({ site_id: siteId }),
+  });
+
 /** POST /api/scans/transition — the confirmed move: close the current shift, open one at the target. */
 export const transition = (body: ScanBody): Promise<ScanResult> =>
   apiFetch<ScanResult>('/scans/transition', { method: 'POST', body: JSON.stringify(body) });
@@ -57,6 +73,14 @@ export const endAndMove = (): Promise<ScanResult> =>
 /** GET /api/scans/status — the caller's current open shift, or `{ open_shift: null }`. */
 export const getScanStatus = (): Promise<ScanStatusResponse> =>
   apiFetch<ScanStatusResponse>('/scans/status');
+
+/**
+ * GET /api/scans/my-sites — the caller's own assigned active sites, for the self-check-in picker.
+ * Self-scoped server-side to the caller's linked employee; never another person's, and no employee
+ * id is ever sent. An empty `sites` renders as "nowhere to check in without a QR".
+ */
+export const getMySites = (): Promise<MySitesResponse> =>
+  apiFetch<MySitesResponse>('/scans/my-sites');
 
 /** An optional inclusive date window for the work history, each bound a canonical `YYYY-MM-DD`. */
 export interface WorkHistoryRange {
