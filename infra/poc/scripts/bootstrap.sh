@@ -32,6 +32,8 @@ APP_DIR="${APP_DIR:-/opt/hours}"
 # PUBLIC_URL is optional on the first run (before CloudFront exists). If unset, a
 # placeholder is written and you re-run the "reconfigure" section after Step 6.
 PUBLIC_URL="${PUBLIC_URL:-https://REPLACE_AFTER_CLOUDFRONT.cloudfront.net}"
+# $USER is not set under SSM Session Manager; derive the current user robustly.
+RUN_USER="$(id -un)"
 
 gen() { openssl rand -base64 48 | tr -d '\n' | tr '/+' '__' | cut -c1-48; }
 
@@ -45,7 +47,7 @@ if ! command -v docker >/dev/null; then
   sudo curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${ARCH}" \
     -o /usr/libexec/docker/cli-plugins/docker-compose
   sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
-  sudo usermod -aG docker "$USER"
+  sudo usermod -aG docker "$RUN_USER"
   echo "!! Docker group added. If the next docker command says 'permission denied',"
   echo "!! run:  newgrp docker   (or log out and back in) and re-run this script."
 fi
@@ -66,11 +68,11 @@ else
   sudo mkdir -p /data
 fi
 sudo mkdir -p /data/postgres /data/redis /data/minio /data/backups /data/deploy /data/restore
-sudo chown -R "$USER":"$USER" /data
+sudo chown -R "$RUN_USER":"$RUN_USER" /data
 
 echo "==> [3/6] Get the code"
 if [ ! -d "$APP_DIR/.git" ]; then
-  sudo mkdir -p "$APP_DIR" && sudo chown "$USER":"$USER" "$APP_DIR"
+  sudo mkdir -p "$APP_DIR" && sudo chown "$RUN_USER":"$RUN_USER" "$APP_DIR"
   git clone "$REPO_URL" "$APP_DIR"
 fi
 cd "$APP_DIR"
