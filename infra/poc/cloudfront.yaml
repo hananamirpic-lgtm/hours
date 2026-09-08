@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Hours POC - CloudFront distribution only (Step 6).
+  Points at an EXISTING EC2 instance (created manually in Step 4) as its origin,
+  giving the app a public HTTPS URL for internet and mobile access. Steps 1-5
+  (account, ECR, S3 bucket, EC2, running the app) are done outside this template;
+  see infra/poc/RUNBOOK.md and infra/poc/scripts/bootstrap.sh.
+
+  The origin hop is HTTP:80 (no custom domain yet). CloudFront terminates the
+  public HTTPS. After this stack is created, lock the instance security group so
+  port 80 only accepts the CloudFront managed prefix list (RUNBOOK step 6), and
+  set CORS_ALLOWED_ORIGINS + the in-app public_app_url to the PublicUrl output.
+
+Parameters:
+  OriginDomainName:
+    Type: String
+    Description: >
+      The existing EC2 instance public DNS, e.g.
+      ec2-1-2-3-4.il-central-1.compute.amazonaws.com
+    AllowedPattern: "^[a-zA-Z0-9.-]+$"
+
+Resources:
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "Hours POC - ${AWS::StackName}"
+        PriceClass: PriceClass_100
+        HttpVersion: http2and3
+        Origins:
+          - Id: ec2-origin
+            DomainName: !Ref OriginDomainName
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              OriginSSLProtocols: [TLSv1.2]
+        # Default behavior: the static single-page app. Cache normally.
+        DefaultCacheBehavior:
+          TargetOriginId: ec2-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # AWS managed "CachingOptimized"
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CacheBehaviors:
+          # The API: dynamic and authenticated. Never cache; forward auth/cookies/query.
+          - PathPattern: /api/*
+            TargetOriginId: ec2-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            Compress: true
+            # AWS managed "CachingDisabled"
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # AWS managed "AllViewerExceptHostHeader" - forwards headers (incl.
+            # Authorization), cookies and query strings to the origin.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+Outputs:
+  PublicUrl:
+    Description: Public HTTPS URL for the app - hand this to users, and set it as CORS + public_app_url.
+    Value: !Sub "https://${Distribution.DomainName}"
+  DistributionDomainName:
+    Description: The CloudFront domain name.
+    Value: !GetAtt Distribution.DomainName
+  DistributionId:
+    Description: The CloudFront distribution id.
+    Value: !Ref Distribution

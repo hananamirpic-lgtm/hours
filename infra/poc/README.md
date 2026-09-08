@@ -18,6 +18,8 @@ This is intentionally simpler and cheaper than the production stack in [`../clou
 | [`scripts/deploy.sh`](scripts/deploy.sh) | One-command upgrade: back up -> pull new ECR tag -> switch api/web -> migrate -> health-check -> auto-rollback. |
 | [`scripts/rollback.sh`](scripts/rollback.sh) | Return to the previous version; `--restore-db` also restores the pre-upgrade database. |
 | [`scripts/backup.sh`](scripts/backup.sh) | `pg_dump` + MinIO data to the S3 backup bucket. Run pre-upgrade (by deploy.sh) and nightly (cron). |
+| [`scripts/bootstrap.sh`](scripts/bootstrap.sh) | Step 5 in one command, run ON the EC2 box: installs Docker, mounts `/data`, clones the repo, writes `.env.prod` (generating any missing secrets), starts the stack, migrates, and seeds the first admin. |
+| [`cloudfront.yaml`](cloudfront.yaml) | CloudFormation for Step 6 only: the CloudFront distribution pointing at your existing EC2 (`OriginDomainName` parameter). Steps 1-5 are done outside it. |
 
 ## Quick reference (on the EC2 box)
 
