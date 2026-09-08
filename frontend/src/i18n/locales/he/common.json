@@ -483,6 +483,7 @@
   },
   "apiError": {
     "unknown": "משהו השתבש. נסו שוב.",
+    "invalid_qr_token": "לא ניתן לקרוא את קוד ה-QR. בקשו מהמנהל קוד חדש.",
     "current_password_incorrect": "הסיסמה הנוכחית שגויה.",
     "new_password_must_differ": "הסיסמה החדשה חייבת להיות שונה מהנוכחית.",
     "password_change_required": "עליך לשנות את הסיסמה לפני שתוכל להמשיך.",
@@ -743,6 +744,9 @@
     "empty": "אין שעות בטווח זה.",
     "weekOf": "שבוע של {{date}}",
     "weekSubtotal": "סך שבועי"
+  },
+  "scanLanding": {
+    "title": "מבצע צ׳ק-אין…"
   },
   "scan": {
     "title": "סרקו את קוד האתר",

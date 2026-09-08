@@ -64,6 +64,9 @@
     "weekOf": "{{date}} का सप्ताह",
     "weekSubtotal": "सप्ताह का कुल"
   },
+  "scanLanding": {
+    "title": "आपको चेक-इन किया जा रहा है…"
+  },
   "scan": {
     "title": "साइट कोड स्कैन करें",
     "cameraLabel": "कैमरा पूर्वावलोकन",
@@ -111,6 +114,7 @@
   },
   "apiError": {
     "unknown": "कुछ गलत हो गया। पुनः प्रयास करें।",
+    "invalid_qr_token": "यह QR कोड पढ़ा नहीं जा सका। प्रबंधक से नया कोड मांगें।",
     "current_password_incorrect": "आपका वर्तमान पासवर्ड गलत है।",
     "new_password_must_differ": "नया पासवर्ड वर्तमान से अलग होना चाहिए।",
     "password_change_required": "जारी रखने से पहले आपको अपना पासवर्ड बदलना होगा।",

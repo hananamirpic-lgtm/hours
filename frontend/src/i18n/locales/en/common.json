@@ -483,6 +483,7 @@
   },
   "apiError": {
     "unknown": "Something went wrong. Try again.",
+    "invalid_qr_token": "That QR code could not be read. Ask a manager for a fresh code.",
     "current_password_incorrect": "Your current password is incorrect.",
     "new_password_must_differ": "The new password must be different from the current one.",
     "password_change_required": "You must change your password before you can continue.",
@@ -743,6 +744,9 @@
     "empty": "No hours in this range.",
     "weekOf": "Week of {{date}}",
     "weekSubtotal": "Week total"
+  },
+  "scanLanding": {
+    "title": "Checking you in…"
   },
   "scan": {
     "title": "Scan the site code",
