@@ -194,37 +194,24 @@ def _label_font() -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(_FONT_PATH), _LABEL_FONT_PX)
 
 
-def _visual_label(label: str) -> str:
-    """Reorder a mixed Hebrew/Latin label into visual order for a left-to-right glyph drawer.
-
-    Pillow without libraqm draws glyphs in logical (memory) order, which lays a multi-word Hebrew name
-    out with its words in the wrong order and mixed Hebrew/Latin misplaced. `bidi.get_display` with an
-    RTL base direction returns the string in the order the glyphs must be placed so the result reads
-    correctly: the Hebrew words right-to-left in the right order, and the Latin site number kept
-    readable (not reversed the way a naive whole-string reversal would break "S-12" into "21-S").
-    Verified visually against a real two-word site name.
-    """
-    from bidi import get_display  # deferred: keeps import cost off module load
-
-    return get_display(label, base_dir="R")
-
-
 def _render_label_strip(label: str, width_px: int) -> Image.Image:
     """Draw the label centred on a white strip `width_px` wide, for composing beneath the QR.
 
-    The text is bidi-reordered first so Hebrew reads right-to-left. The strip is a fixed height band;
-    the text is horizontally centred using the font's measured extent so a short or long name both sit
-    in the middle.
+    The text is drawn with Pillow's native right-to-left layout (`direction="rtl"`), which requires
+    libraqm (bundled in the image). Raqm runs the Unicode bidirectional algorithm and shapes the run
+    itself, so a Hebrew site name — one word or several — reads correctly, and a Latin site number
+    embedded in it stays readable, in a single deterministic step that does not vary by library
+    version the way a manual reorder did. The strip is a fixed-height band; the text is horizontally
+    centred from its measured extent so a short or long name both sit in the middle.
     """
     strip = Image.new("RGB", (width_px, _LABEL_STRIP_PX), "white")
     draw = ImageDraw.Draw(strip)
     font = _label_font()
-    text = _visual_label(label)
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    left, top, right, bottom = draw.textbbox((0, 0), label, font=font, direction="rtl")
     text_w, text_h = right - left, bottom - top
     x = max(0, (width_px - text_w) // 2 - left)
     y = max(0, (_LABEL_STRIP_PX - text_h) // 2 - top)
-    draw.text((x, y), text, font=font, fill="black")
+    draw.text((x, y), label, font=font, fill="black", direction="rtl")
     return strip
 
 

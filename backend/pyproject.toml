@@ -29,11 +29,10 @@ dependencies = [
     # is written directly in `app.services.qr` with no native dependency. The site-name label on the
     # sheet is drawn into the image with a bundled Hebrew-capable TrueType font (Pillow's FreeType),
     # because the base-14 PDF fonts carry no Hebrew glyphs and a text label would render as "?????".
+    # The Hebrew label is laid out right-to-left by Pillow's native shaper (libraqm, installed in the
+    # Docker image), so it renders correctly and deterministically without a Python bidi reorder.
     "qrcode[pil]==8.0",
-    # `python-bidi` reorders a mixed Hebrew/Latin label into visual order before Pillow draws it:
-    # without libraqm, Pillow draws glyphs in logical order and would otherwise reverse Hebrew. Pure
-    # Python, no native dependency.
-    "python-bidi==0.6.3",
+
     # Scheduled jobs (Requirement 14). APScheduler runs the daily and weekly notification jobs in the
     # API process for milestone 1 (design "Background work: APScheduler in milestone 1"); the cloud
     # target moves them to a dedicated runner, which is why the scheduler is a thin wrapper over the
