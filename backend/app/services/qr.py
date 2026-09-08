@@ -197,10 +197,12 @@ def _label_font() -> ImageFont.FreeTypeFont:
 def _visual_label(label: str) -> str:
     """Reorder a mixed Hebrew/Latin label into visual order for a left-to-right glyph drawer.
 
-    Pillow without libraqm draws glyphs in logical (memory) order, which renders Hebrew reversed and
-    mixed Hebrew/Latin in the wrong places. `bidi.get_display` applies the Unicode bidirectional
-    algorithm with an RTL base direction, returning the string in the order the glyphs must be placed
-    so the result reads correctly — Hebrew right-to-left, the Latin site number left-to-right.
+    Pillow without libraqm draws glyphs in logical (memory) order, which lays a multi-word Hebrew name
+    out with its words in the wrong order and mixed Hebrew/Latin misplaced. `bidi.get_display` with an
+    RTL base direction returns the string in the order the glyphs must be placed so the result reads
+    correctly: the Hebrew words right-to-left in the right order, and the Latin site number kept
+    readable (not reversed the way a naive whole-string reversal would break "S-12" into "21-S").
+    Verified visually against a real two-word site name.
     """
     from bidi import get_display  # deferred: keeps import cost off module load
 
