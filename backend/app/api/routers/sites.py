@@ -35,11 +35,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from app.api.deps import (
-    AdminCaller,
     AuthenticatedContext,
     Caller,
     DbSession,
     HoursReaderCaller,
+    OperationsCaller,
     api_error,
 )
 from app.core.qr_token import QrAction
@@ -186,7 +186,7 @@ def read_site(
 )
 def create_site(
     payload: SiteCreate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -283,7 +283,7 @@ def download_qr(
 )
 def regenerate_qr(
     site_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -309,7 +309,7 @@ def regenerate_qr(
 def update_site(
     site_id: uuid.UUID,
     payload: SiteUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -371,7 +371,7 @@ def read_rates(
 def replace_rates(
     site_id: uuid.UUID,
     payload: SiteRatesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -404,7 +404,7 @@ def replace_rates(
 def set_site_employees(
     site_id: uuid.UUID,
     payload: SiteEmployeesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:

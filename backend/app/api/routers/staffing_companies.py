@@ -18,7 +18,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.deps import AdminCaller, AuthenticatedContext, DbSession, api_error
+from app.api.deps import AuthenticatedContext, DbSession, OperationsCaller, api_error
 from app.schemas.staffing_company import (
     StaffingCompanyCreate,
     StaffingCompanyListItem,
@@ -75,7 +75,7 @@ def _raise_for(error: staffing_company_service.StaffingCompanyError) -> HTTPExce
     description="A stable-sorted page of staffing companies. Admin only.",
 )
 def list_staffing_companies(
-    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
     session: DbSession,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -93,7 +93,7 @@ def list_staffing_companies(
 )
 def read_staffing_company(
     company_id: uuid.UUID,
-    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
     session: DbSession,
 ) -> StaffingCompanyResponse:
     try:
@@ -114,7 +114,7 @@ def read_staffing_company(
 )
 def create_staffing_company(
     payload: StaffingCompanyCreate,
-    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
     session: DbSession,
     context: AuthenticatedContext,
 ) -> StaffingCompanyResponse:
@@ -137,7 +137,7 @@ def create_staffing_company(
 def update_staffing_company(
     company_id: uuid.UUID,
     payload: StaffingCompanyUpdate,
-    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
     session: DbSession,
     context: AuthenticatedContext,
 ) -> StaffingCompanyResponse:
@@ -169,7 +169,7 @@ def update_staffing_company(
 )
 def delete_staffing_company(
     company_id: uuid.UUID,
-    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
     session: DbSession,
     context: AuthenticatedContext,
 ) -> None:

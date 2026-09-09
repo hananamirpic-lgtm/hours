@@ -95,6 +95,37 @@ class NotEmployeeLogin(UserError):
     code = "not_employee_login"
 
 
+class RoleAssignmentForbidden(UserError):
+    """The acting user may not assign the target role (Requirement 4).
+
+    An operations administrator manages users but must never mint a login that can see money: it may
+    assign `site_manager`, `employee` and `operations_admin`, but not `admin` or `accounting`.
+    Assigning a forbidden role — on create or on an update that changes the role — is refused and
+    nothing is written, so the money boundary cannot be crossed by creating a privileged account.
+    An administrator is unrestricted.
+    """
+
+    code = "role_assignment_forbidden"
+
+
+#: The roles an `operations_admin` may assign to a user. `admin` and `accounting` are excluded because
+#: either can see money; granting one would be a privilege escalation past the operations-admin's own
+#: money boundary. An `admin` acting is not limited by this set.
+ASSIGNABLE_BY_OPERATIONS_ADMIN = frozenset(
+    {UserRole.SITE_MANAGER, UserRole.EMPLOYEE, UserRole.OPERATIONS_ADMIN}
+)
+
+
+def _check_role_assignable(acting_role: UserRole, target_role: UserRole) -> None:
+    """Refuse an operations-admin assigning a role it may not (Requirement 4.1, 4.2, 4.3).
+
+    Pure guard, raised before any write. An `operations_admin` is limited to
+    `ASSIGNABLE_BY_OPERATIONS_ADMIN`; every other acting role (in practice `admin`) is unrestricted.
+    """
+    if acting_role is UserRole.OPERATIONS_ADMIN and target_role not in ASSIGNABLE_BY_OPERATIONS_ADMIN:
+        raise RoleAssignmentForbidden
+
+
 # --------------------------------------------------------------------------- reads
 
 
@@ -175,7 +206,13 @@ def _find_username_holder(
 INITIAL_EMPLOYEE_PASSWORD = "1234"
 
 
-def create_user(session: Session, payload: UserCreate, *, context: AuditContext) -> User:
+def create_user(
+    session: Session,
+    payload: UserCreate,
+    *,
+    acting_role: UserRole = UserRole.ADMIN,
+    context: AuditContext,
+) -> User:
     """Create a login and, for a site manager, its site scope (Requirement 1, 2.1, 2.3).
 
     Username uniqueness is checked before the insert so the conflicting login can be named; the
@@ -183,6 +220,8 @@ def create_user(session: Session, payload: UserCreate, *, context: AuditContext)
     password is hashed and its plaintext discarded here — it never reaches the model as anything but a
     hash.
     """
+    _check_role_assignable(acting_role, payload.role)
+
     if payload.site_ids and payload.role is not UserRole.SITE_MANAGER:
         raise SiteScopeNotApplicable
 
@@ -350,7 +389,12 @@ _UPDATABLE_FIELDS = ("role", "employee_id", "language")
 
 
 def update_user(
-    session: Session, user_id: uuid.UUID, payload: UserUpdate, *, context: AuditContext
+    session: Session,
+    user_id: uuid.UUID,
+    payload: UserUpdate,
+    *,
+    acting_role: UserRole = UserRole.ADMIN,
+    context: AuditContext,
 ) -> User:
     """Apply a partial update, checking username uniqueness if the username changes (Requirement 1, 2.1).
 
@@ -361,6 +405,11 @@ def update_user(
     """
     user = get_user(session, user_id)
     changes = payload.model_dump(exclude_unset=True)
+
+    # If the update changes the role, the acting user must be permitted to assign the new one
+    # (Requirement 4). Checked before any write so a forbidden assignment changes nothing.
+    if "role" in changes and changes["role"] is not None:
+        _check_role_assignable(acting_role, UserRole(changes["role"]))
 
     before = snapshot(user)
 

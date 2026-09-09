@@ -40,9 +40,26 @@ export const CONSOLE_NAV: NavItem[] = [
   { to: '/settings', labelKey: 'nav.settings', roles: [] },
 ];
 
-/** The nav items a role may see. Admin sees all; everyone else sees what names their role. */
-export const navFor = (role: UserRole): NavItem[] =>
-  role === 'admin' ? CONSOLE_NAV : CONSOLE_NAV.filter((item) => item.roles.includes(role));
+/** The console destinations an operations admin must never see: they are the money-only screens. */
+const MONEY_ONLY_PATHS = new Set(['/payroll', '/billing']);
+
+/**
+ * The nav items a role may see.
+ *
+ * Admin sees all. An operations admin is a full operational administrator with no financial
+ * visibility, so it sees the admin set minus the money-only destinations (Payroll, Billing); the
+ * Reports item stays, but the Reports page itself hides the money (profitability) tab from the role,
+ * and the API omits money figures regardless. Every other role sees only what names it.
+ */
+export const navFor = (role: UserRole): NavItem[] => {
+  if (role === 'admin') {
+    return CONSOLE_NAV;
+  }
+  if (role === 'operations_admin') {
+    return CONSOLE_NAV.filter((item) => !MONEY_ONLY_PATHS.has(item.to));
+  }
+  return CONSOLE_NAV.filter((item) => item.roles.includes(role));
+};
 
 /** Where a role lands after signing in: employees on the mobile tree, everyone else on the console. */
 export const homePathFor = (role: UserRole): string => (role === 'employee' ? '/m' : '/');

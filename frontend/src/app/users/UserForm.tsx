@@ -17,11 +17,21 @@ import { useTranslation } from 'react-i18next';
 
 import type { AppLanguage, UserCreate, UserResponse, UserRole, UserUpdate } from '@/api/types';
 import { createUser, updateUser, userKeys } from '@/api/users';
+import { useAuth } from '@/auth/AuthProvider';
 import { toError } from '@/lib/apiError';
 
 // Employee logins are provisioned automatically from the Employees tab (Requirement 5), so they are
-// not offered here — the Users tab manages only the three console roles.
-const ROLES: UserRole[] = ['admin', 'site_manager', 'accounting'];
+// not offered here for creation — the Users tab manages the console roles.
+//
+// The roles offered depend on WHO is creating the user. An administrator may assign any console role,
+// including the operations admin. An operations admin has no financial visibility and must not mint a
+// login that does, so it may assign only site_manager, employee and operations_admin — never admin or
+// accounting (the server enforces the same rule; this just keeps the UI honest).
+const ADMIN_ASSIGNABLE_ROLES: UserRole[] = ['admin', 'operations_admin', 'site_manager', 'accounting'];
+const OPERATIONS_ADMIN_ASSIGNABLE_ROLES: UserRole[] = ['operations_admin', 'site_manager', 'employee'];
+
+const rolesAssignableBy = (actingRole: UserRole | undefined): UserRole[] =>
+  actingRole === 'operations_admin' ? OPERATIONS_ADMIN_ASSIGNABLE_ROLES : ADMIN_ASSIGNABLE_ROLES;
 const LANGUAGES: AppLanguage[] = ['he', 'en'];
 
 interface Fields {
@@ -55,8 +65,16 @@ export function UserForm({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  const { user: actingUser } = useAuth();
   const queryClient = useQueryClient();
   const editing = user !== undefined;
+  // The roles this form may offer depend on who is acting (see rolesAssignableBy). When editing an
+  // existing user whose role is outside that set (e.g. an admin editing an accounting user), keep the
+  // current role visible so the picker still shows the true value.
+  const roleOptions = (() => {
+    const allowed = rolesAssignableBy(actingUser?.role);
+    return editing && user && !allowed.includes(user.role) ? [user.role, ...allowed] : allowed;
+  })();
   const [fields, setFields] = useState<Fields>(user ? fromUser(user) : emptyFields);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [errorParams, setErrorParams] = useState<Record<string, string>>({});
@@ -138,7 +156,7 @@ export function UserForm({
         <label className="field">
           <span className="field__label">{t('user.role')}</span>
           <select className="input" value={fields.role} onChange={set('role')}>
-            {ROLES.map((role) => (
+            {roleOptions.map((role) => (
               <option key={role} value={role}>
                 {t(`role.${role}`)}
               </option>

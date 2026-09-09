@@ -45,7 +45,7 @@ ROLES_WITH_FULL_ACCESS = frozenset({UserRole.ADMIN})
 #: 2.6 gives them payroll, billing and reports for the business, which are whole-company figures and
 #: cannot be assembled from a subset of sites. A site manager is absent by 2.3, and an employee is
 #: absent because their scope is their own record (2.7), which is narrower than any site.
-ROLES_WITH_ALL_SITES = frozenset({UserRole.ADMIN, UserRole.ACCOUNTING})
+ROLES_WITH_ALL_SITES = frozenset({UserRole.ADMIN, UserRole.OPERATIONS_ADMIN, UserRole.ACCOUNTING})
 
 #: Requirement 2.3: a site manager sees and writes only their assigned sites. The set of ids comes
 #: from `user_sites` — see `app.services.authz.resolve_site_scope`.
@@ -53,21 +53,28 @@ ROLES_SCOPED_TO_ASSIGNED_SITES = frozenset({UserRole.SITE_MANAGER})
 
 #: Requirements 2.5 and 17.7. Who may see wage rates, payroll records, site billing rates and client
 #: billing. The site manager's exclusion is the point of the set; the employee's is a consequence of
-#: 2.7, and their own wage is not exposed through these endpoints either.
+#: 2.7, and their own wage is not exposed through these endpoints either. `operations_admin` is
+#: deliberately absent: it is a full operational administrator with no financial visibility, so the
+#: same redaction and finance-endpoint gating that hides money from a site manager hides it from this
+#: role too. This one exclusion is what makes the whole "admin without money" role work.
 FINANCE_ROLES = frozenset({UserRole.ADMIN, UserRole.ACCOUNTING})
 
 #: Requirement 2.4 and the prohibition in 2.6: managers and administrators create and correct time
 #: entries, accounting does not. Read access to hours is wider than this — see `HOURS_READ_ROLES`.
-ATTENDANCE_WRITE_ROLES = frozenset({UserRole.ADMIN, UserRole.SITE_MANAGER})
+ATTENDANCE_WRITE_ROLES = frozenset({UserRole.ADMIN, UserRole.OPERATIONS_ADMIN, UserRole.SITE_MANAGER})
 
 #: Requirements 2.4 and 2.6. Accounting reads approved hours; a manager reads the hours of their
 #: sites. An employee reads their own entries, which is a different question — see `is_own_record`.
-HOURS_READ_ROLES = frozenset({UserRole.ADMIN, UserRole.SITE_MANAGER, UserRole.ACCOUNTING})
+HOURS_READ_ROLES = frozenset(
+    {UserRole.ADMIN, UserRole.OPERATIONS_ADMIN, UserRole.SITE_MANAGER, UserRole.ACCOUNTING}
+)
 
 #: Who may read employee records at all. Accounting is included because payroll is computed per
 #: person; what they may see *of* a record is a separate question, answered by `FINANCE_ROLES` and
 #: the redaction below.
-PERSONNEL_READ_ROLES = frozenset({UserRole.ADMIN, UserRole.SITE_MANAGER, UserRole.ACCOUNTING})
+PERSONNEL_READ_ROLES = frozenset(
+    {UserRole.ADMIN, UserRole.OPERATIONS_ADMIN, UserRole.SITE_MANAGER, UserRole.ACCOUNTING}
+)
 
 #: Requirement 2.7. The employee role acts on its own record and nothing else, so no site scope and
 #: no role set grants it anything; every employee-facing endpoint checks ownership instead.

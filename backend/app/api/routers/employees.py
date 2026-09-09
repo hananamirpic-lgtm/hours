@@ -28,9 +28,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import (
-    AdminCaller,
     AuthenticatedContext,
     DbSession,
+    OperationsCaller,
     PersonnelReaderCaller,
     api_error,
 )
@@ -106,7 +106,7 @@ def _conflict_with_params(code: str, params: dict[str, str]) -> HTTPException:
 
 
 def _card_dict(
-    employee: Employee, caller: PersonnelReaderCaller | AdminCaller, session: DbSession
+    employee: Employee, caller: PersonnelReaderCaller | OperationsCaller, session: DbSession
 ) -> dict[str, Any]:
     """The employee card as a JSON-able dict, with today's rate flattened on and wage fields redacted.
 
@@ -223,7 +223,7 @@ def read_employee_photo_url(
 )
 def create_employee(
     payload: EmployeeCreate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -249,7 +249,7 @@ def create_employee(
 def update_employee(
     employee_id: uuid.UUID,
     payload: EmployeeUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -280,7 +280,7 @@ def update_employee(
 def change_status(
     employee_id: uuid.UUID,
     payload: EmployeeStatusUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -324,7 +324,7 @@ _USER_ERROR_STATUS: dict[str, HTTPStatus] = {
 )
 def reset_employee_password(
     employee_id: uuid.UUID,
-    caller: AdminCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
     session: DbSession,
     context: AuthenticatedContext,
 ) -> None:
@@ -390,7 +390,7 @@ def read_rates(
 def replace_rates(
     employee_id: uuid.UUID,
     payload: EmployeeRatesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -431,7 +431,7 @@ def _site_error(error: site_service.SiteError) -> HTTPException:
 )
 def read_employee_sites(
     employee_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
 ) -> EmployeeSitesResponse:
     try:
@@ -455,7 +455,7 @@ def read_employee_sites(
 def set_employee_sites(
     employee_id: uuid.UUID,
     payload: EmployeeSitesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> EmployeeSitesResponse:

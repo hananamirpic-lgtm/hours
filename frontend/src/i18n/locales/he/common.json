@@ -546,6 +546,7 @@
   },
   "role": {
     "admin": "מנהל מערכת",
+    "operations_admin": "מנהל תפעול",
     "site_manager": "מנהל אתר",
     "accounting": "הנהלת חשבונות",
     "employee": "עובד"

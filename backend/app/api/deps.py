@@ -327,6 +327,14 @@ SiteManagerCaller = Annotated[Caller, Depends(require_roles(UserRole.SITE_MANAGE
 AccountingCaller = Annotated[Caller, Depends(require_roles(UserRole.ACCOUNTING))]
 EmployeeCaller = Annotated[Caller, Depends(require_roles(UserRole.EMPLOYEE))]
 
+#: Operational administration: an administrator and the operations administrator, who has full
+#: operational access but no financial visibility. This guards every non-finance endpoint that was
+#: previously administrator-only. It is emphatically NOT used for payroll or billing, which stay on
+#: `FinanceCaller`; `operations_admin` is absent from `FINANCE_ROLES`, so it is refused there.
+OperationsCaller = Annotated[
+    Caller, Depends(require_roles(UserRole.ADMIN, UserRole.OPERATIONS_ADMIN))
+]
+
 #: Guards for the role *groups* the requirements describe, so an endpoint names the policy it
 #: implements rather than restating a list of roles that then drifts between endpoints.
 FinanceCaller = Annotated[Caller, Depends(require_roles(*authz.FINANCE_ROLES))]

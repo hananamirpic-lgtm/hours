@@ -24,7 +24,7 @@ export interface ReadinessResponse {
 
 // --------------------------------------------------------------------------- auth
 
-export type UserRole = 'admin' | 'site_manager' | 'accounting' | 'employee';
+export type UserRole = 'admin' | 'operations_admin' | 'site_manager' | 'accounting' | 'employee';
 export type AppLanguage = 'he' | 'en';
 
 /** The token pair returned by POST /api/auth/login and /api/auth/refresh. */

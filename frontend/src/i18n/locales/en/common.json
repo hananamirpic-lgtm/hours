@@ -546,6 +546,7 @@
   },
   "role": {
     "admin": "Administrator",
+    "operations_admin": "Operations admin",
     "site_manager": "Site manager",
     "accounting": "Accounting",
     "employee": "Employee"
