@@ -5,11 +5,12 @@ envelope. The service owns every rule and never commits, so this module commits 
 write — the audit rows the service added ride along with it, which is what keeps a change and its
 audit record in one transaction (Requirement 13.2). This mirrors `app.api.routers.employees`.
 
-Authorization: writes are administrator-only, and reads are open to the finance roles (administrator
-and accounting). A client is a billing entity — its sites are billed to it — and Requirement 2.5
-keeps client billing away from site managers, so a site manager has no client endpoint. There is no
-redaction call here because a client card carries no wage, payroll or billing figure to strip; the
-billing rates live on the site rate history, not on the client.
+Authorization: every client endpoint is open to the operational administrators — the administrator
+and the operations administrator — since managing clients is operational work. A client is a billing
+entity, but its record carries no wage, payroll or billing *figure* (payment terms are net-days plus
+a note, not an amount; billing rates live on the site rate history), so there is nothing to redact
+and no reason to withhold the record from the operations administrator. A site manager still has no
+client endpoint (Requirement 2.5), and accounting reaches clients through the finance reports.
 
 The delete endpoint applies Requirement 5.4: a client whose sites carry time entries cannot be
 deleted, and the 409 offers archival as the recorded alternative. Archival itself is `POST
@@ -27,8 +28,8 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.api.deps import (
     AuthenticatedContext,
+    ClientReaderCaller,
     DbSession,
-    FinanceCaller,
     OperationsCaller,
     api_error,
 )
@@ -98,7 +99,7 @@ def _raise_for(error: client_service.ClientError) -> HTTPException:
     ),
 )
 def list_clients(
-    caller: FinanceCaller,
+    caller: ClientReaderCaller,  # noqa: ARG001 - the type is the guard; a client card carries no money
     session: DbSession,
     include_archived: bool = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -119,7 +120,7 @@ def list_clients(
 )
 def read_client(
     client_id: uuid.UUID,
-    caller: FinanceCaller,
+    caller: ClientReaderCaller,  # noqa: ARG001 - the type is the guard; a client card carries no money
     session: DbSession,
 ) -> ClientResponse:
     try:
@@ -138,7 +139,7 @@ def read_client(
 )
 def read_client_sites(
     client_id: uuid.UUID,
-    caller: FinanceCaller,
+    caller: ClientReaderCaller,  # noqa: ARG001 - the type is the guard; a client card carries no money
     session: DbSession,
 ) -> ClientSitesResponse:
     try:
@@ -150,7 +151,7 @@ def read_client_sites(
 
 
 # --------------------------------------------------------------------------- writes
-# Create, update, delete and archive are administrator-only.
+# Create, update, delete and archive are open to the operational administrators.
 
 
 @router.post(

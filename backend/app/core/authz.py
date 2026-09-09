@@ -107,6 +107,10 @@ BILLING_FIELDS = frozenset(
         "profit",
         "profit_amount",
         "margin",
+        # A staffing company's single flat rate and the payment a report computes from it. Both are
+        # money the operations administrator must not see (added with the staffing-company feature).
+        "hourly_rate",
+        "total_payment",
     }
 )
 

@@ -197,3 +197,63 @@ def test_an_admin_may_still_create_a_finance_role(ops_client, sign_in):
         headers=headers,
     )
     assert response.status_code == 201, response.text
+
+# --------------------------------------------------------------------------- Property 1: staffing money
+
+
+def test_operations_admin_does_not_see_staffing_company_hourly_rate(ops_client, sign_in):
+    """Property 1: a staffing company's hourly_rate is money and must be stripped for operations_admin.
+
+    An administrator creates a company with a rate; the operations admin reads it back and the rate is
+    absent (not null, not present,), while the operational fields remain. This guards the leak found in
+    manual testing: hourly_rate was neither in the money-field set nor redacted by the router.
+    """
+    admin_headers, _ = sign_in(UserRole.ADMIN)
+    created = ops_client.post(
+        "/api/staffing-companies",
+        json={"name": "Manpower", "contact_person": "Dana", "hourly_rate": "42.50"},
+        headers=admin_headers,
+    )
+    assert created.status_code == 201, created.text
+    # The admin (a finance role) sees the rate.
+    assert created.json().get("hourly_rate") == "42.50"
+    company_id = created.json()["id"]
+
+    ops_headers, _ = sign_in(UserRole.OPERATIONS_ADMIN)
+
+    read = ops_client.get(f"/api/staffing-companies/{company_id}", headers=ops_headers)
+    assert read.status_code == 200, read.text
+    body = read.json()
+    assert "hourly_rate" not in body  # absent, not null
+    assert body["name"] == "Manpower"  # operational data still present
+
+    listed = ops_client.get("/api/staffing-companies", headers=ops_headers)
+    assert listed.status_code == 200, listed.text
+    for item in listed.json()["items"]:
+        assert "hourly_rate" not in item
+
+# --------------------------------------------------------------------------- Property 3: clients readable
+
+
+def test_operations_admin_can_list_and_read_clients(ops_client, sign_in, session: Session):
+    """Property 3: managing clients is operational, so the operations admin can read them (not 403).
+
+    Guards the regression where the client READ endpoints were finance-only while the WRITE endpoints
+    were operational, so an operations admin could create a client but got 403 listing them � the
+    "data could not be loaded" the Clients page showed.
+    """
+    admin_headers, _ = sign_in(UserRole.ADMIN)
+    created = ops_client.post(
+        "/api/clients", json={"name": "Acme Ltd"}, headers=admin_headers
+    )
+    assert created.status_code == 201, created.text
+    client_id = created.json()["id"]
+
+    ops_headers, _ = sign_in(UserRole.OPERATIONS_ADMIN)
+
+    listed = ops_client.get("/api/clients", headers=ops_headers)
+    assert listed.status_code == 200, listed.text
+
+    read = ops_client.get(f"/api/clients/{client_id}", headers=ops_headers)
+    assert read.status_code == 200, read.text
+    assert read.json()["name"] == "Acme Ltd"

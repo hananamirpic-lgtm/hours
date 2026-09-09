@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from http import HTTPStatus
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -70,37 +70,41 @@ def _raise_for(error: staffing_company_service.StaffingCompanyError) -> HTTPExce
 
 @router.get(
     "",
-    response_model=StaffingCompanyListResponse,
     summary="List staffing companies",
-    description="A stable-sorted page of staffing companies. Admin only.",
+    description="A stable-sorted page of staffing companies. Admin or operations admin.",
 )
 def list_staffing_companies(
-    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,
     session: DbSession,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> StaffingCompanyListResponse:
+) -> Any:
     page = staffing_company_service.list_staffing_companies(session, limit=limit, offset=offset)
     items = [StaffingCompanyListItem.model_validate(item) for item in page.items]
-    return StaffingCompanyListResponse(items=items, total=page.total, limit=limit, offset=offset)
+    response = StaffingCompanyListResponse(
+        items=items, total=page.total, limit=limit, offset=offset
+    )
+    # Redact money (the flat hourly_rate) for a non-finance caller such as the operations admin. The
+    # response is returned as a redacted dict rather than the model, so a response_model cannot re-add
+    # the stripped key as null — the same pattern the sites router uses (Requirement 3 of the role).
+    return caller.redact(response.model_dump(mode="json"))
 
 
 @router.get(
     "/{company_id}",
-    response_model=StaffingCompanyResponse,
     summary="Read one staffing company",
     responses={HTTPStatus.NOT_FOUND: {"description": "No staffing company with that id"}},
 )
 def read_staffing_company(
     company_id: uuid.UUID,
-    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,
     session: DbSession,
-) -> StaffingCompanyResponse:
+) -> Any:
     try:
         company = staffing_company_service.get_staffing_company(session, company_id)
     except staffing_company_service.StaffingCompanyError as error:
         raise _raise_for(error) from error
-    return StaffingCompanyResponse.model_validate(company)
+    return caller.redact(StaffingCompanyResponse.model_validate(company).model_dump(mode="json"))
 
 
 # --------------------------------------------------------------------------- writes
@@ -109,15 +113,14 @@ def read_staffing_company(
 @router.post(
     "",
     status_code=HTTPStatus.CREATED,
-    response_model=StaffingCompanyResponse,
     summary="Create a staffing company",
 )
 def create_staffing_company(
     payload: StaffingCompanyCreate,
-    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
-) -> StaffingCompanyResponse:
+) -> Any:
     try:
         company = staffing_company_service.create_staffing_company(session, payload, context=context)
         session.commit()
@@ -125,22 +128,21 @@ def create_staffing_company(
         session.rollback()
         raise _raise_for(error) from error
     session.refresh(company)
-    return StaffingCompanyResponse.model_validate(company)
+    return caller.redact(StaffingCompanyResponse.model_validate(company).model_dump(mode="json"))
 
 
 @router.patch(
     "/{company_id}",
-    response_model=StaffingCompanyResponse,
     summary="Update a staffing company",
     responses={HTTPStatus.NOT_FOUND: {"description": "No staffing company with that id"}},
 )
 def update_staffing_company(
     company_id: uuid.UUID,
     payload: StaffingCompanyUpdate,
-    caller: OperationsCaller,  # noqa: ARG001 - the type is the admin-only guard
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
-) -> StaffingCompanyResponse:
+) -> Any:
     try:
         company = staffing_company_service.update_staffing_company(
             session, company_id, payload, context=context
@@ -150,7 +152,7 @@ def update_staffing_company(
         session.rollback()
         raise _raise_for(error) from error
     session.refresh(company)
-    return StaffingCompanyResponse.model_validate(company)
+    return caller.redact(StaffingCompanyResponse.model_validate(company).model_dump(mode="json"))
 
 
 @router.delete(
