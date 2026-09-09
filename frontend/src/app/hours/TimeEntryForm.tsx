@@ -95,10 +95,16 @@ const toIsoInstant = (date: string, time: string): string => {
   return new Date(`${date}T${time}`).toISOString();
 };
 
-const employeeLabel = (language: Language, name: string, nameEn: string): string => {
+const employeeLabel = (
+  language: Language,
+  name: string,
+  nameEn: string,
+  employeeNumber?: string | null,
+): string => {
   const primary = language === 'he' ? name : nameEn;
   const secondary = language === 'he' ? nameEn : name;
-  return primary === secondary ? primary : `${primary} (${secondary})`;
+  const base = primary === secondary ? primary : `${primary} (${secondary})`;
+  return employeeNumber ? `${base} #${employeeNumber}` : base;
 };
 
 export function TimeEntryForm({
@@ -147,7 +153,7 @@ export function TimeEntryForm({
       return null;
     }
     return {
-      employee: employeeLabel(language, entry.employee_name, entry.employee_name_en),
+      employee: employeeLabel(language, entry.employee_name, entry.employee_name_en, entry.employee_number),
       site: entry.site_name,
     };
   }, [entry, language]);

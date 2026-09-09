@@ -75,7 +75,12 @@ class EmployeeRateResponse(BaseModel):
 
 
 class EmployeeCreate(BaseModel):
-    """Create an employee (Requirement 3.1–3.3). Mandatory fields are non-optional here.
+    """Create an employee (Requirement 3.1–3.3).
+
+    Only `full_name`, `full_name_en`, `passport_number`, `phone` and `start_date` are mandatory
+    (Requirements 1.1–1.4). `country`, `emergency_contact_name` and `emergency_contact_phone` are
+    optional: omitting them is accepted and carried through as null, but a blank/whitespace value is
+    still rejected when one is supplied.
 
     The initial rate is part of creation rather than a second call, because an employee with no rate
     cannot be paid and every real create knows the wage. Passing `rate=None` is allowed for the rare
@@ -85,14 +90,22 @@ class EmployeeCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    # Mandatory (Requirement 3.1).
+    # Mandatory (Requirement 1.1): identity plus start_date below.
     full_name: str = _MANDATORY_TEXT
     full_name_en: str = _MANDATORY_TEXT
     passport_number: str = Field(min_length=1, max_length=100)
     phone: str = Field(min_length=1, max_length=50)
-    country: str = _MANDATORY_TEXT
-    emergency_contact_name: str = _MANDATORY_TEXT
-    emergency_contact_phone: str = Field(min_length=1, max_length=50)
+
+    #: The staffing company that supplies this employee. Mandatory on create (Requirement 2.1–2.3):
+    #: required, no default, so a missing value is a 422 naming the field. The DB column is nullable
+    #: (migration 0007), so pre-existing rows created before this feature stay valid.
+    staffing_company_id: uuid.UUID
+
+    # Optional (Requirements 1.1–1.4): omission is allowed and carried through as null; when a value
+    # is supplied it must not be blank (validated below).
+    country: str | None = Field(default=None, max_length=200)
+    emergency_contact_name: str | None = Field(default=None, max_length=200)
+    emergency_contact_phone: str | None = Field(default=None, max_length=50)
 
     # Employment (Requirement 3.3). `start_date` is mandatory; `position` is not.
     start_date: date
@@ -114,15 +127,20 @@ class EmployeeCreate(BaseModel):
     #: The opening pay row. Optional so a record can exist before pay is agreed.
     rate: EmployeeRateInput | None = None
 
-    @field_validator("full_name", "full_name_en", "country", "emergency_contact_name")
+    @field_validator("full_name", "full_name_en")
     @classmethod
     def _not_blank(cls, value: str) -> str:
         return _reject_blank(value)
 
-    @field_validator("passport_number", "phone", "emergency_contact_phone")
+    @field_validator("passport_number", "phone")
     @classmethod
     def _not_blank_identifier(cls, value: str) -> str:
         return _reject_blank(value)
+
+    @field_validator("country", "emergency_contact_name", "emergency_contact_phone")
+    @classmethod
+    def _not_blank_when_present(cls, value: str | None) -> str | None:
+        return None if value is None else _reject_blank(value)
 
     @field_validator("status")
     @classmethod
@@ -146,6 +164,7 @@ class EmployeeUpdate(BaseModel):
     full_name_en: str | None = Field(default=None, min_length=1, max_length=200)
     passport_number: str | None = Field(default=None, min_length=1, max_length=100)
     phone: str | None = Field(default=None, min_length=1, max_length=50)
+    staffing_company_id: uuid.UUID | None = None
     country: str | None = Field(default=None, min_length=1, max_length=200)
     emergency_contact_name: str | None = Field(default=None, min_length=1, max_length=200)
     emergency_contact_phone: str | None = Field(default=None, min_length=1, max_length=50)
@@ -197,14 +216,21 @@ class EmployeeResponse(BaseModel):
     id: uuid.UUID
     full_name: str
     full_name_en: str
+    #: The auto-generated 4-digit login number, server-assigned and read-only (Requirement 2.3, 6.1).
+    #: Not a wage field, so every reader sees it.
+    employee_number: str | None = None
     photo_key: str | None
     passport_number: str
     phone: str
-    country: str
+    #: The current staffing-company link. Nullable so pre-existing employees serialize (Requirement
+    #: 2.9–2.11). Not a wage field, so every reader sees it.
+    staffing_company_id: uuid.UUID | None = None
+    #: Nullable since migration 0006 made the column nullable, so an employee lacking one serializes.
+    country: str | None
     date_of_birth: date | None
     address: str | None
-    emergency_contact_name: str
-    emergency_contact_phone: str
+    emergency_contact_name: str | None
+    emergency_contact_phone: str | None
     notes: str | None
     start_date: date
     position: str | None
@@ -237,7 +263,10 @@ class EmployeeListItem(BaseModel):
     id: uuid.UUID
     full_name: str
     full_name_en: str
-    country: str
+    #: The auto-generated 4-digit login number, server-assigned and read-only (Requirement 2.3, 6.1).
+    employee_number: str | None = None
+    staffing_company_id: uuid.UUID | None = None
+    country: str | None
     position: str | None
     status: EmployeeStatus
     start_date: date

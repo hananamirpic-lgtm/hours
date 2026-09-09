@@ -1,4 +1,4 @@
-﻿"""The users table.
+"""The users table.
 
 A mapping onto the table migration 0001 already created, not a definition of it. Every column,
 constraint name and index name here reproduces what the migration wrote, so Alembic autogenerate
@@ -31,9 +31,16 @@ from app.db.types import EncryptedString
 
 
 class UserRole(enum.StrEnum):
-    """The four roles of Requirement 2.1. Values match the `user_role` PostgreSQL enum."""
+    """The system roles (Requirement 2.1). Values match the `user_role` PostgreSQL enum.
+
+    `operations_admin` is a full operational administrator with no financial visibility: it is in
+    every operational role set but deliberately *not* in `app.core.authz.FINANCE_ROLES`, so the same
+    redaction and finance-endpoint gating that hides money from a site manager hides it from this
+    role too. It is not required or prompted for 2FA (absent from the sets below).
+    """
 
     ADMIN = "admin"
+    OPERATIONS_ADMIN = "operations_admin"
     SITE_MANAGER = "site_manager"
     ACCOUNTING = "accounting"
     EMPLOYEE = "employee"

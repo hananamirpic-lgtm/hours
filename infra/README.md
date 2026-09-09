@@ -66,6 +66,14 @@ docker compose run --rm api python -m app.fixtures
 Idempotent, and it refuses to run when `ENVIRONMENT=production`. Never run it against a database that
 holds real data.
 
+## Low-cost POC target (single EC2 + CloudFront)
+
+For a small proof-of-concept (~10 users, lowest cost, minimal maintenance) there is a separate,
+self-contained deployment under [`poc/`](poc/): the whole system on one EC2 instance running
+`docker compose`, fronted by CloudFront, in `il-central-1`. It reuses the root compose file via an
+overlay and ships one-command upgrade/rollback/backup scripts. Start at
+[`poc/RUNBOOK.md`](poc/RUNBOOK.md). This is distinct from the production stack described below.
+
 ## Cloud target
 
 The cloud deployment is defined here and rolled out by the release pipeline. Its shape:

@@ -26,10 +26,10 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.api.deps import (
-    AdminCaller,
     AuthenticatedContext,
     DbSession,
     FinanceCaller,
+    OperationsCaller,
     api_error,
 )
 from app.schemas.client import (
@@ -162,7 +162,7 @@ def read_client_sites(
 )
 def create_client(
     payload: ClientCreate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> ClientResponse:
@@ -188,7 +188,7 @@ def create_client(
 def update_client(
     client_id: uuid.UUID,
     payload: ClientUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> ClientResponse:
@@ -218,7 +218,7 @@ def update_client(
 )
 def delete_client(
     client_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Response:
@@ -243,7 +243,7 @@ def delete_client(
 )
 def archive_client(
     client_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> ClientResponse:

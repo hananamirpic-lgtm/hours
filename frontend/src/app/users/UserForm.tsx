@@ -11,16 +11,27 @@
  * returns (e.g. a duplicate username), so the words live here, not on the server.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { AppLanguage, UserCreate, UserResponse, UserRole, UserUpdate } from '@/api/types';
 import { createUser, updateUser, userKeys } from '@/api/users';
-import { employeeKeys, listEmployees } from '@/api/employees';
+import { useAuth } from '@/auth/AuthProvider';
 import { toError } from '@/lib/apiError';
 
-const ROLES: UserRole[] = ['admin', 'site_manager', 'accounting', 'employee'];
+// Employee logins are provisioned automatically from the Employees tab (Requirement 5), so they are
+// not offered here for creation — the Users tab manages the console roles.
+//
+// The roles offered depend on WHO is creating the user. An administrator may assign any console role,
+// including the operations admin. An operations admin has no financial visibility and must not mint a
+// login that does, so it may assign only site_manager, employee and operations_admin — never admin or
+// accounting (the server enforces the same rule; this just keeps the UI honest).
+const ADMIN_ASSIGNABLE_ROLES: UserRole[] = ['admin', 'operations_admin', 'site_manager', 'accounting'];
+const OPERATIONS_ADMIN_ASSIGNABLE_ROLES: UserRole[] = ['operations_admin', 'site_manager', 'employee'];
+
+const rolesAssignableBy = (actingRole: UserRole | undefined): UserRole[] =>
+  actingRole === 'operations_admin' ? OPERATIONS_ADMIN_ASSIGNABLE_ROLES : ADMIN_ASSIGNABLE_ROLES;
 const LANGUAGES: AppLanguage[] = ['he', 'en'];
 
 interface Fields {
@@ -28,7 +39,6 @@ interface Fields {
   password: string;
   role: UserRole;
   language: AppLanguage;
-  employeeId: string;
 }
 
 const fromUser = (user: UserResponse): Fields => ({
@@ -36,7 +46,6 @@ const fromUser = (user: UserResponse): Fields => ({
   password: '',
   role: user.role,
   language: user.language,
-  employeeId: user.employee_id ?? '',
 });
 
 const emptyFields: Fields = {
@@ -44,7 +53,6 @@ const emptyFields: Fields = {
   password: '',
   role: 'site_manager',
   language: 'he',
-  employeeId: '',
 };
 
 export function UserForm({
@@ -57,8 +65,16 @@ export function UserForm({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  const { user: actingUser } = useAuth();
   const queryClient = useQueryClient();
   const editing = user !== undefined;
+  // The roles this form may offer depend on who is acting (see rolesAssignableBy). When editing an
+  // existing user whose role is outside that set (e.g. an admin editing an accounting user), keep the
+  // current role visible so the picker still shows the true value.
+  const roleOptions = (() => {
+    const allowed = rolesAssignableBy(actingUser?.role);
+    return editing && user && !allowed.includes(user.role) ? [user.role, ...allowed] : allowed;
+  })();
   const [fields, setFields] = useState<Fields>(user ? fromUser(user) : emptyFields);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [errorParams, setErrorParams] = useState<Record<string, string>>({});
@@ -68,17 +84,6 @@ export function UserForm({
     (event: { target: { value: string } }) =>
       setFields((prev) => ({ ...prev, [key]: event.target.value as Fields[K] }));
 
-  // The list of employees to link an employee-role login to. Loaded only when the role calls for it,
-  // and only on create — the link is set once, when the login is made. A directory list, no sensitive
-  // fields, so a large workforce still loads cheaply here.
-  const needsEmployee = fields.role === 'employee' && !editing;
-  // limit is the endpoint's maximum: the list caps at 200 per page (a higher value is a 422), which
-  // is plenty for a link picker over the active directory.
-  const employeeList = useQuery({
-    queryKey: employeeKeys.list({ status: 'active', limit: 200, offset: 0 }),
-    queryFn: () => listEmployees({ status: 'active', limit: 200, offset: 0 }),
-    enabled: needsEmployee,
-  });
 
   const mutation = useMutation({
     mutationFn: async (): Promise<UserResponse> => {
@@ -99,11 +104,6 @@ export function UserForm({
         role: fields.role,
         language: fields.language,
       };
-      // An employee login is meaningful only when tied to a person: the mobile app shows that
-      // employee's own scans and hours, which it finds through this link.
-      if (fields.role === 'employee') {
-        payload.employee_id = fields.employeeId || null;
-      }
       return createUser(payload);
     },
     onSuccess: async (saved) => {
@@ -156,7 +156,7 @@ export function UserForm({
         <label className="field">
           <span className="field__label">{t('user.role')}</span>
           <select className="input" value={fields.role} onChange={set('role')}>
-            {ROLES.map((role) => (
+            {roleOptions.map((role) => (
               <option key={role} value={role}>
                 {t(`role.${role}`)}
               </option>
@@ -175,23 +175,6 @@ export function UserForm({
         </label>
       </div>
 
-      {needsEmployee ? (
-        <label className="field">
-          <span className="field__label">{t('user.linkedEmployee')}</span>
-          <select className="input" value={fields.employeeId} onChange={set('employeeId')} required>
-            <option value="">{t('user.selectEmployee')}</option>
-            {(employeeList.data?.items ?? []).map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {t('assignment.employeeOption', {
-                  name: employee.full_name,
-                  nameEn: employee.full_name_en,
-                })}
-              </option>
-            ))}
-          </select>
-          <span className="field__hint">{t('user.linkedEmployeeHint')}</span>
-        </label>
-      ) : null}
 
       {fields.role === 'site_manager' && !editing ? (
         <p className="subtitle">{t('user.assignSitesAfter')}</p>

@@ -19,6 +19,7 @@ import pyotp
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.staffing_company import StaffingCompany
 from app.models.user import UserRole
 from auth_support import DEFAULT_PASSWORD
 
@@ -58,6 +59,23 @@ def sign_in(employees_client, make_user, session: Session):
     return _sign_in
 
 
+#: The id of a staffing company seeded once per test by the autouse fixture below, so a create body
+#: can satisfy the mandatory employee-to-company link (Requirement 2.1) without every test spelling it
+#: out. A list so the fixture can rebind it per test without a `global` statement.
+_seeded_staffing_company_id: list[str] = []
+
+
+@pytest.fixture(autouse=True)
+def _seed_staffing_company(session: Session):
+    """Seed one staffing company so `_new_employee_body` can link new employees to it."""
+    company = StaffingCompany(name="Acme Staffing", contact_person="Dana Levi")
+    session.add(company)
+    session.commit()
+    _seeded_staffing_company_id[:] = [str(company.id)]
+    yield
+    _seeded_staffing_company_id.clear()
+
+
 def _new_employee_body(passport: str = "A1234567", **overrides) -> dict[str, object]:
     body: dict[str, object] = {
         "full_name": "Ahmed Khalil",
@@ -68,6 +86,7 @@ def _new_employee_body(passport: str = "A1234567", **overrides) -> dict[str, obj
         "emergency_contact_name": "Layla Khalil",
         "emergency_contact_phone": "+972500000001",
         "start_date": "2025-01-01",
+        "staffing_company_id": _seeded_staffing_company_id[0] if _seeded_staffing_company_id else None,
         "rate": {
             "hourly_wage": "35.00",
             "overtime_rate": "43.75",
@@ -100,13 +119,32 @@ def test_a_create_with_a_blank_mandatory_field_is_a_field_level_error(employees_
 
 
 def test_a_create_missing_a_mandatory_field_is_rejected(employees_client, sign_in):
+    """Requirement 1.1, 1.3. A missing mandatory field (here full_name) is rejected with a 422."""
     headers = sign_in(UserRole.ADMIN)
     body = _new_employee_body()
-    del body["country"]
+    del body["full_name"]
 
     response = employees_client.post("/api/employees", json=body, headers=headers)
 
     assert response.status_code == 422
+
+
+def test_a_create_omitting_optional_fields_succeeds(employees_client, sign_in):
+    """Requirement 1.2, 1.4. country, emergency_contact_name and emergency_contact_phone are optional:
+    omitting them is accepted and carried through as null, and the employee is still created."""
+    headers = sign_in(UserRole.ADMIN)
+    body = _new_employee_body()
+    del body["country"]
+    del body["emergency_contact_name"]
+    del body["emergency_contact_phone"]
+
+    response = employees_client.post("/api/employees", json=body, headers=headers)
+
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["country"] is None
+    assert created["emergency_contact_name"] is None
+    assert created["emergency_contact_phone"] is None
 
 
 # --------------------------------------------------------------------------- duplicate passport

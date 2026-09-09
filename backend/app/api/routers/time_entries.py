@@ -115,6 +115,7 @@ def list_time_entries(
             employee_id=row.entry.employee_id,
             employee_name=row.employee_name,
             employee_name_en=row.employee_name_en,
+            employee_number=row.employee_number,
             site_id=row.entry.site_id,
             site_name=row.site_name,
             work_date=row.entry.work_date,

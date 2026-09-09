@@ -55,10 +55,16 @@ const DASH = '—';
 type Grouping = 'site' | 'employee';
 
 /** An option/label: the reader's-language name first, the other in parentheses to disambiguate. */
-const employeeLabel = (language: Language, name: string, nameEn: string): string => {
+const employeeLabel = (
+  language: Language,
+  name: string,
+  nameEn: string,
+  employeeNumber?: string | null,
+): string => {
   const primary = language === 'he' ? name : nameEn;
   const secondary = language === 'he' ? nameEn : name;
-  return primary === secondary ? primary : `${primary} (${secondary})`;
+  const base = primary === secondary ? primary : `${primary} (${secondary})`;
+  return employeeNumber ? `${base} #${employeeNumber}` : base;
 };
 
 export function ApprovalsPage() {
@@ -348,7 +354,7 @@ function EmployeeBlock({
     <div className="approval-employee">
       <div className="approval-employee__header">
         <span className="approval-employee__name">
-          {employeeLabel(language, employee.employeeName, employee.employeeNameEn)}
+          {employeeLabel(language, employee.employeeName, employee.employeeNameEn, employee.employeeNumber)}
         </span>
         <TallyBadges tally={employee.tally} />
         <AdvanceActions entries={employee.entries} />
@@ -369,7 +375,7 @@ function EmployeeGroupCard({
     <article className="approval-group">
       <header className="approval-group__header">
         <span className="approval-group__title">
-          {employeeLabel(language, group.employeeName, group.employeeNameEn)}
+          {employeeLabel(language, group.employeeName, group.employeeNameEn, group.employeeNumber)}
         </span>
         <TallyBadges tally={group.tally} />
         <AdvanceActions entries={group.entries} />
@@ -516,7 +522,7 @@ function ReversePanel({
     <form className="form" onSubmit={onSubmit}>
       <p>
         {t('approvals.reversePrompt', {
-          employee: employeeLabel(language, entry.employee_name, entry.employee_name_en),
+          employee: employeeLabel(language, entry.employee_name, entry.employee_name_en, entry.employee_number),
           site: entry.site_name,
           date: formatDate(language, entry.work_date),
           from: t(`timeEntryStatus.${entry.status}`),

@@ -101,7 +101,6 @@ class SiteCreate(BaseModel):
     address: str | None = Field(default=None, max_length=2000)
     manager_user_id: uuid.UUID | None = None
     start_date: date | None = None
-    end_date: date | None = None
     notes: str | None = Field(default=None, max_length=2000)
 
     #: Status defaults to active (Requirement 6.2).
@@ -140,7 +139,6 @@ class SiteUpdate(BaseModel):
     address: str | None = Field(default=None, max_length=2000)
     manager_user_id: uuid.UUID | None = None
     start_date: date | None = None
-    end_date: date | None = None
     status: SiteStatus | None = None
     qr_mode: QrMode | None = None
     assignment_mode: AssignmentMode | None = None
@@ -200,7 +198,6 @@ class SiteResponse(BaseModel):
     manager_user_id: uuid.UUID | None
     address: str | None
     start_date: date | None
-    end_date: date | None
     status: SiteStatus
     qr_mode: QrMode
     assignment_mode: AssignmentMode

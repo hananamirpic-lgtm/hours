@@ -21,7 +21,7 @@ from http import HTTPStatus
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.deps import AdminCaller, AuthenticatedContext, DbSession
+from app.api.deps import AuthenticatedContext, DbSession, OperationsCaller
 from app.models.setting import Setting
 from app.schemas.settings import SettingItem, SettingsListResponse, SettingsUpdate
 from app.services import settings as settings_service
@@ -45,7 +45,7 @@ def _list_response(rows: list[Setting]) -> SettingsListResponse:
     ),
     responses={HTTPStatus.FORBIDDEN: {"description": "The caller is not an administrator"}},
 )
-def read_settings(caller: AdminCaller, session: DbSession) -> SettingsListResponse:
+def read_settings(caller: OperationsCaller, session: DbSession) -> SettingsListResponse:
     # The administrator guard is the whole access decision; `caller` is bound so the guard runs.
     _ = caller
     return _list_response(settings_service.list_settings(session))
@@ -72,7 +72,7 @@ def read_settings(caller: AdminCaller, session: DbSession) -> SettingsListRespon
 )
 def update_settings(
     payload: SettingsUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> SettingsListResponse:

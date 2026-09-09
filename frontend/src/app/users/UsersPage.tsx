@@ -20,7 +20,9 @@ import { Pagination } from '@/components/management/Pagination';
 import { EmptyState, ErrorState, LoadingState } from '@/components/management/QueryState';
 
 const PAGE_SIZE = 25;
-const ROLES: UserRole[] = ['admin', 'site_manager', 'accounting', 'employee'];
+// Employee logins are managed from the Employees tab (Requirement 5), so the Users tab lists and
+// filters only the three console roles.
+const CONSOLE_ROLES: UserRole[] = ['admin', 'site_manager', 'accounting'];
 
 const matches = (item: UserListItem, term: string): boolean => {
   if (!term) {
@@ -50,7 +52,10 @@ export function UsersPage() {
   });
 
   const filtered = useMemo(
-    () => (query.data?.items ?? []).filter((item) => matches(item, search)),
+    () =>
+      (query.data?.items ?? []).filter(
+        (item) => item.role !== 'employee' && matches(item, search),
+      ),
     [query.data, search],
   );
 
@@ -77,7 +82,7 @@ export function UsersPage() {
             }}
           >
             <option value="">{t('user.allRoles')}</option>
-            {ROLES.map((value) => (
+            {CONSOLE_ROLES.map((value) => (
               <option key={value} value={value}>
                 {t(`role.${value}`)}
               </option>

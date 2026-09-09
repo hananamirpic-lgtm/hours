@@ -9,11 +9,11 @@
  * whether `rates` is present at all.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { employeeKeys, getEmployee } from '@/api/employees';
+import { employeeKeys, getEmployee, resetEmployeePassword } from '@/api/employees';
 import { AuditPanel } from '@/app/audit/AuditPanel';
 import { useAuth } from '@/auth/AuthProvider';
 import { EmployeeDocumentsPanel } from '@/app/employees/EmployeeDocumentsPanel';
@@ -26,6 +26,7 @@ import { EmployeeStatusControl } from '@/app/employees/EmployeeStatusControl';
 import { EmployeeStatusPill } from '@/components/management/StatusPill';
 import { ErrorState, LoadingState } from '@/components/management/QueryState';
 import { useLanguage } from '@/lib/useLanguage';
+import { employeeNumberLabel } from '@/lib/employeeLabel';
 import { formatDate } from '@/lib/format';
 
 type Tab = 'details' | 'rates' | 'documents' | 'sites' | 'history';
@@ -63,9 +64,20 @@ export function EmployeeCard({
   // Accounting reads the card but not its history, so the tab is hidden for them.
   const canSeeHistory = user?.role === 'admin' || user?.role === 'site_manager';
 
+  const queryClient = useQueryClient();
+  const [resetDone, setResetDone] = useState(false);
+
   const query = useQuery({
     queryKey: employeeKeys.detail(employeeId),
     queryFn: () => getEmployee(employeeId),
+  });
+
+  const resetPassword = useMutation({
+    mutationFn: () => resetEmployeePassword(employeeId),
+    onSuccess: async () => {
+      setResetDone(true);
+      await queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
+    },
   });
 
   if (query.isPending) {
@@ -107,7 +119,7 @@ export function EmployeeCard({
       <div className="photo-row">
         <EmployeePhoto employee={employee} canManage={canManage} />
         <div>
-          <h3 className="drawer__title">{employee.full_name}</h3>
+          <h3 className="drawer__title">{employeeNumberLabel(employee.full_name, employee.employee_number)}</h3>
           <p className="subtitle detail__value">{employee.full_name_en}</p>
           <EmployeeStatusPill status={employee.status} />
           {employee.has_expired_document ? (
@@ -129,7 +141,30 @@ export function EmployeeCard({
             {t('manualEntry.new')}
           </button>
           <EmployeeStatusControl employee={employee} onDone={onClosed} />
+          {employee.employee_number ? (
+            <button
+              type="button"
+              className="button button--small"
+              onClick={() => {
+                setResetDone(false);
+                resetPassword.mutate();
+              }}
+              disabled={resetPassword.isPending}
+            >
+              {t('employee.resetPassword')}
+            </button>
+          ) : null}
         </div>
+      ) : null}
+      {resetDone ? (
+        <p className="feedback feedback--success" role="status">
+          {t('employee.resetPasswordDone')}
+        </p>
+      ) : null}
+      {resetPassword.isError ? (
+        <p className="feedback feedback--error" role="alert">
+          {t('employee.resetPasswordError')}
+        </p>
       ) : null}
 
       <div className="tab-row" style={{ marginBlockStart: 'calc(var(--space) * 2)' }}>
@@ -180,6 +215,7 @@ export function EmployeeCard({
 
       {tab === 'details' ? (
         <div className="detail-grid">
+          <Detail label={t('employee.number')} value={employee.employee_number} />
           <Detail label={t('employee.passport')} value={employee.passport_number} />
           <Detail label={t('employee.phone')} value={employee.phone} />
           <Detail label={t('employee.country')} value={employee.country} />

@@ -30,11 +30,13 @@ import {
   readEmployeeReport,
   readMissingReports,
   readProfitability,
+  readStaffingCompanyReport,
   reportKeys,
   type EmployeeReportParams,
   type MissingReportsParams,
   type ProfitabilityParams,
 } from '@/api/reports';
+import { listStaffingCompanies, staffingCompanyKeys } from '@/api/staffingCompanies';
 import { listSites, siteKeys } from '@/api/sites';
 import type { EmployeeReport, MissingReportKind } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
@@ -66,7 +68,7 @@ import type { Language } from '@/i18n';
 const OPTION_PAGE = 200;
 const KINDS: MissingReportKind[] = ['missing_checkout', 'missing_checkin', 'both_missing'];
 
-type ReportView = 'profitability' | 'by-employee' | 'missing';
+type ReportView = 'profitability' | 'by-employee' | 'by-staffing-company' | 'missing';
 
 export function ReportsPage() {
   const { t } = useTranslation();
@@ -87,6 +89,7 @@ export function ReportsPage() {
     const views: ReportView[] = [];
     if (canReadProfitability) {
       views.push('profitability');
+      views.push('by-staffing-company');
     }
     if (canReadByEmployee) {
       views.push('by-employee');
@@ -108,6 +111,7 @@ export function ReportsPage() {
   const tabLabels: Record<ReportView, string> = {
     profitability: t('reports.profitability.tab'),
     'by-employee': t('reports.byEmployee.tab'),
+    'by-staffing-company': t('reports.staffingCompany.tab'),
     missing: t('reports.missing.tab'),
   };
 
@@ -137,6 +141,8 @@ export function ReportsPage() {
 
       {view === 'profitability' ? (
         <ProfitabilityView params={params} setParams={setParams} />
+      ) : view === 'by-staffing-company' ? (
+        <StaffingCompanyReportView params={params} setParams={setParams} />
       ) : view === 'by-employee' ? (
         <ByEmployeeView params={params} setParams={setParams} />
       ) : (
@@ -656,7 +662,7 @@ function MissingReportsView({ params, setParams }: ViewProps) {
             <tbody>
               {findings.map((finding) => (
                 <tr key={`${finding.employee_id}-${finding.work_date}-${finding.site_id}-${finding.kind}`}>
-                  <td>{employeeLabel(language, finding.employee_name, finding.employee_name_en)}</td>
+                  <td>{employeeLabel(language, finding.employee_name, finding.employee_name_en, finding.employee_number)}</td>
                   <td className="numeric">{formatDate(language, finding.work_date)}</td>
                   <td>
                     <SiteName siteId={finding.site_id} />
@@ -675,8 +681,115 @@ function MissingReportsView({ params, setParams }: ViewProps) {
 }
 
 /** An option/row label: the reader's-language name first, the other in parentheses to disambiguate. */
-const employeeLabel = (language: Language, name: string, nameEn: string): string => {
+const employeeLabel = (
+  language: Language,
+  name: string,
+  nameEn: string,
+  employeeNumber?: string | null,
+): string => {
   const primary = language === 'he' ? name : nameEn;
   const secondary = language === 'he' ? nameEn : name;
-  return primary === secondary ? primary : `${primary} (${secondary})`;
+  const base = primary === secondary ? primary : `${primary} (${secondary})`;
+  return employeeNumber ? `${base} #${employeeNumber}` : base;
 };
+
+
+// --------------------------------------------------------------------------- by staffing company (Req 4)
+
+function StaffingCompanyReportView({ params, setParams }: ViewProps) {
+  const { t } = useTranslation();
+  const language = useLanguage();
+
+  const fallback = toMonthValue(currentPeriod());
+  const monthValue = params.get('month') ?? fallback;
+  const period = useMemo(() => parseMonthValue(monthValue), [monthValue]);
+  const staffingCompanyId = params.get('staffing_company_id') ?? '';
+
+  const set = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    next.set('view', 'by-staffing-company');
+    if (value) {
+      next.set(key, value);
+    } else {
+      next.delete(key);
+    }
+    setParams(next);
+  };
+
+  const companies = useQuery({
+    queryKey: staffingCompanyKeys.list({ limit: OPTION_PAGE, offset: 0 }),
+    queryFn: () => listStaffingCompanies({ limit: OPTION_PAGE, offset: 0 }),
+  });
+
+  const queryParams = {
+    year: period?.year ?? 0,
+    month: period?.month ?? 0,
+    staffingCompanyId,
+  };
+  const query = useQuery({
+    queryKey: reportKeys.byStaffingCompany(queryParams),
+    queryFn: () => readStaffingCompanyReport(queryParams),
+    enabled: period !== null && staffingCompanyId !== '',
+  });
+
+  return (
+    <>
+      <div className="toolbar hours-filters">
+        <label className="field field--inline">
+          <span className="field__label">{t('reports.month')}</span>
+          <input
+            className="input"
+            type="month"
+            value={monthValue}
+            onChange={(event) => set('month', event.target.value)}
+          />
+        </label>
+
+        <select
+          className="select"
+          aria-label={t('reports.staffingCompany.filter')}
+          value={staffingCompanyId}
+          onChange={(event) => set('staffing_company_id', event.target.value)}
+        >
+          <option value="">{t('reports.staffingCompany.choose')}</option>
+          {(companies.data?.items ?? []).map((company) => (
+            <option key={company.id} value={company.id}>
+              {company.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {staffingCompanyId === '' ? (
+        <EmptyState messageKey="reports.staffingCompany.choosePrompt" />
+      ) : query.isPending ? (
+        <LoadingState />
+      ) : query.isError || !query.data ? (
+        <ErrorState />
+      ) : (
+        <div className="stat-grid">
+          <div className="stat-card">
+            <p className="stat-card__label">{t('reports.staffingCompany.totalHours')}</p>
+            <p className="stat-card__value numeric">{formatDuration(query.data.total_minutes)}</p>
+          </div>
+          <div className="stat-card">
+            <p className="stat-card__label">{t('reports.staffingCompany.totalPayment')}</p>
+            <p className="stat-card__value numeric">
+              {query.data.total_payment === null
+                ? t('reports.staffingCompany.paymentUnavailable')
+                : formatCurrency(language, parseAmount(query.data.total_payment))}
+            </p>
+          </div>
+          <div className="stat-card">
+            <p className="stat-card__label">{t('reports.staffingCompany.hourlyRate')}</p>
+            <p className="stat-card__value numeric">
+              {query.data.hourly_rate === null
+                ? t('reports.staffingCompany.paymentUnavailable')
+                : formatCurrency(language, parseAmount(query.data.hourly_rate))}
+            </p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

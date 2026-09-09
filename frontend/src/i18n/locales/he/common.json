@@ -63,7 +63,8 @@
   },
   "timeEntryFlag": {
     "unassigned_site": "אתר ללא שיוך",
-    "implausible_duration": "משך לא סביר"
+    "implausible_duration": "משך לא סביר",
+    "self_reported": "דיווח עצמי (ללא QR)"
   },
   "hours": {
     "subtitle": "רישומי נוכחות לאתרים שלך, יום אחד לכל עובד על פני האתרים.",
@@ -304,6 +305,12 @@
     "photoOnFile": "תמונה קיימת",
     "uploadPhoto": "העלאת תמונה",
     "expiredDocument": "מסמך שפג תוקפו",
+    "staffingCompany": "חברת כוח אדם",
+    "selectStaffingCompany": "בחרו חברת כוח אדם",
+    "number": "מספר עובד",
+    "resetPassword": "איפוס סיסמה ל-1234",
+    "resetPasswordDone": "הסיסמה אופסה ל-1234. העובד יתבקש לשנות אותה בכניסה הבאה.",
+    "resetPasswordError": "איפוס הסיסמה נכשל. נסו שוב.",
     "filterStatus": "סינון לפי סטטוס",
     "filterAllStatuses": "כל הסטטוסים",
     "changeStatus": "שינוי סטטוס",
@@ -470,10 +477,13 @@
     "done": "הסיסמה שלך שונתה.",
     "mustDiffer": "הסיסמה החדשה חייבת להיות שונה מהנוכחית.",
     "tooShort": "השתמשו בלפחות 8 תווים.",
+    "pinLength": "השתמשו ב-4 עד 8 ספרות.",
+    "pinDigitsOnly": "הסיסמה יכולה להכיל ספרות בלבד (0-9).",
     "mismatch": "הסיסמאות אינן תואמות."
   },
   "apiError": {
     "unknown": "משהו השתבש. נסו שוב.",
+    "invalid_qr_token": "לא ניתן לקרוא את קוד ה-QR. בקשו מהמנהל קוד חדש.",
     "current_password_incorrect": "הסיסמה הנוכחית שגויה.",
     "new_password_must_differ": "הסיסמה החדשה חייבת להיות שונה מהנוכחית.",
     "password_change_required": "עליך לשנות את הסיסמה לפני שתוכל להמשיך.",
@@ -506,11 +516,15 @@
     "period_already_locked": "החודש כבר נעול.",
     "override_requires_admin": "רק מנהל מערכת יכול לכתוב לחודש נעול.",
     "invalid_setting_value": "הערך אינו תקין עבור הגדרה זו. בדקו אותו ונסו שוב.",
-    "setting_not_found": "אין הגדרה בשם {{key}}."
+    "setting_not_found": "אין הגדרה בשם {{key}}.",
+    "staffing_company_not_found": "חברת כוח האדם לא נמצאה.",
+    "staffing_company_has_active_employees": "לחברת כוח אדם זו יש עדיין עובדים פעילים. השביתו אותם לפני מחיקתה."
   },
   "language": {
     "label": "שפה",
-    "switchTo": "English"
+    "switchTo": "English",
+    "hindiHelper": "הצג עזרה בהינדי",
+    "hindiLabel": "हिन्दी"
   },
   "auth": {
     "signInPrompt": "התחברו כדי להמשיך",
@@ -532,9 +546,22 @@
   },
   "role": {
     "admin": "מנהל מערכת",
+    "operations_admin": "מנהל תפעול",
     "site_manager": "מנהל אתר",
     "accounting": "הנהלת חשבונות",
     "employee": "עובד"
+  },
+  "staffingCompany": {
+    "new": "חברת כוח אדם חדשה",
+    "card": "חברת כוח אדם",
+    "empty": "אין חברות כוח אדם תואמות.",
+    "name": "שם החברה",
+    "contactPerson": "איש קשר",
+    "hourlyRate": "תעריף שעתי",
+    "telephone": "טלפון",
+    "comments": "הערות",
+    "delete": "מחיקת חברת כוח אדם",
+    "deleteBlocked": "לחברת כוח אדם זו יש עדיין עובדים פעילים. השביתו אותם תחילה ולאחר מכן מחקו אותה:"
   },
   "nav": {
     "primary": "ניווט ראשי",
@@ -543,6 +570,7 @@
     "closeMenu": "סגור את תפריט הניווט",
     "dashboard": "לוח בקרה",
     "employees": "עובדים",
+    "staffingCompanies": "חברות כוח אדם",
     "clients": "לקוחות",
     "sites": "אתרים",
     "hours": "שעות",
@@ -625,6 +653,16 @@
       "profit": "רווח גולמי",
       "siteCount": "אתרים"
     },
+    "staffingCompany": {
+      "tab": "לפי חברת כוח אדם",
+      "filter": "חברת כוח אדם",
+      "choose": "בחרו חברת כוח אדם",
+      "choosePrompt": "בחרו חברת כוח אדם כדי לראות את סך השעות והתשלום שלה.",
+      "totalHours": "סך שעות",
+      "totalPayment": "סך תשלום",
+      "hourlyRate": "תעריף שעתי",
+      "paymentUnavailable": "לא הוגדר תעריף"
+    },
     "byEmployee": {
       "tab": "לפי עובד",
       "employee": "עובד",
@@ -667,7 +705,13 @@
     "history": "עבודה אחרונה",
     "noHistory": "אין עבודה אחרונה להצגה.",
     "alerts": "התראות",
-    "offlineBanner": "אתם במצב לא מקוון. לא ניתן לרשום סריקה עד שהחיבור יחזור."
+    "offlineBanner": "אתם במצב לא מקוון. לא ניתן לרשום סריקה עד שהחיבור יחזור.",
+    "selfCheckIn": {
+      "action": "דיווח כניסה ללא קוד QR",
+      "title": "דיווח כניסה ללא קוד QR",
+      "approvalNote": "ללא QR אין הוכחה שאתם באתר, ולכן מנהל חייב לאשר את המשמרת הזו.",
+      "noSites": "אינכם משויכים לאף אתר, ולכן אין היכן לדווח כניסה ללא QR."
+    }
   },
   "mobileNav": {
     "label": "מקטעים",
@@ -702,6 +746,9 @@
     "weekOf": "שבוע של {{date}}",
     "weekSubtotal": "סך שבועי"
   },
+  "scanLanding": {
+    "title": "מבצע צ׳ק-אין…"
+  },
   "scan": {
     "title": "סרקו את קוד האתר",
     "cameraLabel": "תצוגת מצלמה",
@@ -721,7 +768,8 @@
     "flag": {
       "generic": "רישום זה סומן לבדיקה.",
       "unassigned_site": "דיווחתם כניסה באתר שאינכם משויכים אליו. מנהל יבדוק זאת.",
-      "implausible_duration": "משמרת זו ארוכה בצורה חריגה ותיבדק."
+      "implausible_duration": "משמרת זו ארוכה בצורה חריגה ותיבדק.",
+      "self_reported": "דיווחתם כניסה ללא קוד QR. מנהל יאשר את המשמרת הזו."
     },
     "conflict": {
       "title": "יש לכם משמרת פתוחה באתר אחר",

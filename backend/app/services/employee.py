@@ -28,6 +28,7 @@ period covers it — which is what makes a mid-month rate change split a month c
 from __future__ import annotations
 
 import contextlib
+import random
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -40,11 +41,14 @@ from app.core import storage as storage_module
 from app.core.crypto import get_encryptor
 from app.core.storage import ObjectStorage
 from app.models.employee import Employee, EmployeeRate, EmployeeStatus
+from app.models.staffing_company import StaffingCompany
+from app.models.user import User
 from app.schemas.employee import (
     EmployeeCreate,
     EmployeeRateInput,
     EmployeeUpdate,
 )
+from app.services import user as user_service
 from app.services.audit import AuditContext, record_change, record_model_changes, snapshot
 
 # --------------------------------------------------------------------------- errors
@@ -91,6 +95,27 @@ class DuplicatePassport(EmployeeError):
     def __init__(self, conflicting: Employee) -> None:
         super().__init__(f"passport already held by employee {conflicting.id}")
         self.conflicting = conflicting
+
+
+class StaffingCompanyLinkNotFound(EmployeeError):
+    """The staffing company an employee was linked to does not exist (Requirement 2.4).
+
+    Raised on create or update when `staffing_company_id` references no staffing company. Reuses the
+    staffing-company service's machine code so the front end translates it the same way whether the
+    miss happens on the company screen or the employee screen; the router maps it to a 4xx.
+    """
+
+    code = "staffing_company_not_found"
+
+    def __init__(self, staffing_company_id: uuid.UUID) -> None:
+        super().__init__(f"no staffing company {staffing_company_id}")
+        self.staffing_company_id = staffing_company_id
+
+
+class NoEmployeeNumberAvailable(EmployeeError):
+    """Every number in 2000-2999 is held by a non-terminated employee or an active login (Requirement 2.6)."""
+
+    code = "no_employee_number_available"
 
 
 class InvalidStatusTransition(EmployeeError):
@@ -216,7 +241,72 @@ def _find_active_holder(
     return session.scalars(statement).first()
 
 
+# --------------------------------------------------------------------------- employee-number generation
+
+#: The employee-number range (Requirement 2.1). Inclusive: 1000 candidates, all matching ^2\d{3}$.
+EMPLOYEE_NUMBER_MIN = 2000
+EMPLOYEE_NUMBER_MAX = 2999
+
+
+def _number_in_use(session: Session, candidate: str) -> bool:
+    """True if the candidate is held by a non-terminated employee OR any active login (Requirement 2.2).
+
+    A number is "held" while a non-terminated employee carries it, exactly as the passport check
+    excludes terminated rows so a released number is free (mirrors `_find_active_holder`); and while an
+    active login owns that username, so the generated number can safely become the login's username.
+    """
+    employee_hit = session.scalar(
+        select(Employee.id)
+        .where(Employee.employee_number == candidate)
+        .where(Employee.status != EmployeeStatus.TERMINATED)
+    )
+    if employee_hit is not None:
+        return True
+    login_hit = session.scalar(
+        select(User.id).where(User.username == candidate).where(User.is_active.is_(True))
+    )
+    return login_hit is not None
+
+
+def _generate_employee_number(session: Session) -> str:
+    """A free 4-digit number, chosen at random and re-tried until unused (Requirements 2.1, 2.2, 2.6).
+
+    Random-first rather than max+1 so a released (terminated) number is naturally reused and the search
+    does not degrade as the range fills. The range is bounded (1000 values), so termination is
+    guaranteed: a bounded number of random candidates are tried first, then a deterministic sweep over
+    the whole range is made to be certain before giving up, returning the first free value. Only when
+    every value in 2000-2999 is taken does it raise `NoEmployeeNumberAvailable`. Never commits and never
+    raises an HTTP error — only the domain error.
+    """
+    for _ in range(EMPLOYEE_NUMBER_MAX - EMPLOYEE_NUMBER_MIN + 1):
+        candidate = str(random.randint(EMPLOYEE_NUMBER_MIN, EMPLOYEE_NUMBER_MAX))
+        if not _number_in_use(session, candidate):
+            return candidate
+
+    # Deterministic sweep: the random phase can revisit taken candidates, so a full pass over the range
+    # is the certainty that a free value is found if one exists.
+    for value in range(EMPLOYEE_NUMBER_MIN, EMPLOYEE_NUMBER_MAX + 1):
+        candidate = str(value)
+        if not _number_in_use(session, candidate):
+            return candidate
+
+    raise NoEmployeeNumberAvailable
+
+
 # --------------------------------------------------------------------------- create
+
+
+def _require_staffing_company(session: Session, staffing_company_id: uuid.UUID) -> None:
+    """Confirm a staffing company exists, or raise `StaffingCompanyLinkNotFound` (Requirement 2.4).
+
+    A read used by create and update before writing the link, so a request naming a company that does
+    not exist is refused and (on update) the existing link is left untouched.
+    """
+    exists = session.scalar(
+        select(StaffingCompany.id).where(StaffingCompany.id == staffing_company_id)
+    )
+    if exists is None:
+        raise StaffingCompanyLinkNotFound(staffing_company_id)
 
 
 def create_employee(session: Session, payload: EmployeeCreate, *, context: AuditContext) -> Employee:
@@ -230,11 +320,21 @@ def create_employee(session: Session, payload: EmployeeCreate, *, context: Audit
     if existing is not None:
         raise DuplicatePassport(existing)
 
+    # The staffing company is mandatory on create (Requirement 2.1-2.3); confirm it exists before the
+    # insert so a bad reference is a clean refusal, not a foreign-key violation at flush.
+    _require_staffing_company(session, payload.staffing_company_id)
+
+    # A free 4-digit number is generated up front (Requirement 2.1-2.3) and doubles as the login
+    # username below. It is chosen against the flushed-but-uncommitted session, so a number taken
+    # earlier in this same transaction is already visible here.
+    number = _generate_employee_number(session)
+
     employee = Employee(
         full_name=payload.full_name,
         full_name_en=payload.full_name_en,
         passport_number=payload.passport_number,
         passport_number_hash=payload.passport_number,  # DeterministicHash hashes on bind.
+        employee_number=number,
         phone=payload.phone,
         country=payload.country,
         date_of_birth=payload.date_of_birth,
@@ -246,6 +346,7 @@ def create_employee(session: Session, payload: EmployeeCreate, *, context: Audit
         position=payload.position,
         status=payload.status,
         photo_key=payload.photo_key,
+        staffing_company_id=payload.staffing_company_id,
     )
     session.add(employee)
     # Flush so the row has an id the audit rows and any rate rows can reference, and so the passport
@@ -253,6 +354,13 @@ def create_employee(session: Session, payload: EmployeeCreate, *, context: Audit
     session.flush()
 
     _audit_creation(session, employee, context=context)
+
+    # Auto-provision the employee-role login whose username is the number (Requirement 3.1-3.4). It
+    # runs in this same transaction, so the login and the employee land or roll back together; the
+    # employee service still commits nothing.
+    user_service.create_employee_login(
+        session, number=number, employee_id=employee.id, context=context
+    )
 
     if payload.rate is not None:
         _write_rate_history(session, employee, [payload.rate], context=context)
@@ -291,6 +399,7 @@ _UPDATABLE_FIELDS = (
     "start_date",
     "position",
     "photo_key",
+    "staffing_company_id",
 )
 
 
@@ -316,6 +425,9 @@ def update_employee(
                 raise DuplicatePassport(conflict)
         employee.passport_number = new_passport
         employee.passport_number_hash = new_passport
+
+    if changes.get("staffing_company_id") is not None:
+        _require_staffing_company(session, changes["staffing_company_id"])
 
     for field in _UPDATABLE_FIELDS:
         if field in changes:
@@ -355,6 +467,14 @@ def change_status(
     record_model_changes(
         session, employee, before, context=context, reason=reason, fields=["status"]
     )
+
+    # Termination frees the number (the uniqueness check excludes terminated rows, so the value stays
+    # on the row for history yet is available to a future create) and disables the linked login
+    # (Requirement 4.2, 4.4, 4.5). Other transitions leave the login alone. A no-op if there is no
+    # linked login or it is already inactive.
+    if new_status is EmployeeStatus.TERMINATED:
+        user_service.disable_employee_login(session, employee.id, context=context)
+
     return employee
 
 

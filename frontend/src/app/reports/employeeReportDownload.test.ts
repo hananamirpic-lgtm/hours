@@ -23,6 +23,7 @@ const aRow = (over: Partial<EmployeeReportRow> = {}): EmployeeReportRow => ({
   employee_id: 'emp-1',
   employee_name: 'דנה כהן',
   employee_name_en: 'Dana Cohen',
+  employee_number: '2000',
   regular_minutes: 480,
   overtime_minutes: 90,
   shabbat_minutes: 0,

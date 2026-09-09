@@ -35,11 +35,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from app.api.deps import (
-    AdminCaller,
     AuthenticatedContext,
     Caller,
     DbSession,
     HoursReaderCaller,
+    OperationsCaller,
     api_error,
 )
 from app.core.qr_token import QrAction
@@ -55,6 +55,7 @@ from app.schemas.site import (
     SiteUpdate,
 )
 from app.services import qr as qr_service
+from app.services import settings as settings_service
 from app.services import site as site_service
 
 router = APIRouter(prefix="/sites", tags=["sites"])
@@ -185,7 +186,7 @@ def read_site(
 )
 def create_site(
     payload: SiteCreate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -245,7 +246,11 @@ def download_qr(
     except site_service.SiteError as error:
         raise _raise_for(error) from error
 
-    rendered = qr_service.render_site_qr(site)
+    public_app_url = settings_service.get_str(session, "public_app_url")
+    if not public_app_url.strip():
+        raise api_error(HTTPStatus.BAD_REQUEST, "public_app_url_not_configured")
+
+    rendered = qr_service.render_site_qr(site, public_app_url=public_app_url)
     if site.qr_mode is QrMode.SEPARATE and action is None:
         raise api_error(HTTPStatus.BAD_REQUEST, "qr_action_required")
 
@@ -278,7 +283,7 @@ def download_qr(
 )
 def regenerate_qr(
     site_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -304,7 +309,7 @@ def regenerate_qr(
 def update_site(
     site_id: uuid.UUID,
     payload: SiteUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -366,7 +371,7 @@ def read_rates(
 def replace_rates(
     site_id: uuid.UUID,
     payload: SiteRatesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:
@@ -399,7 +404,7 @@ def replace_rates(
 def set_site_employees(
     site_id: uuid.UUID,
     payload: SiteEmployeesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> Any:

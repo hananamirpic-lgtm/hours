@@ -46,6 +46,7 @@ class ReportFiltersApplied(BaseModel):
     site_id: uuid.UUID | None = None
     client_id: uuid.UUID | None = None
     project: str | None = None
+    staffing_company_id: uuid.UUID | None = None
 
 
 class _ReportEnvelope(BaseModel):
@@ -77,6 +78,7 @@ class EmployeeReportRowResponse(BaseModel):
     employee_id: uuid.UUID
     employee_name: str
     employee_name_en: str
+    employee_number: str | None = None
     regular_minutes: int
     overtime_minutes: int
     shabbat_minutes: int
@@ -91,6 +93,22 @@ class EmployeeReportResponse(_ReportEnvelope):
     rows: list[EmployeeReportRowResponse] = Field(default_factory=list)
     total_minutes: int = 0
     total_cost: Decimal | None = None
+
+
+class StaffingCompanyReportResponse(_ReportEnvelope):
+    """The by-staffing-company report (Requirement 4).
+
+    `total_minutes` is the sum of worked minutes over the period for the employees currently linked to
+    the company; `total_payment` is those hours times the company's single flat `hourly_rate`, or
+    `null` when the company has no rate set — the front end renders `null` as "unavailable" rather than
+    zero (Requirement 4.5, 4.7).
+    """
+
+    company_id: uuid.UUID
+    company_name: str
+    hourly_rate: Decimal | None = None
+    total_minutes: int = 0
+    total_payment: Decimal | None = None
 
 
 # --------------------------------------------------------------------------- by site (18.2)
@@ -176,6 +194,7 @@ class MissingReportFindingResponse(BaseModel):
     employee_id: uuid.UUID
     employee_name: str
     employee_name_en: str
+    employee_number: str | None = None
     work_date: date
     site_id: uuid.UUID
     site_name: str

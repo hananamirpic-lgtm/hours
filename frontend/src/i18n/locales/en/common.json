@@ -63,7 +63,8 @@
   },
   "timeEntryFlag": {
     "unassigned_site": "Unassigned site",
-    "implausible_duration": "Implausible duration"
+    "implausible_duration": "Implausible duration",
+    "self_reported": "Self-reported (no QR)"
   },
   "hours": {
     "subtitle": "Recorded shifts for your sites, one day per employee across sites.",
@@ -304,6 +305,12 @@
     "photoOnFile": "Photo on file",
     "uploadPhoto": "Upload photo",
     "expiredDocument": "Expired document",
+    "staffingCompany": "Staffing company",
+    "selectStaffingCompany": "Select a staffing company",
+    "number": "Employee number",
+    "resetPassword": "Reset password to 1234",
+    "resetPasswordDone": "Password reset to 1234. The employee will be asked to change it on next login.",
+    "resetPasswordError": "Password reset failed. Try again.",
     "filterStatus": "Filter by status",
     "filterAllStatuses": "All statuses",
     "changeStatus": "Change status",
@@ -470,10 +477,13 @@
     "done": "Your password has been changed.",
     "mustDiffer": "The new password must be different from the current one.",
     "tooShort": "Use at least 8 characters.",
+    "pinLength": "Use 4 to 8 digits.",
+    "pinDigitsOnly": "The password may contain digits only (0-9).",
     "mismatch": "The passwords do not match."
   },
   "apiError": {
     "unknown": "Something went wrong. Try again.",
+    "invalid_qr_token": "That QR code could not be read. Ask a manager for a fresh code.",
     "current_password_incorrect": "Your current password is incorrect.",
     "new_password_must_differ": "The new password must be different from the current one.",
     "password_change_required": "You must change your password before you can continue.",
@@ -506,11 +516,15 @@
     "period_already_locked": "That month is already locked.",
     "override_requires_admin": "Only an administrator may write into a locked month.",
     "invalid_setting_value": "That value is not valid for this setting. Check it and try again.",
-    "setting_not_found": "There is no setting called {{key}}."
+    "setting_not_found": "There is no setting called {{key}}.",
+    "staffing_company_not_found": "That staffing company was not found.",
+    "staffing_company_has_active_employees": "This staffing company still has active employees. Deactivate them before deleting it."
   },
   "language": {
     "label": "Language",
-    "switchTo": "עברית"
+    "switchTo": "עברית",
+    "hindiHelper": "Show Hindi helper",
+    "hindiLabel": "हिन्दी"
   },
   "auth": {
     "signInPrompt": "Sign in to continue",
@@ -532,9 +546,22 @@
   },
   "role": {
     "admin": "Administrator",
+    "operations_admin": "Operations admin",
     "site_manager": "Site manager",
     "accounting": "Accounting",
     "employee": "Employee"
+  },
+  "staffingCompany": {
+    "new": "New staffing company",
+    "card": "Staffing company",
+    "empty": "No staffing companies match.",
+    "name": "Company name",
+    "contactPerson": "Contact person",
+    "hourlyRate": "Hourly rate",
+    "telephone": "Telephone",
+    "comments": "Comments",
+    "delete": "Delete staffing company",
+    "deleteBlocked": "This staffing company still has active employees. Deactivate them first, then delete it:"
   },
   "nav": {
     "primary": "Primary navigation",
@@ -543,6 +570,7 @@
     "closeMenu": "Close navigation menu",
     "dashboard": "Dashboard",
     "employees": "Employees",
+    "staffingCompanies": "Staffing companies",
     "clients": "Clients",
     "sites": "Sites",
     "hours": "Hours",
@@ -625,6 +653,16 @@
       "profit": "Gross profit",
       "siteCount": "Sites"
     },
+    "staffingCompany": {
+      "tab": "By staffing company",
+      "filter": "Staffing company",
+      "choose": "Choose a staffing company",
+      "choosePrompt": "Choose a staffing company to see its total hours and payment.",
+      "totalHours": "Total hours",
+      "totalPayment": "Total payment",
+      "hourlyRate": "Hourly rate",
+      "paymentUnavailable": "No rate set"
+    },
     "byEmployee": {
       "tab": "By employee",
       "employee": "Employee",
@@ -667,7 +705,13 @@
     "history": "Recent work",
     "noHistory": "No recent work to show.",
     "alerts": "Alerts",
-    "offlineBanner": "You are offline. You cannot record a scan until the connection returns."
+    "offlineBanner": "You are offline. You cannot record a scan until the connection returns.",
+    "selfCheckIn": {
+      "action": "Check in without a QR code",
+      "title": "Check in without a QR code",
+      "approvalNote": "No QR means no proof you are on site, so a manager must approve this shift.",
+      "noSites": "You are not assigned to any site, so there is nowhere to check in without a QR."
+    }
   },
   "mobileNav": {
     "label": "Sections",
@@ -702,6 +746,9 @@
     "weekOf": "Week of {{date}}",
     "weekSubtotal": "Week total"
   },
+  "scanLanding": {
+    "title": "Checking you in…"
+  },
   "scan": {
     "title": "Scan the site code",
     "cameraLabel": "Camera preview",
@@ -721,7 +768,8 @@
     "flag": {
       "generic": "This entry is flagged for review.",
       "unassigned_site": "You checked in at a site you are not assigned to. A manager will review it.",
-      "implausible_duration": "This shift is unusually long and will be reviewed."
+      "implausible_duration": "This shift is unusually long and will be reviewed.",
+      "self_reported": "You checked in without a QR code. A manager will approve this shift."
     },
     "conflict": {
       "title": "You have an open shift at another site",

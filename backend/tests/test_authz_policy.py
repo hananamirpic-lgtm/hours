@@ -41,9 +41,17 @@ ALL_ROLES = list(UserRole)
 # --------------------------------------------------------------------------- the four roles
 
 
-def test_there_are_exactly_four_roles():
-    """Requirement 2.1, asserted so that adding a fifth role is a decision and not an accident."""
-    assert {role.value for role in UserRole} == {"admin", "site_manager", "accounting", "employee"}
+def test_there_are_exactly_five_roles():
+    """Requirement 2.1 plus the operations-admin feature, asserted so that adding another role is a
+    deliberate decision and not an accident. `operations_admin` is the full operational administrator
+    with no financial visibility."""
+    assert {role.value for role in UserRole} == {
+        "admin",
+        "operations_admin",
+        "site_manager",
+        "accounting",
+        "employee",
+    }
 
 
 # --------------------------------------------------------------------------- money-field visibility
@@ -55,7 +63,9 @@ def test_a_finance_role_may_read_money_fields(role: UserRole):
     assert may_read_money_fields(role)
 
 
-@pytest.mark.parametrize("role", [UserRole.SITE_MANAGER, UserRole.EMPLOYEE])
+@pytest.mark.parametrize(
+    "role", [UserRole.OPERATIONS_ADMIN, UserRole.SITE_MANAGER, UserRole.EMPLOYEE]
+)
 def test_a_non_finance_role_may_not_read_money_fields(role: UserRole):
     """Requirement 2.5. The site manager's exclusion is the one the requirement is about."""
     assert not may_read_money_fields(role)
@@ -182,8 +192,9 @@ def test_an_employee_has_no_site_scope():
 
 
 def test_an_attendance_writer_is_a_manager_or_an_admin():
-    """Requirement 2.4 grants the manager manual entries; 2.6 denies them to accounting."""
-    assert {UserRole.ADMIN, UserRole.SITE_MANAGER} == ATTENDANCE_WRITE_ROLES
+    """Requirement 2.4 grants the manager manual entries; 2.6 denies them to accounting. The
+    operations administrator has full operational access, so it writes attendance too."""
+    assert {UserRole.ADMIN, UserRole.OPERATIONS_ADMIN, UserRole.SITE_MANAGER} == ATTENDANCE_WRITE_ROLES
 
 
 # --------------------------------------------------------------------------- query-level scoping
@@ -315,3 +326,66 @@ def test_the_ownership_check_does_not_apply_to_console_roles(role: UserRole):
     """What limits them is their site scope, which is checked separately. Folding the two together
     here would make a manager's access to their own site depend on a link they do not have."""
     assert is_own_record(role=role, caller_employee_id=None, employee_id=uuid.uuid4())
+
+
+# --------------------------------------------------------------------------- operations admin
+# Feature: operations-admin-role. The operations administrator has full operational access and no
+# financial visibility. These pin the policy-level guarantees; the endpoint-level 403s and the
+# role-assignment refusal are checked in test_operations_admin_api.py.
+
+
+def test_operations_admin_may_not_read_money_fields():
+    """Property 1 (foundation): operations_admin is not a finance role, so money is redacted from it."""
+    assert not may_read_money_fields(UserRole.OPERATIONS_ADMIN)
+    assert UserRole.OPERATIONS_ADMIN not in FINANCE_ROLES
+
+
+def test_operations_admin_responses_have_every_money_field_removed():
+    """Property 1: redact strips every wage, billing and payroll field for an operations_admin.
+
+    A payload that mixes operational data (a name, a site number) with money at several nesting
+    depths comes back with the operational data intact and no money field anywhere.
+    """
+    payload = {
+        "name": "North Gate",
+        "site_number": "S-42",
+        "billing_rate": "60.00",
+        "site_rates": [{"billing_rate": "60.00", "effective_from": "2025-01-01"}],
+        "employee": {
+            "full_name": "Dana",
+            "hourly_wage": "35.00",
+            "rates": [{"overtime_rate": "52.50"}],
+        },
+        "payroll": {"gross_pay": "1000.00", "total_pay": "1000.00"},
+    }
+    result = redact(payload, UserRole.OPERATIONS_ADMIN)
+
+    # Operational data survives.
+    assert result["name"] == "North Gate"
+    assert result["site_number"] == "S-42"
+    assert result["employee"]["full_name"] == "Dana"
+
+    # No money field remains, at any depth.
+    flat = _all_keys(result)
+    assert flat.isdisjoint(RESTRICTED_MONEY_FIELDS)
+    assert flat.isdisjoint(WAGE_FIELDS | BILLING_FIELDS | PAYROLL_FIELDS)
+
+
+def test_operations_admin_scope_is_all_sites():
+    """Property 5: the operations administrator is not narrowed to a site assignment."""
+    scope = scope_for_role(UserRole.OPERATIONS_ADMIN, assigned_site_ids=[])
+    assert scope.unrestricted
+    assert not scope.is_empty
+
+
+def _all_keys(value: object) -> frozenset[str]:
+    """Every mapping key appearing anywhere in a nested structure."""
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            keys.add(key)
+            keys |= _all_keys(item)
+    elif isinstance(value, list | tuple):
+        for item in value:
+            keys |= _all_keys(item)
+    return frozenset(keys)
