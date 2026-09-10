@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { listSites, siteKeys } from '@/api/sites';
 import type { SiteListItem, SiteStatus } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { SiteCard } from '@/app/sites/SiteCard';
 import { SiteForm } from '@/app/sites/SiteForm';
 import { Drawer } from '@/components/management/Drawer';
@@ -37,7 +38,7 @@ const matches = (item: SiteListItem, term: string): boolean => {
 export function SitesPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin';
+  const canManage = isOperationalAdmin(user?.role);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<SiteStatus | ''>('');

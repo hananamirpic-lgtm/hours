@@ -63,3 +63,14 @@ export const navFor = (role: UserRole): NavItem[] => {
 
 /** Where a role lands after signing in: employees on the mobile tree, everyone else on the console. */
 export const homePathFor = (role: UserRole): string => (role === 'employee' ? '/m' : '/');
+
+
+/**
+ * Whether a role is an operational administrator: the full admin, or the operations admin who has the
+ * same operational powers but no financial visibility. Management screens (employees, sites, clients,
+ * staffing companies, approvals, hours) gate their create/edit/delete/upload controls on this, so the
+ * operations admin gets the operational actions while money stays hidden by the API's redaction. Use
+ * this instead of comparing to 'admin' directly, so a new operational role is granted in one place.
+ */
+export const isOperationalAdmin = (role: UserRole | undefined): boolean =>
+  role === 'admin' || role === 'operations_admin';

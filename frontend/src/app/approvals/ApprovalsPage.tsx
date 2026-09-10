@@ -30,6 +30,7 @@ import { listSites, siteKeys } from '@/api/sites';
 import { listTimeEntries, timeEntryKeys } from '@/api/timeEntries';
 import type { TimeEntryListItem, TimeEntryStatus } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import {
   advanceableIds,
   groupByEmployee,
@@ -71,7 +72,7 @@ export function ApprovalsPage() {
   const { t } = useTranslation();
   const language = useLanguage();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isOperationalAdmin(user?.role);
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');

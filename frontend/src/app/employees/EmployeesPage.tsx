@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { employeeKeys, listEmployees } from '@/api/employees';
 import type { EmployeeListItem, EmployeeStatus } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { EmployeeCard } from '@/app/employees/EmployeeCard';
 import { EmployeeForm } from '@/app/employees/EmployeeForm';
 import { Drawer } from '@/components/management/Drawer';
@@ -46,7 +47,7 @@ export function EmployeesPage() {
   const { t } = useTranslation();
   const language = useLanguage();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin';
+  const canManage = isOperationalAdmin(user?.role);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<EmployeeStatus | ''>('');

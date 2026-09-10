@@ -29,6 +29,7 @@ import type {
   TimeEntryStatus,
 } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { AuditPanel } from '@/app/audit/AuditPanel';
 import { groupEntries, type EmployeeDay, type SiteGroup } from '@/app/hours/hoursView';
 import { TimeEntryForm, type TimeEntryPrefill } from '@/app/hours/TimeEntryForm';
@@ -83,7 +84,7 @@ export function HoursPage() {
   // Managers and administrators may create, correct and delete entries; the employee role may not,
   // and accounting reads but does not write (Requirement 12.6, 2.4). The server enforces this too;
   // this hides the controls a reader could not use.
-  const canManage = user?.role === 'admin' || user?.role === 'site_manager';
+  const canManage = isOperationalAdmin(user?.role) || user?.role === 'site_manager';
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');

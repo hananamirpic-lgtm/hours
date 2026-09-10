@@ -19,6 +19,7 @@ import {
 } from '@/api/staffingCompanies';
 import type { StaffingCompanyListItem, StaffingCompanyResponse } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { StaffingCompanyForm } from '@/app/staffingCompanies/StaffingCompanyForm';
 import { Drawer } from '@/components/management/Drawer';
 import { ListToolbar } from '@/components/management/ListToolbar';
@@ -123,7 +124,7 @@ function EditDrawer({ companyId, onClose }: { companyId: string; onClose: () => 
 export function StaffingCompaniesPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin';
+  const canManage = isOperationalAdmin(user?.role);
 
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
