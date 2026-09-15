@@ -24,7 +24,7 @@ billing or profit figure and so has no business on any of them.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from http import HTTPStatus
 from typing import Annotated
 
@@ -37,6 +37,8 @@ from app.schemas.reports import (
     ClientSiteAmountResponse,
     DashboardAttentionResponse,
     DashboardResponse,
+    EmployeeDailyReportResponse,
+    EmployeeDailyRowResponse,
     EmployeeReportResponse,
     EmployeeReportRowResponse,
     MissingReportFindingResponse,
@@ -120,6 +122,46 @@ def report_by_employee(
         total_minutes=report.total_minutes,
         total_cost=report.total_cost if show_cost else None,
     )
+
+
+# --------------------------------------------------------------------------- employee-daily (live hours)
+
+
+@router.get(
+    "/employee-daily",
+    response_model=EmployeeDailyReportResponse,
+    summary="Live per-employee hours for a month (total / approved / not-approved)",
+    description=(
+        "A live per-employee hours summary for a month, read from the time entries rather than the "
+        "payroll records, so it is available on any day and before payroll is calculated. One row per "
+        "active employee with an entry in the month, showing total, approved and not-approved hours; "
+        "open shifts are counted to the current moment and travel time is folded in exactly as payroll "
+        "computes it. Hours only, no money, so every console role may read it; a site manager is "
+        "narrowed to their assigned sites (Requirement 2.3)."
+    ),
+)
+def report_employee_daily(
+    caller: HoursReaderCaller,
+    session: DbSession,
+    year: _YEAR,
+    month: _MONTH,
+) -> EmployeeDailyReportResponse:
+    report = reports_service.report_employee_daily(
+        session, year=year, month=month, scope=caller.scope, now=datetime.now(UTC)
+    )
+    rows = [
+        EmployeeDailyRowResponse(
+            employee_id=row.employee_id,
+            employee_name=row.employee_name,
+            employee_name_en=row.employee_name_en,
+            employee_number=row.employee_number,
+            total_minutes=row.total_minutes,
+            approved_minutes=row.approved_minutes,
+            not_approved_minutes=row.not_approved_minutes,
+        )
+        for row in report.rows
+    ]
+    return EmployeeDailyReportResponse(year=year, month=month, rows=rows)
 
 
 # --------------------------------------------------------------------------- by site (18.2)

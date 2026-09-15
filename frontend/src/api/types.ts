@@ -929,6 +929,35 @@ export interface EmployeeReport {
 }
 
 /**
+ * One row of the live employee-daily report (GET /api/reports/employee-daily), mirroring
+ * `EmployeeDailyRowResponse`. Hours only — no money field of any kind. The three minute totals are
+ * integers the screen renders through `formatDuration`; `total_minutes` equals `approved_minutes`
+ * plus `not_approved_minutes`. `employee_name_en` may be null (unlike the by-employee row), so the
+ * screen falls back to `employee_name` when it is absent.
+ */
+export interface EmployeeDailyRow {
+  employee_id: string;
+  employee_name: string;
+  employee_name_en: string | null;
+  employee_number: string | null;
+  total_minutes: number;
+  approved_minutes: number;
+  not_approved_minutes: number;
+}
+
+/**
+ * The live employee-daily report for a month (GET /api/reports/employee-daily), mirroring
+ * `EmployeeDailyReportResponse`. A deliberately lean envelope — `year`, `month`, `rows` — with no
+ * currency and no money field, because it carries only hours computed live from the time entries and
+ * is visible to every console role (scoped by site for a manager).
+ */
+export interface EmployeeDailyReport {
+  year: number;
+  month: number;
+  rows: EmployeeDailyRow[];
+}
+
+/**
  * The attention counts the administrator home dashboard heads (Requirement 18.6), mirroring
  * `DashboardAttentionResponse`. Three current-month counts — employees without a check-out, without a
  * check-in, and days missing entirely — each of which the dashboard links to the missing-report list

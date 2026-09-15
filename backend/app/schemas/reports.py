@@ -95,6 +95,34 @@ class EmployeeReportResponse(_ReportEnvelope):
     total_cost: Decimal | None = None
 
 
+class EmployeeDailyRowResponse(BaseModel):
+    """One row of the live employee-daily report (feature: employee-daily). Hours only, no money.
+
+    Minutes are integers; the front end formats them to hours. `total_minutes` equals
+    `approved_minutes` plus `not_approved_minutes`.
+    """
+
+    employee_id: uuid.UUID
+    employee_name: str
+    employee_name_en: str | None
+    employee_number: str | None
+    total_minutes: int
+    approved_minutes: int
+    not_approved_minutes: int
+
+
+class EmployeeDailyReportResponse(BaseModel):
+    """The employee-daily report: one row per active employee with entries in the month.
+
+    A deliberately lean envelope — year, month, rows — with no currency and no money field, because the
+    report carries only hours (it is visible to every console role, scoped by site for a manager).
+    """
+
+    year: int
+    month: int
+    rows: list[EmployeeDailyRowResponse] = Field(default_factory=list)
+
+
 class StaffingCompanyReportResponse(_ReportEnvelope):
     """The by-staffing-company report (Requirement 4).
 

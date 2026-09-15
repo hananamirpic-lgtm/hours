@@ -45,7 +45,7 @@ from __future__ import annotations
 import enum
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select
@@ -57,7 +57,7 @@ from app.models.employee import Employee, EmployeeStatus
 from app.models.payroll import PayrollRecord, PayrollSiteAllocation
 from app.models.site import EmployeeSite, Site, SiteStatus
 from app.models.staffing_company import StaffingCompany
-from app.models.time_entry import TimeEntry
+from app.models.time_entry import TimeEntry, TimeEntryStatus
 
 #: The currency every report states its figures in (Requirement 18.7). The system is single-currency
 #: (Israeli new shekel); the constant is named here so a report response carries it explicitly rather
@@ -134,6 +134,166 @@ class EmployeeReport:
     rows: tuple[EmployeeReportRow, ...] = ()
     total_minutes: int = 0
     total_cost: Decimal = _ZERO
+
+
+# --------------------------------------------------------------------------- employee-daily (live hours)
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeDailyRow:
+    """One employee's live hours for a month: total, approved, and not-approved (feature: employee-daily).
+
+    Minutes are computed live from `time_entries`, not from payroll records, so the report is available
+    on any day of the month and before payroll runs. `total_minutes` equals `approved_minutes` plus
+    `not_approved_minutes` by construction. Approved counts entries in the approved or locked status;
+    not-approved counts draft or review. Travel time is folded in exactly as payroll computes it, and
+    an open shift contributes its minutes measured to the moment the report was built. No money.
+    """
+
+    employee_id: uuid.UUID
+    employee_name: str
+    employee_name_en: str
+    employee_number: str | None
+    total_minutes: int
+    approved_minutes: int
+    not_approved_minutes: int
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeDailyReport:
+    """The employee-daily report: one row per active employee with entries in the month."""
+
+    rows: tuple[EmployeeDailyRow, ...] = ()
+
+
+#: The statuses counted as "approved" hours; every other live status is "not-approved".
+_APPROVED_STATUSES = frozenset({TimeEntryStatus.APPROVED, TimeEntryStatus.LOCKED})
+
+
+def report_employee_daily(
+    session: Session,
+    *,
+    year: int,
+    month: int,
+    scope: SiteScope,
+    now: datetime,
+) -> EmployeeDailyReport:
+    """Live per-employee hours for a month, split into approved and not-approved (feature: employee-daily).
+
+    Read straight from `time_entries` rather than payroll, so it works on any day and before payroll is
+    calculated (Requirement 3.1, 4.1-4.3). For each active employee with an in-scope entry in the
+    month: completed entries are classified with `classify_day` keyed by entry id — reusing the exact
+    travel-time split payroll uses, so the two reconcile (Requirement 3.4) — and open shifts (no
+    check-out) contribute `whole_minutes(check_in, now)` with no travel (Requirement 3.3). Each entry's
+    minutes go to the approved bucket when its status is approved or locked, else to not-approved
+    (Requirement 3.5, 3.6); the total is their sum (Requirement 3.7).
+
+    `scope` narrows to a site manager's sites (Requirement 5.2): an empty scope yields no rows, and a
+    restricted scope filters the entries to the caller's sites. `now` is passed in so the service stays
+    a pure function of its inputs and a test can fix the clock.
+    """
+    from app.calculations.hours import DayEntry, classify_day, whole_minutes  # noqa: PLC0415
+    from app.services.payroll import build_classification_settings  # noqa: PLC0415
+    from app.services.period import month_bounds  # noqa: PLC0415
+
+    if scope.is_empty:
+        return EmployeeDailyReport()
+
+    first, last = month_bounds(year, month)
+
+    conditions = [
+        TimeEntry.work_date >= first,
+        TimeEntry.work_date <= last,
+        TimeEntry.deleted_at.is_(None),
+        Employee.status == EmployeeStatus.ACTIVE,
+    ]
+    if not scope.unrestricted:
+        conditions.append(TimeEntry.site_id.in_(scope.site_ids))
+
+    statement = (
+        select(TimeEntry, Employee.full_name, Employee.full_name_en, Employee.employee_number)
+        .join(Employee, Employee.id == TimeEntry.employee_id)
+        .where(*conditions)
+        .order_by(Employee.full_name, TimeEntry.employee_id, TimeEntry.work_date, TimeEntry.check_in_at)
+    )
+
+    settings = build_classification_settings(session, first=first, last=last)
+
+    # Accumulate per employee: their name fields, and per work date the completed entries (for
+    # classify_day) plus the running approved/not-approved minute totals from open shifts.
+    @dataclass
+    class _Acc:
+        name: str
+        name_en: str
+        number: str | None
+        approved: int = 0
+        not_approved: int = 0
+
+    accs: dict[uuid.UUID, _Acc] = {}
+    #: employee_id -> work_date -> list of completed entries, classified together for travel.
+    completed: dict[uuid.UUID, dict[date, list[TimeEntry]]] = {}
+    #: entry_id -> status, so a classified run maps back to approved/not-approved.
+    status_by_entry: dict[uuid.UUID, TimeEntryStatus] = {}
+
+    for entry, name, name_en, number in session.execute(statement):
+        acc = accs.get(entry.employee_id)
+        if acc is None:
+            acc = _Acc(name=name, name_en=name_en, number=number)
+            accs[entry.employee_id] = acc
+        status_by_entry[entry.id] = entry.status
+        if entry.check_out_at is None:
+            # Open shift: minutes to now, no travel; bucket by status directly.
+            minutes = whole_minutes(_as_aware(entry.check_in_at), now)
+            if entry.status in _APPROVED_STATUSES:
+                acc.approved += minutes
+            else:
+                acc.not_approved += minutes
+        else:
+            completed.setdefault(entry.employee_id, {}).setdefault(entry.work_date, []).append(entry)
+
+    # Classify each completed employee-day once, keyed by entry id, and bucket each entry's
+    # travel-inclusive minutes by its status.
+    for employee_id, by_date in completed.items():
+        acc = accs[employee_id]
+        for day_entries in by_date.values():
+            classified = classify_day(
+                (
+                    DayEntry(
+                        key=entry.id,
+                        check_in_at=_as_aware(entry.check_in_at),
+                        check_out_at=_as_aware(entry.check_out_at),
+                    )
+                    for entry in day_entries
+                ),
+                settings,
+            )
+            for entry_class in classified.entries:
+                minutes = entry_class.total_minutes
+                if status_by_entry[entry_class.key] in _APPROVED_STATUSES:
+                    acc.approved += minutes
+                else:
+                    acc.not_approved += minutes
+
+    rows = [
+        EmployeeDailyRow(
+            employee_id=employee_id,
+            employee_name=acc.name,
+            employee_name_en=acc.name_en,
+            employee_number=acc.number,
+            total_minutes=acc.approved + acc.not_approved,
+            approved_minutes=acc.approved,
+            not_approved_minutes=acc.not_approved,
+        )
+        for employee_id, acc in accs.items()
+    ]
+    # Stable order by name, then id, matching the by-employee report.
+    rows.sort(key=lambda r: (r.employee_name, str(r.employee_id)))
+    return EmployeeDailyReport(rows=tuple(rows))
+
+
+def _as_aware(value: datetime) -> datetime:
+    """A stored datetime as timezone-aware UTC, so classify_day and whole_minutes get aware instants."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def report_by_employee(
@@ -842,6 +1002,8 @@ __all__ = [
     "ClientSiteAmount",
     "DashboardAttention",
     "DashboardReport",
+    "EmployeeDailyReport",
+    "EmployeeDailyRow",
     "EmployeeReport",
     "EmployeeReportRow",
     "MissingReportFinding",
@@ -854,6 +1016,7 @@ __all__ = [
     "detect_missing_reports",
     "report_by_client",
     "report_by_employee",
+    "report_employee_daily",
     "report_by_site",
     "report_profitability",
 ]

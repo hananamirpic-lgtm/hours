@@ -27,11 +27,13 @@ import { useSearchParams } from 'react-router-dom';
 import { clientKeys, listClients } from '@/api/clients';
 import { employeeKeys, listEmployees } from '@/api/employees';
 import {
+  getEmployeeDailyReport,
   readEmployeeReport,
   readMissingReports,
   readProfitability,
   readStaffingCompanyReport,
   reportKeys,
+  type EmployeeDailyReportParams,
   type EmployeeReportParams,
   type MissingReportsParams,
   type ProfitabilityParams,
@@ -49,6 +51,12 @@ import {
   parseMonthValue,
   toMonthValue,
 } from '@/app/dashboard/dashboardView';
+import {
+  employeeDailyFilename,
+  employeeDailyName,
+  toEmployeeDailyCsv,
+  type EmployeeDailyLabels,
+} from '@/app/reports/employeeDailyDownload';
 import {
   employeeReportFilename,
   employeeReportHeader,
@@ -68,7 +76,12 @@ import type { Language } from '@/i18n';
 const OPTION_PAGE = 200;
 const KINDS: MissingReportKind[] = ['missing_checkout', 'missing_checkin', 'both_missing'];
 
-type ReportView = 'profitability' | 'by-employee' | 'by-staffing-company' | 'missing';
+type ReportView =
+  | 'profitability'
+  | 'by-employee'
+  | 'employee-daily'
+  | 'by-staffing-company'
+  | 'missing';
 
 export function ReportsPage() {
   const { t } = useTranslation();
@@ -84,6 +97,15 @@ export function ReportsPage() {
   const canReadProfitability = user?.role === 'admin' || user?.role === 'accounting';
   const canReadByEmployee =
     user?.role === 'admin' || user?.role === 'accounting' || user?.role === 'site_manager';
+  // The employee-daily report is hours only — no wage, cost, billing or profit — so it is not gated
+  // to finance the way the by-employee report is. Every console role may read it: admin, accounting,
+  // site_manager and operations_admin (the one this tab adds over by-employee). A site manager's
+  // payload is narrowed to their sites by the server. Employees never reach the console.
+  const canReadEmployeeDaily =
+    user?.role === 'admin' ||
+    user?.role === 'accounting' ||
+    user?.role === 'site_manager' ||
+    user?.role === 'operations_admin';
 
   const availableViews = useMemo<ReportView[]>(() => {
     const views: ReportView[] = [];
@@ -94,9 +116,12 @@ export function ReportsPage() {
     if (canReadByEmployee) {
       views.push('by-employee');
     }
+    if (canReadEmployeeDaily) {
+      views.push('employee-daily');
+    }
     views.push('missing');
     return views;
-  }, [canReadProfitability, canReadByEmployee]);
+  }, [canReadProfitability, canReadByEmployee, canReadEmployeeDaily]);
 
   const requested = params.get('view') as ReportView | null;
   const view: ReportView =
@@ -111,6 +136,7 @@ export function ReportsPage() {
   const tabLabels: Record<ReportView, string> = {
     profitability: t('reports.profitability.tab'),
     'by-employee': t('reports.byEmployee.tab'),
+    'employee-daily': t('reports.employeeDaily.tab'),
     'by-staffing-company': t('reports.staffingCompany.tab'),
     missing: t('reports.missing.tab'),
   };
@@ -145,6 +171,8 @@ export function ReportsPage() {
         <StaffingCompanyReportView params={params} setParams={setParams} />
       ) : view === 'by-employee' ? (
         <ByEmployeeView params={params} setParams={setParams} />
+      ) : view === 'employee-daily' ? (
+        <EmployeeDailyView params={params} setParams={setParams} />
       ) : (
         <MissingReportsView params={params} setParams={setParams} />
       )}
@@ -490,6 +518,127 @@ function ByEmployeeView({ params, setParams }: ViewProps) {
                 ) : null}
               </tr>
             </tfoot>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// --------------------------------------------------------------------------- employee-daily (live hours)
+
+/**
+ * The live employee-daily report (Requirement 1.1, 1.2): each active employee's total, approved and
+ * not-approved hours for a month, computed straight from the time entries so the figures are
+ * available before payroll runs. Hours only — no wage, cost, billing or profit — so every console
+ * role reaches it, including operations admin; a site manager's data is narrowed to their sites by
+ * the server. A leaner sibling of `ByEmployeeView`: a month selector, a CSV download, and a table,
+ * with no employee filter, no PDF, no cost column and no totals row (each row carries its own total).
+ */
+function EmployeeDailyView({ params, setParams }: ViewProps) {
+  const { t } = useTranslation();
+  const language = useLanguage();
+
+  const fallback = toMonthValue(currentPeriod());
+  const monthValue = params.get('month') ?? fallback;
+  const period = useMemo(() => parseMonthValue(monthValue), [monthValue]);
+
+  const set = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    next.set('view', 'employee-daily');
+    if (value) {
+      next.set(key, value);
+    } else {
+      next.delete(key);
+    }
+    setParams(next);
+  };
+
+  const queryParams: EmployeeDailyReportParams = {
+    year: period?.year ?? 0,
+    month: period?.month ?? 0,
+  };
+
+  const query = useQuery({
+    queryKey: reportKeys.employeeDaily(queryParams),
+    queryFn: () => getEmployeeDailyReport(queryParams),
+    enabled: period !== null,
+  });
+
+  const report = query.data;
+
+  const labels: EmployeeDailyLabels = {
+    employee: t('reports.employeeDaily.employee'),
+    total: t('reports.employeeDaily.total'),
+    approved: t('reports.employeeDaily.approved'),
+    notApproved: t('reports.employeeDaily.notApproved'),
+  };
+
+  const downloadCsv = () => {
+    if (!report) {
+      return;
+    }
+    const csv = toEmployeeDailyCsv(report, { language, labels });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    triggerBrowserDownload(blob, employeeDailyFilename(report));
+  };
+
+  return (
+    <>
+      <div className="toolbar hours-filters">
+        <label className="field field--inline">
+          <span className="field__label">{t('reports.month')}</span>
+          <input
+            className="input"
+            type="month"
+            value={monthValue}
+            onChange={(event) => set('month', event.target.value)}
+          />
+        </label>
+
+        <div className="inline-actions">
+          <button
+            type="button"
+            className="button button--small button--primary"
+            disabled={!report || report.rows.length === 0}
+            onClick={downloadCsv}
+          >
+            {t('reports.employeeDaily.downloadCsv')}
+          </button>
+        </div>
+      </div>
+
+      {query.isPending ? (
+        <LoadingState />
+      ) : query.isError || !report ? (
+        <ErrorState />
+      ) : report.rows.length === 0 ? (
+        <EmptyState messageKey="reports.employeeDaily.empty" />
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{labels.employee}</th>
+                <th className="numeric">{labels.total}</th>
+                <th className="numeric">{labels.approved}</th>
+                <th className="numeric">{labels.notApproved}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.rows.map((row) => (
+                <tr key={row.employee_id}>
+                  <td>
+                    {row.employee_number
+                      ? `${employeeDailyName(language, row)} #${row.employee_number}`
+                      : employeeDailyName(language, row)}
+                  </td>
+                  <td className="numeric">{formatDuration(row.total_minutes)}</td>
+                  <td className="numeric">{formatDuration(row.approved_minutes)}</td>
+                  <td className="numeric">{formatDuration(row.not_approved_minutes)}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       )}

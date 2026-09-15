@@ -679,6 +679,15 @@
       "printTitle": "Hours by employee — {{period}}",
       "filtersPeriod": "Period: {{period}}"
     },
+    "employeeDaily": {
+      "tab": "Employee-daily",
+      "employee": "Employee",
+      "total": "Total hours",
+      "approved": "Approved hours",
+      "notApproved": "Not-approved hours",
+      "downloadCsv": "Download CSV",
+      "empty": "No hours for this month."
+    },
     "missing": {
       "tab": "Missing reports",
       "empty": "No missing reports for this range.",

@@ -679,6 +679,15 @@
       "printTitle": "שעות לפי עובד — {{period}}",
       "filtersPeriod": "תקופה: {{period}}"
     },
+    "employeeDaily": {
+      "tab": "שעות לפי עובד (יומי)",
+      "employee": "עובד",
+      "total": "סך שעות",
+      "approved": "שעות מאושרות",
+      "notApproved": "שעות לא מאושרות",
+      "downloadCsv": "הורדת CSV",
+      "empty": "אין שעות לחודש זה."
+    },
     "missing": {
       "tab": "דיווחים חסרים",
       "empty": "אין דיווחים חסרים בטווח זה.",

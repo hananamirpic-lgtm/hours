@@ -19,6 +19,7 @@
 
 import type {
   DashboardReport,
+  EmployeeDailyReport,
   EmployeeReport,
   MissingReportsResult,
   ProfitabilityReport,
@@ -55,12 +56,19 @@ export interface StaffingCompanyReportParams {
   staffingCompanyId: string;
 }
 
+export interface EmployeeDailyReportParams {
+  year: number;
+  month: number;
+}
+
 export const reportKeys = {
   all: ['reports'] as const,
   dashboard: () => ['reports', 'dashboard'] as const,
   profitability: (params: ProfitabilityParams) => ['reports', 'profitability', params] as const,
   missingReports: (params: MissingReportsParams) => ['reports', 'missing-reports', params] as const,
   byEmployee: (params: EmployeeReportParams) => ['reports', 'by-employee', params] as const,
+  employeeDaily: (params: EmployeeDailyReportParams) =>
+    ['reports', 'employee-daily', params] as const,
   byStaffingCompany: (params: StaffingCompanyReportParams) =>
     ['reports', 'by-staffing-company', params] as const,
 };
@@ -119,6 +127,23 @@ export const readEmployeeReport = (params: EmployeeReportParams): Promise<Employ
     search.set('employee_id', params.employeeId);
   }
   return apiFetch<EmployeeReport>(`/reports/by-employee?${search.toString()}`);
+};
+
+
+/**
+ * Each active employee's live hours for a month (GET /api/reports/employee-daily): total, approved and
+ * not-approved, computed straight from the time entries rather than payroll records, so the report is
+ * available before payroll runs. Hours only — no money — so it is open to every console role and needs
+ * no redaction; a site manager's payload is still narrowed to their sites by the server.
+ */
+export const getEmployeeDailyReport = (
+  params: EmployeeDailyReportParams,
+): Promise<EmployeeDailyReport> => {
+  const search = new URLSearchParams({
+    year: String(params.year),
+    month: String(params.month),
+  });
+  return apiFetch<EmployeeDailyReport>(`/reports/employee-daily?${search.toString()}`);
 };
 
 
