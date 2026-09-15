@@ -326,6 +326,18 @@ class NoTimeFieldToUpdate(ManualEntryError):
     code = "no_time_field_to_update"
 
 
+class SiteChangeNotPermitted(ManualEntryError):
+    """The caller's role may not change the site of a time entry (Requirement 2.3, 12.6).
+
+    Only an administrator or operations administrator may move a corrected entry to a different site.
+    A site manager is scoped to their assigned sites, so letting them re-site an entry would let them
+    push it out of their own scope; the request is refused rather than silently dropping the field, so
+    the caller learns the change was rejected.
+    """
+
+    code = "site_change_not_permitted"
+
+
 def get_live_entry(session: Session, entry_id: uuid.UUID) -> TimeEntry:
     """Load a non-deleted time entry by id, or raise `TimeEntryNotFound`.
 
@@ -461,6 +473,7 @@ def correct_manual_entry(
     *,
     context: AuditContext,
     admin_override: bool = False,
+    may_change_site: bool = False,
 ) -> TimeEntry:
     """Correct the check-in or check-out time of an existing entry (Requirement 12.2, 12.4, 12.5).
 
@@ -473,8 +486,10 @@ def correct_manual_entry(
     correction that would straddle another completed entry, naming it (Requirement 11.7). Every
     changed field is audited under the reason in the caller's transaction (Requirement 13.2).
     """
-    if payload.check_in_at is None and payload.check_out_at is None:
-        raise NoTimeFieldToUpdate("a correction must change the check-in or the check-out time")
+    if payload.check_in_at is None and payload.check_out_at is None and payload.site_id is None:
+        raise NoTimeFieldToUpdate(
+            "a correction must change the check-in time, the check-out time, or the site"
+        )
 
     entry = get_live_entry(session, entry_id)
 
@@ -505,6 +520,18 @@ def correct_manual_entry(
     entry.total_minutes = (
         whole_minutes(new_check_in, new_check_out) if new_check_out is not None else None
     )
+    # A site change is only honoured for a caller the router says may make one (administrator or
+    # operations administrator). A site manager could otherwise move an entry to a site they do not
+    # manage, out of their own scope, which Requirement 2.3 forbids; the router refuses their request
+    # rather than silently ignoring the field, and passes may_change_site=False here as a backstop.
+    if payload.site_id is not None and payload.site_id != entry.site_id:
+        if not may_change_site:
+            raise SiteChangeNotPermitted("this role may not change the site of a time entry")
+        site = session.get(Site, payload.site_id)
+        if site is None:
+            raise SiteNotFound(f"site {payload.site_id} does not exist")
+        entry.site_id = site.id
+
     entry.is_manual = True
     if entry.manual_reason is None:
         entry.manual_reason = payload.reason

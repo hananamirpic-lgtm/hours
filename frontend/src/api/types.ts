@@ -556,6 +556,8 @@ export interface TimeEntryCreate {
 export interface TimeEntryUpdate {
   check_in_at?: string;
   check_out_at?: string;
+  /** A new site for the entry. Only an administrator or operations admin may change it. */
+  site_id?: string;
   reason: string;
   /** An administrator's override to correct an entry in a locked month (Requirement 15.5). */
   override?: boolean;

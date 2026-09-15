@@ -159,6 +159,7 @@ _WRITE_ERROR_STATUS: dict[str, HTTPStatus] = {
     time_entry_service.SiteNotFound.code: HTTPStatus.NOT_FOUND,
     time_entry_service.CheckOutNotAfterCheckIn.code: HTTPStatus.BAD_REQUEST,
     time_entry_service.NoTimeFieldToUpdate.code: HTTPStatus.BAD_REQUEST,
+    time_entry_service.SiteChangeNotPermitted.code: HTTPStatus.FORBIDDEN,
     scan_service.PeriodLocked.code: HTTPStatus.CONFLICT,
     scan_service.OverlapRejected.code: HTTPStatus.CONFLICT,
 }
@@ -333,10 +334,19 @@ def correct_time_entry(
         raise _raise_for_write(error) from error
     caller.require_site(existing.site_id)
     admin_override = _override_allowed(caller, payload.override)
+    # Only an administrator or operations administrator may move an entry to a different site; a site
+    # manager's correction is refused if it carries a site change (see the service). A manager may
+    # still correct times and reason at a site they manage.
+    may_change_site = caller.user.role in (UserRole.ADMIN, UserRole.OPERATIONS_ADMIN)
 
     try:
         entry = time_entry_service.correct_manual_entry(
-            session, entry_id, payload, context=context, admin_override=admin_override
+            session,
+            entry_id,
+            payload,
+            context=context,
+            admin_override=admin_override,
+            may_change_site=may_change_site,
         )
         _record_override(
             session, entry, admin_override=admin_override,

@@ -28,6 +28,8 @@ import { useTranslation } from 'react-i18next';
 
 import { employeeKeys, listEmployees } from '@/api/employees';
 import { listSites, siteKeys } from '@/api/sites';
+import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import {
   correctTimeEntry,
   createTimeEntry,
@@ -123,6 +125,11 @@ export function TimeEntryForm({
   const language = useLanguage();
   const queryClient = useQueryClient();
   const correcting = entry !== undefined;
+  const { user } = useAuth();
+  // Only an administrator or operations admin may change the site of a correction (Requirement 2.3);
+  // a site manager corrects times and reason only, with the site shown read-only. The server enforces
+  // the same rule.
+  const canEditSite = isOperationalAdmin(user?.role);
 
   const [fields, setFields] = useState<Fields>(entry ? fromEntry(entry) : emptyFields(prefill));
   const [errorKey, setErrorKey] = useState<string | null>(null);
@@ -145,7 +152,8 @@ export function TimeEntryForm({
   const sites = useQuery({
     queryKey: siteKeys.list(siteParams),
     queryFn: () => listSites(siteParams),
-    enabled: !correcting,
+    // Fetched when creating, and when correcting as an admin/operations-admin who may re-site the entry.
+    enabled: !correcting || canEditSite,
   });
 
   const entryLabels = useMemo(() => {
@@ -164,6 +172,11 @@ export function TimeEntryForm({
         return correctTimeEntry(entry.id, {
           check_in_at: toIsoInstant(fields.date, fields.checkInTime),
           check_out_at: toIsoInstant(fields.date, fields.checkOutTime),
+          // Only send a site change when the caller may make one and it actually differs, so a
+          // manager's correction is never rejected for carrying an unchanged site.
+          ...(canEditSite && fields.siteId && fields.siteId !== entry.site_id
+            ? { site_id: fields.siteId }
+            : {}),
           reason: fields.reason.trim(),
         });
       }
@@ -221,10 +234,23 @@ export function TimeEntryForm({
             <span className="field__label">{t('manualEntry.employee')}</span>
             <span className="field__static">{entryLabels.employee}</span>
           </div>
-          <div className="field">
-            <span className="field__label">{t('manualEntry.site')}</span>
-            <span className="field__static">{entryLabels.site}</span>
-          </div>
+          {canEditSite ? (
+            <label className="field">
+              <span className="field__label">{t('manualEntry.site')}</span>
+              <select className="select" value={fields.siteId} onChange={set('siteId')}>
+                {(sites.data?.items ?? []).map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="field">
+              <span className="field__label">{t('manualEntry.site')}</span>
+              <span className="field__static">{entryLabels.site}</span>
+            </div>
+          )}
         </div>
       ) : (
         <div className="form-row">
