@@ -70,6 +70,9 @@ class TimeEntryListItem(BaseModel):
     #: (Requirement 21.5). Names are not money fields, so they are served to every hours reader.
     employee_name: str
     employee_name_en: str
+    #: The employee's 4-digit login number, shown alongside the name (Requirement 6). Null for a
+    #: record that predates the number. Not a money field, so it is served to every hours reader.
+    employee_number: str | None = None
 
     site_id: uuid.UUID
     site_name: str
@@ -167,6 +170,12 @@ class TimeEntryUpdate(BaseModel):
 
     check_in_at: datetime | None = None
     check_out_at: datetime | None = None
+    #: An optional new site for the entry. Only an administrator or operations administrator may
+    #: change the site of a correction; a site manager's request carrying a different site is
+    #: refused by the service, because moving an entry across sites could push it out of a manager's
+    #: scope. Omitted (the common case) leaves the site unchanged. The new site is validated to exist
+    #: and the overlap/plausibility rules are re-checked against it.
+    site_id: uuid.UUID | None = None
     reason: str = Field(min_length=1, max_length=1000)
     #: An administrator's override to correct an entry in a locked month (Requirement 15.5). See
     #: `TimeEntryCreate.override`.

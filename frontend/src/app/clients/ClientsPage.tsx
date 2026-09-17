@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { clientKeys, listClients } from '@/api/clients';
 import type { ClientListItem } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { ClientCard } from '@/app/clients/ClientCard';
 import { ClientForm } from '@/app/clients/ClientForm';
 import { Drawer } from '@/components/management/Drawer';
@@ -36,7 +37,7 @@ const matches = (item: ClientListItem, term: string): boolean => {
 export function ClientsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin';
+  const canManage = isOperationalAdmin(user?.role);
 
   const [search, setSearch] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);

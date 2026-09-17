@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { employeeKeys, listEmployees } from '@/api/employees';
 import type { EmployeeListItem, EmployeeStatus } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { EmployeeCard } from '@/app/employees/EmployeeCard';
 import { EmployeeForm } from '@/app/employees/EmployeeForm';
 import { Drawer } from '@/components/management/Drawer';
@@ -22,6 +23,7 @@ import { Pagination } from '@/components/management/Pagination';
 import { EmployeeStatusPill } from '@/components/management/StatusPill';
 import { EmptyState, ErrorState, LoadingState } from '@/components/management/QueryState';
 import { useLanguage } from '@/lib/useLanguage';
+import { employeeNumberLabel } from '@/lib/employeeLabel';
 import { formatDate } from '@/lib/format';
 
 const PAGE_SIZE = 25;
@@ -35,7 +37,8 @@ const matches = (item: EmployeeListItem, term: string): boolean => {
   return (
     item.full_name.toLocaleLowerCase().includes(needle) ||
     item.full_name_en.toLocaleLowerCase().includes(needle) ||
-    item.country.toLocaleLowerCase().includes(needle) ||
+    (item.country ?? '').toLocaleLowerCase().includes(needle) ||
+    (item.employee_number ?? '').includes(needle) ||
     (item.position ?? '').toLocaleLowerCase().includes(needle)
   );
 };
@@ -44,7 +47,7 @@ export function EmployeesPage() {
   const { t } = useTranslation();
   const language = useLanguage();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin';
+  const canManage = isOperationalAdmin(user?.role);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<EmployeeStatus | ''>('');
@@ -126,9 +129,9 @@ export function EmployeesPage() {
                     }
                   }}
                 >
-                  <td>{item.full_name}</td>
+                  <td>{employeeNumberLabel(item.full_name, item.employee_number)}</td>
                   <td>{item.full_name_en}</td>
-                  <td>{item.country}</td>
+                  <td>{item.country ?? '—'}</td>
                   <td>{item.position ?? '—'}</td>
                   <td>{formatDate(language, item.start_date)}</td>
                   <td>

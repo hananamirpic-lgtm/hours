@@ -71,15 +71,18 @@ def test_the_briefs_two_site_day_splits_8h_regular_and_1h30_overtime_at_site_b()
 
     day = classify_day(entries, _settings())
 
-    assert day.total_minutes == 570  # 9h30
+    # The 11:30->12:00 gap is exactly 30 minutes, at the travel-time cap, so it is paid and split
+    # 15/15: Site A gains 15 (270 -> 285), Site B gains 15 (300 -> 315), for 600 paid minutes. The
+    # threshold still falls inside Site B, so its ordinary minutes split regular/overtime there.
+    assert day.total_minutes == 600  # 9h30 clocked + 30 min travel
     assert day.regular_minutes == 480
-    assert day.overtime_minutes == 90
+    assert day.overtime_minutes == 120
     assert day.shabbat_minutes == 0
     assert day.holiday_minutes == 0
 
     site_a, site_b = day.entries
-    assert (site_a.key, site_a.regular_minutes, site_a.overtime_minutes) == ("A", 270, 0)
-    assert (site_b.key, site_b.regular_minutes, site_b.overtime_minutes) == ("B", 210, 90)
+    assert (site_a.key, site_a.regular_minutes, site_a.overtime_minutes) == ("A", 285, 0)
+    assert (site_b.key, site_b.regular_minutes, site_b.overtime_minutes) == ("B", 195, 120)
 
 
 # --------------------------------------------------------------------------- Shabbat-spanning shift
@@ -200,14 +203,16 @@ def test_a_day_at_three_sites_allocates_overtime_to_the_last_site_chronologicall
 
     day = classify_day(entries, _settings())
 
-    assert day.total_minutes == 720
+    # Two 30-minute gaps (10:00->10:30 and 15:30->16:00), each at the cap and split 15/15. A gains 15
+    # (240 -> 255), B gains 15 from each neighbour (300 -> 330), C gains 15 (180 -> 195): 780 paid.
+    assert day.total_minutes == 780
     assert day.regular_minutes == 480
-    assert day.overtime_minutes == 240
+    assert day.overtime_minutes == 300
 
     a, b, c = day.entries
-    assert (a.key, a.regular_minutes, a.overtime_minutes) == ("A", 240, 0)
-    assert (b.key, b.regular_minutes, b.overtime_minutes) == ("B", 240, 60)
-    assert (c.key, c.regular_minutes, c.overtime_minutes) == ("C", 0, 180)
+    assert (a.key, a.regular_minutes, a.overtime_minutes) == ("A", 255, 0)
+    assert (b.key, b.regular_minutes, b.overtime_minutes) == ("B", 225, 105)
+    assert (c.key, c.regular_minutes, c.overtime_minutes) == ("C", 0, 195)
 
 
 def test_entries_are_sorted_by_check_in_before_allocation():
@@ -225,9 +230,11 @@ def test_entries_are_sorted_by_check_in_before_allocation():
 
     day = classify_day(entries, _settings())
 
+    # Sorted to A, B, C. Two 30-minute gaps (10:00->10:30 and 14:30->15:00), each split 15/15, add
+    # 60 travel minutes to the 720 clocked, so the day is 480 regular + 300 overtime.
     assert [c.key for c in day.entries] == ["A", "B", "C"]
     assert day.regular_minutes == 480
-    assert day.overtime_minutes == 240
+    assert day.overtime_minutes == 300
 
 
 # --------------------------------------------------------------------------- invariants and edges

@@ -1,0 +1,53 @@
+# Caddy reverse proxy for the single-host POC.
+#
+# Caddy is the one public entry point on the EC2 box. CloudFront sits in front of it
+# as the public HTTPS endpoint; this hop (CloudFront -> EC2) is also HTTPS so auth
+# tokens never travel in plaintext.
+#
+# Routing:
+#   /api/*  -> api:8000   (dynamic, authenticated; never cached here)
+#   /*      -> web:80     (the nginx-served built SPA)
+#
+# TLS: with no custom domain yet (POC on the default *.cloudfront.net URL), Caddy
+# serves an internal/self-signed certificate on the origin. CloudFront is configured
+# with Origin Protocol Policy = HTTPS and "trust any origin cert" is NOT an option,
+# so for the no-domain POC set the CloudFront origin to HTTP:80 OR give the EC2 a
+# domain and let Caddy get a real Let's Encrypt cert. See RUNBOOK.md step 5 for the
+# exact CloudFront origin setting to use in each case.
+#
+# When you add a custom domain later, replace ":80" / the tls directive with your
+# domain name and Caddy will fetch and renew a real certificate automatically:
+#
+#   hours.example.co.il {
+#       encode gzip
+#       handle_path /api/* { reverse_proxy api:8000 }
+#       reverse_proxy web:80
+#   }
+
+# --- No-domain POC: serve plain HTTP on :80 for CloudFront to use as an HTTP origin ---
+# CloudFront terminates the public HTTPS; the origin hop is HTTP on the private EC2
+# security group (only CloudFront's IP ranges reach :80 — locked down in RUNBOOK.md).
+:80 {
+encode gzip
+
+# API path: strip nothing, forward to the FastAPI container. No caching at the proxy.
+handle /api/* {
+reverse_proxy api:8000
+}
+
+# Everything else is the single-page app served by nginx.
+handle {
+reverse_proxy web:80
+}
+}
+
+# --- With a custom domain (uncomment and set your host to get automatic HTTPS) ---------
+# your.domain.example {
+# encode gzip
+# handle /api/* {
+# reverse_proxy api:8000
+# }
+# handle {
+# reverse_proxy web:80
+# }
+# }

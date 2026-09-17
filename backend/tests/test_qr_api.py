@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core import qr_token
 from app.models.client import Client
+from app.models.setting import Setting, SettingValueType
 from app.models.site import Site
 from app.models.user import UserRole
 from auth_support import DEFAULT_PASSWORD
@@ -83,6 +84,17 @@ def _load_site(session: Session, site_id: str) -> Site:
     return session.get(Site, uuid.UUID(site_id))
 
 
+def _seed_public_app_url(session: Session, value: str = "https://hours.example.com") -> None:
+    """Seed the `public_app_url` setting the QR download reads.
+
+    The in-memory schema is built from `Base.metadata` and carries no seed rows, so the row migration
+    0008 seeds on a real database has to be created here for the download path to find a configured
+    base URL (Requirement 1.x, 8.5).
+    """
+    session.add(Setting(key="public_app_url", value=value, value_type=SettingValueType.STRING))
+    session.commit()
+
+
 # --------------------------------------------------------------------------- download
 
 
@@ -90,6 +102,7 @@ def test_a_site_qr_downloads_as_png_by_default(sites_client, sign_in, session: S
     """Requirement 8.5: the QR downloads as a printable PNG."""
     headers, _ = sign_in(UserRole.ADMIN)
     client_id = _make_client_row(session)
+    _seed_public_app_url(session)
     site_id = _create_site(sites_client, headers, client_id)
 
     response = sites_client.get(f"/api/sites/{site_id}/qr", headers=headers)
@@ -100,22 +113,28 @@ def test_a_site_qr_downloads_as_png_by_default(sites_client, sign_in, session: S
 
 
 def test_a_site_qr_downloads_as_pdf(sites_client, sign_in, session: Session):
-    """Requirement 8.5: the QR downloads as a printable PDF carrying the site name and number."""
+    """Requirement 8.5: the QR downloads as a printable PDF.
+
+    The site name and number appear on the sheet as a rendered image label (so a Hebrew name renders),
+    not as literal PDF-text bytes; that the label is drawn is asserted in `test_qr_render.py` on the
+    composed image. Here the subject is the HTTP contract: a real PDF comes back.
+    """
     headers, _ = sign_in(UserRole.ADMIN)
     client_id = _make_client_row(session)
+    _seed_public_app_url(session)
     site_id = _create_site(sites_client, headers, client_id, number="S-77")
 
     response = sites_client.get(f"/api/sites/{site_id}/qr?format=pdf", headers=headers)
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF-")
-    assert b"S-77" in response.content
 
 
 def test_a_separate_mode_site_needs_an_action(sites_client, sign_in, session: Session):
     """Requirement 8.3: a separate site has two codes, so the action must be named."""
     headers, _ = sign_in(UserRole.ADMIN)
     client_id = _make_client_row(session)
+    _seed_public_app_url(session)
     site_id = _create_site(sites_client, headers, client_id, qr_mode="separate")
 
     missing = sites_client.get(f"/api/sites/{site_id}/qr", headers=headers)

@@ -22,7 +22,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.deps import AdminCaller, AuthenticatedContext, DbSession, api_error
+from app.api.deps import AuthenticatedContext, DbSession, OperationsCaller, api_error
 from app.models.user import User, UserRole
 from app.schemas.user import (
     UserCreate,
@@ -47,6 +47,7 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     user_service.UserNotFound.code: HTTPStatus.NOT_FOUND,
     user_service.DuplicateUsername.code: HTTPStatus.CONFLICT,
     user_service.SiteScopeNotApplicable.code: HTTPStatus.BAD_REQUEST,
+    user_service.RoleAssignmentForbidden.code: HTTPStatus.FORBIDDEN,
 }
 
 
@@ -98,7 +99,7 @@ def _card(user: User, session: DbSession) -> UserResponse:
     ),
 )
 def list_users(
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     role: UserRole | None = None,
     include_inactive: bool = True,
@@ -118,7 +119,7 @@ def list_users(
     summary="Read one user",
     responses={HTTPStatus.NOT_FOUND: {"description": "No user with that id"}},
 )
-def read_user(user_id: uuid.UUID, caller: AdminCaller, session: DbSession) -> UserResponse:
+def read_user(user_id: uuid.UUID, caller: OperationsCaller, session: DbSession) -> UserResponse:
     try:
         user = user_service.get_user(session, user_id)
     except user_service.UserError as error:
@@ -143,12 +144,12 @@ def read_user(user_id: uuid.UUID, caller: AdminCaller, session: DbSession) -> Us
 )
 def create_user(
     payload: UserCreate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> UserResponse:
     try:
-        user = user_service.create_user(session, payload, context=context)
+        user = user_service.create_user(session, payload, acting_role=caller.role, context=context)
         session.commit()
     except user_service.UserError as error:
         session.rollback()
@@ -174,12 +175,12 @@ def create_user(
 def update_user(
     user_id: uuid.UUID,
     payload: UserUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> UserResponse:
     try:
-        user = user_service.update_user(session, user_id, payload, context=context)
+        user = user_service.update_user(session, user_id, payload, acting_role=caller.role, context=context)
         session.commit()
     except user_service.UserError as error:
         session.rollback()
@@ -201,7 +202,7 @@ def update_user(
 )
 def deactivate_user(
     user_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> UserResponse:
@@ -224,7 +225,7 @@ def deactivate_user(
 )
 def reactivate_user(
     user_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> UserResponse:
@@ -258,7 +259,7 @@ def reactivate_user(
 def set_user_sites(
     user_id: uuid.UUID,
     payload: UserSitesUpdate,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
 ) -> UserSitesResponse:

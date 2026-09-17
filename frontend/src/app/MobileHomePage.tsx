@@ -30,6 +30,7 @@ import {
   getWorkHistory,
   recordScan,
   scanKeys,
+  selfCheckIn as selfCheckInRequest,
   transition as transitionRequest,
 } from '@/api/scans';
 import type { ScanResult } from '@/api/types';
@@ -37,7 +38,9 @@ import { useAuth } from '@/auth/AuthProvider';
 import { ConfirmationPanel } from '@/app/mobile/ConfirmationPanel';
 import { ConflictDialog } from '@/app/mobile/ConflictDialog';
 import { QrScanner } from '@/app/mobile/QrScanner';
+import { SelfCheckInPicker } from '@/app/mobile/SelfCheckInPicker';
 import { WorkHistory } from '@/app/mobile/WorkHistory';
+import { HindiHelper } from '@/components/HindiHelper';
 import {
   confirming,
   failureToState,
@@ -70,8 +73,12 @@ export function MobileHomePage() {
   const [flow, setFlow] = useState<ScanFlowState>(idle);
   // The name of the site a confirmed transition moved to, so the confirmation can state it.
   const [transitionedSiteName, setTransitionedSiteName] = useState<string | null>(null);
+  // Whether the no-QR self-check-in picker is open. Kept separate from the scan flow state machine:
+  // picking a site is a distinct, secondary entry point that ends by settling like a normal scan.
+  const [picking, setPicking] = useState(false);
 
   const settle = (result: ScanResult, siteName: string | null) => {
+    setPicking(false);
     setTransitionedSiteName(siteName);
     setFlow(confirming(result));
     void queryClient.invalidateQueries({ queryKey: scanKeys.status });
@@ -105,7 +112,21 @@ export function MobileHomePage() {
     onError: (error) => setFlow(failureToState(error, '')),
   });
 
-  const busy = flow.kind === 'submitting' || transitionMutation.isPending || endAndMoveMutation.isPending;
+  // The no-QR self check-in: open a self-reported shift at the picked site, then settle like a
+  // normal scan (invalidating the open-shift status and history). A failure — a 409 conflict, an
+  // offline drop — is classified the same way a scan failure is, so an open shift elsewhere still
+  // routes into the conflict dialog rather than a bare error.
+  const selfCheckInMutation = useMutation({
+    mutationFn: (siteId: string) => selfCheckInRequest(siteId),
+    onSuccess: (result) => settle(result, null),
+    onError: (error) => setFlow(failureToState(error, '')),
+  });
+
+  const busy =
+    flow.kind === 'submitting' ||
+    transitionMutation.isPending ||
+    endAndMoveMutation.isPending ||
+    selfCheckInMutation.isPending;
 
   const startScan = () => {
     // Refuse before the camera even opens if the device is offline: a scan we cannot record must not
@@ -141,7 +162,29 @@ export function MobileHomePage() {
     });
   };
 
+  // Open the no-QR site picker. Like a scan, refuse before the picker opens if the device is
+  // offline: a check-in we cannot record must not look like it is under way (Requirement 23.6).
+  const startSelfCheckIn = () => {
+    if (!online) {
+      setFlow(offlineState);
+      return;
+    }
+    setFlow(idle);
+    setPicking(true);
+  };
+
+  const onPickSite = (siteId: string) => {
+    if (!online) {
+      setPicking(false);
+      setFlow(offlineState);
+      return;
+    }
+    setFlow(submitting);
+    selfCheckInMutation.mutate(siteId);
+  };
+
   const reset = () => {
+    setPicking(false);
     setTransitionedSiteName(null);
     setFlow(idle);
   };
@@ -156,24 +199,35 @@ export function MobileHomePage() {
 
   return (
     <section className="mobile-home">
-      <p className="mobile-home__greeting">{t('mobile.greeting', { name: user?.username ?? '' })}</p>
+      <p className="mobile-home__greeting">
+        {t('mobile.greeting', { name: user?.username ?? '' })}
+        <HindiHelper textKey="mobile.greeting" params={{ name: user?.username ?? '' }} />
+      </p>
 
       {statusQuery.isPending ? (
         <p className="subtitle">{t('common.loading')}</p>
       ) : openShift ? (
         <div className="card status-card">
-          <p className="status-card__label">{t('mobile.checkedIn')}</p>
+          <p className="status-card__label">
+            {t('mobile.checkedIn')}
+            <HindiHelper textKey="mobile.checkedIn" />
+          </p>
           <p className="status-card__time">
             {t('mobile.since')} <span className="numeric">{formatTime(language, openShift.check_in_at)}</span>
+            <HindiHelper textKey="mobile.since" />
           </p>
         </div>
       ) : (
-        <p className="subtitle">{t('mobile.noOpenShift')}</p>
+        <p className="subtitle">
+          {t('mobile.noOpenShift')}
+          <HindiHelper textKey="mobile.noOpenShift" />
+        </p>
       )}
 
       {!online ? (
         <p className="feedback feedback--error" role="status">
           {t('mobile.offlineBanner')}
+          <HindiHelper textKey="mobile.offlineBanner" />
         </p>
       ) : null}
 
@@ -181,14 +235,39 @@ export function MobileHomePage() {
       {openShift ? (
         <button type="button" className="button button--primary button--large" onClick={onCheckOut} disabled={busy}>
           {t('mobile.checkOut')}
+          <HindiHelper textKey="mobile.checkOut" />
         </button>
       ) : (
         <button type="button" className="button button--primary button--large" onClick={startScan} disabled={busy}>
           {t('mobile.scan')}
+          <HindiHelper textKey="mobile.scan" />
         </button>
       )}
 
-      {flow.kind === 'submitting' ? <p className="subtitle">{t('scan.submitting')}</p> : null}
+      {/* The secondary, no-QR path: clearly beneath the primary Scan button, and only offered when no
+          shift is open. A no-QR check-in is self-reported and must be approved by a manager. */}
+      {!openShift && !picking ? (
+        <button
+          type="button"
+          className="button mobile-home__self-check-in"
+          onClick={startSelfCheckIn}
+          disabled={busy}
+        >
+          {t('mobile.selfCheckIn.action')}
+          <HindiHelper textKey="mobile.selfCheckIn.action" />
+        </button>
+      ) : null}
+
+      {picking ? (
+        <SelfCheckInPicker busy={busy} onPick={onPickSite} onCancel={reset} />
+      ) : null}
+
+      {flow.kind === 'submitting' ? (
+        <p className="subtitle">
+          {t('scan.submitting')}
+          <HindiHelper textKey="scan.submitting" />
+        </p>
+      ) : null}
 
       {flow.kind === 'confirming' ? (
         <ConfirmationPanel result={flow.result} siteName={transitionedSiteName} onDone={reset} />
@@ -206,7 +285,10 @@ export function MobileHomePage() {
 
       {flow.kind === 'offline' ? (
         <div className="feedback feedback--error" role="alert">
-          <p>{t('scan.notRecorded')}</p>
+          <p>
+            {t('scan.notRecorded')}
+            <HindiHelper textKey="scan.notRecorded" />
+          </p>
           <button type="button" className="button button--large" onClick={reset}>
             {t('common.close')}
           </button>
@@ -215,7 +297,10 @@ export function MobileHomePage() {
 
       {flow.kind === 'error' ? (
         <div className="feedback feedback--error" role="alert">
-          <p>{t([`apiError.${flow.code ?? 'unknown'}`, 'apiError.unknown'])}</p>
+          <p>
+            {t([`apiError.${flow.code ?? 'unknown'}`, 'apiError.unknown'])}
+            <HindiHelper textKey={[`apiError.${flow.code ?? 'unknown'}`, 'apiError.unknown']} />
+          </p>
           <button type="button" className="button button--large" onClick={reset}>
             {t('common.close')}
           </button>
@@ -224,11 +309,15 @@ export function MobileHomePage() {
 
       {alerts.length > 0 ? (
         <section className="alerts" aria-label={t('mobile.alerts')}>
-          <h2 className="alerts__title">{t('mobile.alerts')}</h2>
+          <h2 className="alerts__title">
+            {t('mobile.alerts')}
+            <HindiHelper textKey="mobile.alerts" />
+          </h2>
           <ul className="alerts__list">
             {alerts.map((flag) => (
               <li key={flag} className="alerts__item">
                 {t([`scan.flag.${flag}`, 'scan.flag.generic'])}
+                <HindiHelper textKey={[`scan.flag.${flag}`, 'scan.flag.generic']} />
               </li>
             ))}
           </ul>

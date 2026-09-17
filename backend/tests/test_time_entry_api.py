@@ -298,3 +298,46 @@ def test_an_employee_may_not_list_the_hours_view(entries_client, sign_in, sessio
     response = entries_client.get("/api/time-entries", headers=employee_headers)
     assert response.status_code == 403
     assert _code(response) == "insufficient_role"
+
+
+# --------------------------------------------------------------------------- correcting the site (Req 12.6)
+
+
+def test_an_admin_may_change_the_site_on_a_correction(entries_client, sign_in, session: Session):
+    """An administrator may re-site a corrected entry; the entry moves to the new site."""
+    headers, _ = sign_in(UserRole.ADMIN)
+    employee = _make_employee(session)
+    from_site = _make_site(session, number="S-FROM", name="From")
+    to_site = _make_site(session, number="S-TO", name="To")
+    entry = _make_entry(session, employee=employee, site=from_site, work_date=date(2025, 8, 15))
+
+    response = entries_client.patch(
+        f"/api/time-entries/{entry.id}",
+        json={"site_id": str(to_site.id), "reason": "moved to the correct site"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["site_id"] == str(to_site.id)
+
+
+def test_a_site_manager_may_not_change_the_site_on_a_correction(
+    entries_client, sign_in, session: Session
+):
+    """Requirement 2.3: a site manager cannot move an entry to another site (403), and it is unchanged."""
+    manager_headers, manager = sign_in(UserRole.SITE_MANAGER)
+    employee = _make_employee(session)
+    mine = _make_site(session, number="S-MINE")
+    other = _make_site(session, number="S-OTHER")
+    session.add(UserSite(user_id=manager.id, site_id=mine.id))
+    session.commit()
+    entry = _make_entry(session, employee=employee, site=mine, work_date=date(2025, 8, 15))
+
+    response = entries_client.patch(
+        f"/api/time-entries/{entry.id}",
+        json={"site_id": str(other.id), "reason": "trying to move it"},
+        headers=manager_headers,
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"]["code"] == "site_change_not_permitted"
+    session.refresh(entry)
+    assert entry.site_id == mine.id

@@ -35,7 +35,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CODE_SITE_OUT_OF_SCOPE, AdminCaller, DbSession, SiteManagerCaller
+from app.api.deps import CODE_SITE_OUT_OF_SCOPE, DbSession, OperationsCaller, SiteManagerCaller
 from app.schemas.audit import AuditEntry, AuditListResponse
 from app.services import audit_read as audit_read_service
 from app.services import authz as authz_service
@@ -131,7 +131,7 @@ def read_entity_audit(
     },
 )
 def read_all_audit(
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     entity_type: Annotated[
         str | None,

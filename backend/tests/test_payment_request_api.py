@@ -216,9 +216,10 @@ def _calculate_billing(billing_client, headers) -> None:
 def test_payment_request_totals_match_the_billing_records(billing_client, sign_in, session: Session):
     """Requirement 18.8, 17.3: each site amount and the client total equal the billing records.
 
-    The brief's two-site day: Site A bills 4.5 h × 60 = 270.00 and Site B 5.0 h × 75 = 375.00. The
+    The brief's two-site day, with the 30-minute gap between the shifts split 15/15 and paid and
+    billed at both sites: Site A bills 4.75 h × 60 = 285.00 and Site B 5.25 h × 75 = 393.75. The
     payment request's per-site amounts must equal the stored `billing_records.total_amount` for those
-    sites, and the client total must equal their sum, 645.00.
+    sites, and the client total must equal their sum, 678.75.
     """
     headers, _ = sign_in(UserRole.ADMIN)
     employee = _make_employee(session)
@@ -254,21 +255,21 @@ def test_payment_request_totals_match_the_billing_records(billing_client, sign_i
     by_site = {s["site_id"]: s for s in body["sites"]}
     assert Decimal(by_site[str(site_a.id)]["amount"]) == records[site_a.id].total_amount
     assert Decimal(by_site[str(site_b.id)]["amount"]) == records[site_b.id].total_amount
-    assert Decimal(by_site[str(site_a.id)]["amount"]) == Decimal("270.00")
-    assert Decimal(by_site[str(site_b.id)]["amount"]) == Decimal("375.00")
+    assert Decimal(by_site[str(site_a.id)]["amount"]) == Decimal("285.00")
+    assert Decimal(by_site[str(site_b.id)]["amount"]) == Decimal("393.75")
 
     # The client total equals the sum of the billing records for the period.
     records_total = sum((r.total_amount for r in records.values()), Decimal("0.00"))
     assert Decimal(body["total_amount"]) == records_total
-    assert Decimal(body["total_amount"]) == Decimal("645.00")
+    assert Decimal(body["total_amount"]) == Decimal("678.75")
 
     # Each site section carries the employee line with hours, rate and amount (Requirement 18.8).
     site_a_line = by_site[str(site_a.id)]["lines"][0]
     assert site_a_line["employee_id"] == str(employee.id)
-    assert site_a_line["total_minutes"] == 270
-    assert Decimal(site_a_line["hours"]) == Decimal("4.50")
+    assert site_a_line["total_minutes"] == 285
+    assert Decimal(site_a_line["hours"]) == Decimal("4.75")
     assert Decimal(site_a_line["rate"]) == Decimal("60.00")
-    assert Decimal(site_a_line["amount"]) == Decimal("270.00")
+    assert Decimal(site_a_line["amount"]) == Decimal("285.00")
 
 
 # ===================================================================== multi-employee site reconciles

@@ -23,8 +23,12 @@ import { useTranslation } from 'react-i18next';
 import { changePassword } from '@/api/auth';
 import { useAuth } from '@/auth/AuthProvider';
 import { toError } from '@/lib/apiError';
+import { HindiHelper } from '@/components/HindiHelper';
 
-const MIN_PASSWORD_LENGTH = 8;
+const CONSOLE_MIN_PASSWORD_LENGTH = 8;
+const EMPLOYEE_PIN_MIN = 4;
+const EMPLOYEE_PIN_MAX = 8;
+const DIGITS_ONLY = /^\d+$/;
 
 export function ChangePasswordGate({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -38,10 +42,16 @@ export function ChangePasswordGate({ children }: { children: ReactNode }) {
     <main className="auth">
       <div className="auth__card card">
         <header className="auth__header">
-          <h1>{t('changePassword.title')}</h1>
+          <h1>
+            {t('changePassword.title')}
+            {user.role === 'employee' ? <HindiHelper textKey="changePassword.title" /> : null}
+          </h1>
         </header>
-        <p className="subtitle">{t('changePassword.prompt')}</p>
-        <ChangePasswordForm />
+        <p className="subtitle">
+          {t('changePassword.prompt')}
+          {user.role === 'employee' ? <HindiHelper textKey="changePassword.prompt" /> : null}
+        </p>
+        <ChangePasswordForm isEmployee={user.role === 'employee'} />
       </div>
     </main>
   );
@@ -54,7 +64,7 @@ export function ChangePasswordGate({ children }: { children: ReactNode }) {
  * `current_password_incorrect` and `new_password_must_differ` codes are rendered through
  * {@link toError} in the reader's language.
  */
-function ChangePasswordForm() {
+function ChangePasswordForm({ isEmployee }: { isEmployee: boolean }) {
   const { t } = useTranslation();
   const { refetchUser } = useAuth();
 
@@ -76,7 +86,16 @@ function ChangePasswordForm() {
     event.preventDefault();
     setServerErrorKey(null);
 
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    if (isEmployee) {
+      if (!DIGITS_ONLY.test(newPassword)) {
+        setLocalErrorKey('changePassword.pinDigitsOnly');
+        return;
+      }
+      if (newPassword.length < EMPLOYEE_PIN_MIN || newPassword.length > EMPLOYEE_PIN_MAX) {
+        setLocalErrorKey('changePassword.pinLength');
+        return;
+      }
+    } else if (newPassword.length < CONSOLE_MIN_PASSWORD_LENGTH) {
       setLocalErrorKey('changePassword.tooShort');
       return;
     }
@@ -97,7 +116,10 @@ function ChangePasswordForm() {
   return (
     <form className="form" onSubmit={onSubmit}>
       <label className="field">
-        <span className="field__label">{t('changePassword.currentPassword')}</span>
+        <span className="field__label">
+          {t('changePassword.currentPassword')}
+          {isEmployee ? <HindiHelper textKey="changePassword.currentPassword" /> : null}
+        </span>
         <input
           className="input"
           type="password"
@@ -110,7 +132,10 @@ function ChangePasswordForm() {
       </label>
 
       <label className="field">
-        <span className="field__label">{t('changePassword.newPassword')}</span>
+        <span className="field__label">
+          {t('changePassword.newPassword')}
+          {isEmployee ? <HindiHelper textKey="changePassword.newPassword" /> : null}
+        </span>
         <input
           className="input"
           type="password"
@@ -119,11 +144,16 @@ function ChangePasswordForm() {
           onChange={(event) => setNewPassword(event.target.value)}
           required
         />
-        <span className="field__hint">{t('changePassword.tooShort')}</span>
+        <span className="field__hint">
+          {isEmployee ? t('changePassword.pinLength') : t('changePassword.tooShort')}
+        </span>
       </label>
 
       <label className="field">
-        <span className="field__label">{t('changePassword.confirmPassword')}</span>
+        <span className="field__label">
+          {t('changePassword.confirmPassword')}
+          {isEmployee ? <HindiHelper textKey="changePassword.confirmPassword" /> : null}
+        </span>
         <input
           className="input"
           type="password"
@@ -143,6 +173,7 @@ function ChangePasswordForm() {
       <div className="form__actions">
         <button type="submit" className="button button--primary" disabled={submit.isPending}>
           {submit.isPending ? t('changePassword.submitting') : t('changePassword.submit')}
+          {isEmployee ? <HindiHelper textKey="changePassword.submit" /> : null}
         </button>
       </div>
     </form>

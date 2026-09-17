@@ -31,10 +31,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.api.deps import (
-    AdminCaller,
     AuthenticatedContext,
     CurrentCaller,
     DbSession,
+    OperationsCaller,
     api_error,
 )
 from app.core import authz
@@ -105,7 +105,7 @@ def _today() -> date:
 )
 def list_documents(
     employee_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
 ) -> DocumentListResponse:
     # Confirm the employee exists so a bad id is a 404 rather than an empty list.
@@ -141,7 +141,7 @@ def list_documents(
 def create_upload_url(
     employee_id: uuid.UUID,
     payload: DocumentUploadInit,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     storage: Storage,
 ) -> DocumentUploadTicket:
@@ -180,7 +180,7 @@ def create_upload_url(
 def complete_upload(
     employee_id: uuid.UUID,
     payload: DocumentUploadComplete,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
     storage: Storage,
@@ -275,7 +275,7 @@ def _authorize_document_read(caller: CurrentCaller, employee_id: uuid.UUID) -> N
 )
 def delete_document(
     document_id: uuid.UUID,
-    caller: AdminCaller,
+    caller: OperationsCaller,
     session: DbSession,
     context: AuthenticatedContext,
     storage: Storage,

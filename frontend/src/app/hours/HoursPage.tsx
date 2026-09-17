@@ -29,6 +29,7 @@ import type {
   TimeEntryStatus,
 } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
+import { isOperationalAdmin } from '@/app/navigation';
 import { AuditPanel } from '@/app/audit/AuditPanel';
 import { groupEntries, type EmployeeDay, type SiteGroup } from '@/app/hours/hoursView';
 import { TimeEntryForm, type TimeEntryPrefill } from '@/app/hours/TimeEntryForm';
@@ -83,7 +84,7 @@ export function HoursPage() {
   // Managers and administrators may create, correct and delete entries; the employee role may not,
   // and accounting reads but does not write (Requirement 12.6, 2.4). The server enforces this too;
   // this hides the controls a reader could not use.
-  const canManage = user?.role === 'admin' || user?.role === 'site_manager';
+  const canManage = isOperationalAdmin(user?.role) || user?.role === 'site_manager';
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -330,10 +331,16 @@ export function HoursPage() {
 }
 
 /** An option label: the reader's-language name first, the other in parentheses to disambiguate. */
-const employeeLabel = (language: Language, name: string, nameEn: string): string => {
+const employeeLabel = (
+  language: Language,
+  name: string,
+  nameEn: string,
+  employeeNumber?: string | null,
+): string => {
   const primary = language === 'he' ? name : nameEn;
   const secondary = language === 'he' ? nameEn : name;
-  return primary === secondary ? primary : `${primary} (${secondary})`;
+  const base = primary === secondary ? primary : `${primary} (${secondary})`;
+  return employeeNumber ? `${base} #${employeeNumber}` : base;
 };
 
 interface RowActions {
@@ -358,7 +365,7 @@ function DayCard({
       <header className="hours-day__header">
         <div className="hours-day__who">
           <span className="hours-day__name">
-            {employeeLabel(language, day.employeeName, day.employeeNameEn)}
+            {employeeLabel(language, day.employeeName, day.employeeNameEn, day.employeeNumber)}
           </span>
           <span className="hours-day__date">{formatDate(language, day.workDate)}</span>
           {day.siteCount > 1 ? (

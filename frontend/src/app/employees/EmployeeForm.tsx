@@ -7,11 +7,12 @@
  * rate history are not edited here; they move through their own controls on the card.
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { createEmployee, employeeKeys, updateEmployee } from '@/api/employees';
+import { listStaffingCompanies, staffingCompanyKeys } from '@/api/staffingCompanies';
 import type { EmployeeCreate, EmployeeResponse, EmployeeUpdate } from '@/api/types';
 import { toError } from '@/lib/apiError';
 
@@ -20,6 +21,7 @@ interface Fields {
   full_name_en: string;
   passport_number: string;
   phone: string;
+  staffing_company_id: string;
   country: string;
   emergency_contact_name: string;
   emergency_contact_phone: string;
@@ -35,6 +37,7 @@ const emptyFields: Fields = {
   full_name_en: '',
   passport_number: '',
   phone: '',
+  staffing_company_id: '',
   country: '',
   emergency_contact_name: '',
   emergency_contact_phone: '',
@@ -50,9 +53,10 @@ const fromEmployee = (employee: EmployeeResponse): Fields => ({
   full_name_en: employee.full_name_en,
   passport_number: employee.passport_number,
   phone: employee.phone,
-  country: employee.country,
-  emergency_contact_name: employee.emergency_contact_name,
-  emergency_contact_phone: employee.emergency_contact_phone,
+  staffing_company_id: employee.staffing_company_id ?? '',
+  country: employee.country ?? '',
+  emergency_contact_name: employee.emergency_contact_name ?? '',
+  emergency_contact_phone: employee.emergency_contact_phone ?? '',
   start_date: employee.start_date,
   position: employee.position ?? '',
   date_of_birth: employee.date_of_birth ?? '',
@@ -65,9 +69,10 @@ const toPayload = (fields: Fields): EmployeeCreate => ({
   full_name_en: fields.full_name_en,
   passport_number: fields.passport_number,
   phone: fields.phone,
-  country: fields.country,
-  emergency_contact_name: fields.emergency_contact_name,
-  emergency_contact_phone: fields.emergency_contact_phone,
+  staffing_company_id: fields.staffing_company_id,
+  country: fields.country || null,
+  emergency_contact_name: fields.emergency_contact_name || null,
+  emergency_contact_phone: fields.emergency_contact_phone || null,
   start_date: fields.start_date,
   position: fields.position || null,
   date_of_birth: fields.date_of_birth || null,
@@ -93,6 +98,14 @@ export function EmployeeForm({
 
   const set = (key: keyof Fields) => (event: { target: { value: string } }) =>
     setFields((prev) => ({ ...prev, [key]: event.target.value }));
+
+  // The staffing companies to link the employee to (Requirement 2.1). Every new employee must select
+  // one, so the list is loaded whenever the form is open; 200 is the endpoint maximum, plenty for a
+  // link picker over the providers.
+  const companiesQuery = useQuery({
+    queryKey: staffingCompanyKeys.list({ limit: 200, offset: 0 }),
+    queryFn: () => listStaffingCompanies({ limit: 200, offset: 0 }),
+  });
 
   const mutation = useMutation({
     mutationFn: async (): Promise<EmployeeResponse> => {
@@ -143,10 +156,27 @@ export function EmployeeForm({
         </label>
       </div>
 
+      <label className="field">
+        <span className="field__label">{t('employee.staffingCompany')}</span>
+        <select
+          className="input"
+          value={fields.staffing_company_id}
+          onChange={set('staffing_company_id')}
+          required
+        >
+          <option value="">{t('employee.selectStaffingCompany')}</option>
+          {(companiesQuery.data?.items ?? []).map((company) => (
+            <option key={company.id} value={company.id}>
+              {company.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <div className="form-row">
         <label className="field">
           <span className="field__label">{t('employee.country')}</span>
-          <input className="input" value={fields.country} onChange={set('country')} required />
+          <input className="input" value={fields.country} onChange={set('country')} />
         </label>
         <label className="field">
           <span className="field__label">{t('employee.position')}</span>
@@ -161,7 +191,6 @@ export function EmployeeForm({
             className="input"
             value={fields.emergency_contact_name}
             onChange={set('emergency_contact_name')}
-            required
           />
         </label>
         <label className="field">
@@ -171,7 +200,6 @@ export function EmployeeForm({
             type="tel"
             value={fields.emergency_contact_phone}
             onChange={set('emergency_contact_phone')}
-            required
           />
         </label>
       </div>

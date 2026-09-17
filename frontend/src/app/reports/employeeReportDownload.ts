@@ -50,7 +50,7 @@ export interface EmployeeReportRenderOptions {
 /** The reader's-language employee name, the other form in parentheses to disambiguate a shared name. */
 export const employeeReportName = (
   language: Language,
-  row: Pick<EmployeeReportRow, 'employee_name' | 'employee_name_en'>,
+  row: Pick<EmployeeReportRow, 'employee_name' | 'employee_name_en' | 'employee_number'>,
 ): string => {
   const primary = language === 'he' ? row.employee_name : row.employee_name_en;
   const secondary = language === 'he' ? row.employee_name_en : row.employee_name;

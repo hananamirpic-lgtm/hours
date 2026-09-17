@@ -7,7 +7,7 @@ rows ride along in one transaction (Requirement 13.2), the pattern the scan and 
 follow.
 
 Locking a month is an administrator action (Requirement 15.4), so every endpoint here is behind
-`AdminCaller`. Accounting reads approved hours and reports but does not freeze the ledger; a site
+`OperationsCaller`. Accounting reads approved hours and reports but does not freeze the ledger; a site
 manager approves their own sites' entries through the bulk-status endpoint but does not lock the
 whole month. `GET /api/periods` is admin-only too: the period screen it feeds is the administrator's.
 
@@ -27,9 +27,9 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path
 
 from app.api.deps import (
-    AdminCaller,
     AuthenticatedContext,
     DbSession,
+    OperationsCaller,
     api_error,
 )
 from app.models.period_lock import PeriodLock
@@ -100,7 +100,7 @@ def lock_period(
     year: _YEAR,
     month: _MONTH,
     payload: PeriodLockRequest,
-    caller: AdminCaller,  # noqa: ARG001 — the type is the guard; the caller is unused past it
+    caller: OperationsCaller,  # noqa: ARG001 — the type is the guard; the caller is unused past it
     session: DbSession,
     context: AuthenticatedContext,
 ) -> PeriodLockResult:
@@ -145,7 +145,7 @@ def unlock_period(
     year: _YEAR,
     month: _MONTH,
     payload: PeriodUnlockRequest,
-    caller: AdminCaller,  # noqa: ARG001 — the type is the guard
+    caller: OperationsCaller,  # noqa: ARG001 — the type is the guard
     session: DbSession,
     context: AuthenticatedContext,
 ) -> PeriodState:
@@ -173,7 +173,7 @@ def unlock_period(
     ),
 )
 def list_periods(
-    caller: AdminCaller,  # noqa: ARG001 — the type is the guard
+    caller: OperationsCaller,  # noqa: ARG001 — the type is the guard
     session: DbSession,
 ) -> PeriodListResponse:
     periods = period_service.list_periods(session)
