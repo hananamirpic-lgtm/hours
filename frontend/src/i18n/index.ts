@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 
 import en from './locales/en/common.json';
 import he from './locales/he/common.json';
+import hi from './locales/hi/common.json';
 
 export const SUPPORTED_LANGUAGES = ['he', 'en'] as const;
 export type Language = (typeof SUPPORTED_LANGUAGES)[number];
@@ -40,6 +41,9 @@ void i18next.use(initReactI18next).init({
   resources: {
     he: { common: he },
     en: { common: en },
+    // Hindi is not a selectable interface language (SUPPORTED_LANGUAGES stays he/en). It is loaded so
+    // the employee mobile app can render a Hindi helper line under English text; see `HindiHelper`.
+    hi: { common: hi },
   },
   lng: initialLanguage,
   fallbackLng: DEFAULT_LANGUAGE,

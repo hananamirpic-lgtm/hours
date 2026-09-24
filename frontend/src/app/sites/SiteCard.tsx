@@ -135,10 +135,7 @@ export function SiteCard({
             label={t('site.startDate')}
             value={site.start_date ? formatDate(language, site.start_date) : null}
           />
-          <Detail
-            label={t('site.endDate')}
-            value={site.end_date ? formatDate(language, site.end_date) : null}
-          />
+
           <Detail label={t('site.qrMode')} value={t(`qrMode.${site.qr_mode}`)} />
           <Detail label={t('site.assignmentMode')} value={t(`assignmentMode.${site.assignment_mode}`)} />
           {canSeeBilling && site.billing_rate ? (

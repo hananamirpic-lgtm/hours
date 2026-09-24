@@ -21,6 +21,7 @@ design. A new working-day length changes the next calculation, not last month's 
 from __future__ import annotations
 
 import json
+import urllib.parse
 from collections.abc import Mapping
 from datetime import time
 from decimal import Decimal, InvalidOperation
@@ -128,6 +129,27 @@ _INTEGER_BOUNDS: dict[str, tuple[int | None, int | None]] = {
 }
 
 
+#: STRING keys that must hold an absolute http/https URL when set. A key absent here keeps the
+#: "any text is valid" rule for a string; a key present is additionally checked as an absolute URL.
+#: `public_app_url` is the base the site QR codes point at, so a blank or non-http(s) value would
+#: produce a QR nothing can open — it is refused here rather than stored and discovered at scan time.
+_URL_STRING_KEYS: frozenset[str] = frozenset({"public_app_url"})
+
+
+def _check_url(key: str, value: str) -> None:
+    """Refuse a blank/whitespace value or one that is not an absolute http/https URL.
+
+    A trailing slash is accepted (Requirement 1.7): the QR renderer normalises it, so both
+    ``https://h.example.com`` and ``https://h.example.com/`` store as given and produce the same scan
+    URL. A value with no scheme, a non-http(s) scheme (``ftp://...``), or no host is rejected.
+    """
+    if not value.strip():
+        raise InvalidSettingValue(key)
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise InvalidSettingValue(key)
+
+
 def _validate_value(key: str, value_type: SettingValueType, value: str) -> str:
     """Check `value` fits `value_type` (and any semantic bound for `key`), returning the text to store.
 
@@ -153,7 +175,8 @@ def _validate_value(key: str, value_type: SettingValueType, value: str) -> str:
         case SettingValueType.JSON:
             _parse_json(key, value)
         case SettingValueType.STRING:
-            pass  # Any text is a valid string.
+            if key in _URL_STRING_KEYS:
+                _check_url(key, value)
     return value
 
 

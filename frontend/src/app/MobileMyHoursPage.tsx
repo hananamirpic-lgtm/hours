@@ -32,6 +32,7 @@ import {
   type HoursPreset,
 } from '@/app/mobile/myHoursView';
 import { formatDate, formatDuration } from '@/lib/format';
+import { HindiHelper } from '@/components/HindiHelper';
 import { useLanguage } from '@/lib/useLanguage';
 
 /** A day row shared by the flat list and the weekly groups. */
@@ -86,7 +87,10 @@ export function MobileMyHoursPage() {
 
   return (
     <section className="my-hours">
-      <h1 className="my-hours__title">{t('myHours.title')}</h1>
+      <h1 className="my-hours__title">
+        {t('myHours.title')}
+        <HindiHelper textKey="myHours.title" />
+      </h1>
 
       <div className="my-hours__filter" role="group" aria-label={t('myHours.filter')}>
         <button
@@ -96,6 +100,7 @@ export function MobileMyHoursPage() {
           onClick={() => choosePreset('week')}
         >
           {t('myHours.thisWeek')}
+          <HindiHelper textKey="myHours.thisWeek" />
         </button>
         <button
           type="button"
@@ -104,6 +109,7 @@ export function MobileMyHoursPage() {
           onClick={() => choosePreset('month')}
         >
           {t('myHours.thisMonth')}
+          <HindiHelper textKey="myHours.thisMonth" />
         </button>
         <button
           type="button"
@@ -112,6 +118,7 @@ export function MobileMyHoursPage() {
           onClick={() => choosePreset('day')}
         >
           {t('myHours.pickDay')}
+          <HindiHelper textKey="myHours.pickDay" />
         </button>
         <button
           type="button"
@@ -120,12 +127,16 @@ export function MobileMyHoursPage() {
           onClick={() => choosePreset('custom')}
         >
           {t('myHours.customRange')}
+          <HindiHelper textKey="myHours.customRange" />
         </button>
       </div>
 
       {preset === 'day' ? (
         <label className="my-hours__field">
-          <span className="my-hours__label">{t('myHours.day')}</span>
+          <span className="my-hours__label">
+            {t('myHours.day')}
+            <HindiHelper textKey="myHours.day" />
+          </span>
           <input
             type="date"
             className="input"
@@ -138,7 +149,10 @@ export function MobileMyHoursPage() {
       {preset === 'custom' ? (
         <div className="my-hours__dates">
           <label className="my-hours__field">
-            <span className="my-hours__label">{t('myHours.from')}</span>
+            <span className="my-hours__label">
+              {t('myHours.from')}
+              <HindiHelper textKey="myHours.from" />
+            </span>
             <input
               type="date"
               className="input"
@@ -147,7 +161,10 @@ export function MobileMyHoursPage() {
             />
           </label>
           <label className="my-hours__field">
-            <span className="my-hours__label">{t('myHours.to')}</span>
+            <span className="my-hours__label">
+              {t('myHours.to')}
+              <HindiHelper textKey="myHours.to" />
+            </span>
             <input
               type="date"
               className="input"
@@ -159,18 +176,28 @@ export function MobileMyHoursPage() {
       ) : null}
 
       <div className="my-hours__total card">
-        <span className="my-hours__total-label">{t('myHours.total')}</span>
+        <span className="my-hours__total-label">
+          {t('myHours.total')}
+          <HindiHelper textKey="myHours.total" />
+        </span>
         <span className="numeric my-hours__total-value">{formatDuration(total)}</span>
       </div>
 
       {historyQuery.isPending ? (
-        <p className="subtitle">{t('common.loading')}</p>
+        <p className="subtitle">
+          {t('common.loading')}
+          <HindiHelper textKey="common.loading" />
+        </p>
       ) : historyQuery.isError ? (
         <p className="feedback feedback--error" role="alert">
           {t('common.loadError')}
+          <HindiHelper textKey="common.loadError" />
         </p>
       ) : days.length === 0 ? (
-        <p className="subtitle">{t('myHours.empty')}</p>
+        <p className="subtitle">
+          {t('myHours.empty')}
+          <HindiHelper textKey="myHours.empty" />
+        </p>
       ) : weekly ? (
         <div className="my-hours__weeks">
           {weekGroups.map((group) => (

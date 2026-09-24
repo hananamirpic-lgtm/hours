@@ -900,3 +900,348 @@ def test_a_close_overlapping_an_existing_entry_is_rejected_naming_it(session: Se
         )
     assert raised.value.conflicting_entry is not None
     assert raised.value.conflicting_entry.id == existing.id
+
+
+# --------------------------------------------------------------------------- auto-approve on clean QR
+#
+# A clean, completed QR scan proves presence, so its shift is approved automatically on check-out
+# (Change 1). Anything anomalous — a flag, a non-QR source, an already-advanced status — stays DRAFT.
+
+
+def _assign(session: Session, employee: Employee, site: Site) -> None:
+    session.add(
+        EmployeeSite(employee_id=employee.id, site_id=site.id, assigned_from=date(2025, 1, 1))
+    )
+    session.commit()
+
+
+def test_clean_qr_check_out_auto_approves(session: Session):
+    """(a) A clean QR check-in then check-out ends APPROVED without a manual step."""
+    from app.models.time_entry import TimeEntryStatus
+
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)  # assigned, so no unassigned_site flag
+    _seed_window(session)
+    _seed_implausible_hours(session)
+    check_in = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+    _open_shift(session, employee, site, check_in)
+
+    outcome = scan_service.resolve_scan(
+        session,
+        employee_id=employee.id,
+        request=_request(site),
+        context=_context(),
+        now=check_in + timedelta(hours=3),
+    )
+    session.commit()
+
+    assert outcome.action is ScanAction.CHECK_OUT
+    assert not outcome.entry.flags
+    assert outcome.entry.status is TimeEntryStatus.APPROVED
+
+
+def test_auto_approve_is_recorded_in_the_audit_diff(session: Session):
+    """The auto-approval is captured as a status change under the scan_check_out reason."""
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)
+    _seed_window(session)
+    _seed_implausible_hours(session)
+    check_in = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+    _open_shift(session, employee, site, check_in)
+
+    scan_service.resolve_scan(
+        session,
+        employee_id=employee.id,
+        request=_request(site),
+        context=_context(),
+        now=check_in + timedelta(hours=3),
+    )
+    session.flush()
+
+    rows = list(
+        session.scalars(
+            select(ChangeLog).where(
+                ChangeLog.entity_type == "time_entries", ChangeLog.reason == "scan_check_out"
+            )
+        )
+    )
+    status_row = next((r for r in rows if r.field == "status"), None)
+    assert status_row is not None, "the auto-approval must be in the check-out audit diff"
+    assert status_row.new_value == "approved"
+
+
+def test_unassigned_site_flag_keeps_the_shift_draft_on_check_out(session: Session):
+    """(b) An unassigned open-mode check-in stays DRAFT after check-out — it is flagged."""
+    from app.models.time_entry import TimeEntryStatus
+
+    employee = _employee(session)
+    site = _site(session, assignment_mode=AssignmentMode.OPEN)  # not assigned -> flagged open mode
+    _seed_window(session)
+    _seed_implausible_hours(session)
+    check_in = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+    _open_shift(session, employee, site, check_in)
+    # The open entry carries the unassigned-site flag.
+    assert scan_service.FLAG_UNASSIGNED_SITE in scan_service.current_open_shift(session, employee.id).flags
+
+    outcome = scan_service.resolve_scan(
+        session,
+        employee_id=employee.id,
+        request=_request(site),
+        context=_context(),
+        now=check_in + timedelta(hours=3),
+    )
+    session.commit()
+
+    assert scan_service.FLAG_UNASSIGNED_SITE in outcome.entry.flags
+    assert outcome.entry.status is TimeEntryStatus.DRAFT
+
+
+def test_implausible_duration_keeps_the_shift_draft_on_check_out(session: Session):
+    """(c) A QR shift over the implausible threshold stays DRAFT — the flag blocks auto-approve."""
+    from app.models.time_entry import TimeEntryStatus
+
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)  # assigned, so only the duration flag can appear
+    _seed_window(session)
+    _seed_implausible_hours(session, hours=16)
+    check_in = datetime(2025, 3, 10, 6, 0, tzinfo=UTC)
+    _open_shift(session, employee, site, check_in)
+
+    outcome = scan_service.resolve_scan(
+        session,
+        employee_id=employee.id,
+        request=_request(site),
+        context=_context(),
+        now=check_in + timedelta(hours=17),
+    )
+    session.commit()
+
+    assert scan_service.FLAG_IMPLAUSIBLE_DURATION in outcome.entry.flags
+    assert outcome.entry.status is TimeEntryStatus.DRAFT
+
+
+def test_an_open_qr_shift_is_draft(session: Session):
+    """(d) An open (never-checked-out) QR shift has no total and stays DRAFT."""
+    from app.models.time_entry import TimeEntryStatus
+
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)
+    _seed_window(session)
+    check_in = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+
+    outcome = scan_service.resolve_scan(
+        session, employee_id=employee.id, request=_request(site), context=_context(), now=check_in
+    )
+    session.commit()
+
+    assert outcome.action is ScanAction.CHECK_IN
+    assert outcome.entry.check_out_at is None
+    assert outcome.entry.total_minutes is None
+    assert outcome.entry.status is TimeEntryStatus.DRAFT
+
+
+def test_transition_close_does_not_auto_approve(session: Session):
+    """(h) The system-transition close leaves the transitioned-away entry DRAFT, not APPROVED."""
+    from app.models.time_entry import TimeEntryStatus
+
+    employee = _employee(session)
+    site_a = _site(session, number="S-A")
+    site_b = _site(session, number="S-B")
+    _assign(session, employee, site_a)
+    _assign(session, employee, site_b)
+    _seed_window(session)
+    _seed_implausible_hours(session)
+    check_in = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+    _open_shift(session, employee, site_a, check_in)
+
+    scan_service.transition(
+        session,
+        employee_id=employee.id,
+        request=_request(site_b),
+        context=_context(),
+        now=check_in + timedelta(hours=2),
+    )
+    session.commit()
+
+    session.expire_all()
+    entries = list(session.scalars(select(TimeEntry).order_by(TimeEntry.check_in_at)))
+    closed, opened = entries
+    # The closed (transitioned-away) entry is a system transition and must stay DRAFT for review.
+    assert closed.check_out_at is not None
+    assert closed.status is TimeEntryStatus.DRAFT
+    # The freshly opened shift is still open, so it is DRAFT too (no total yet).
+    assert opened.check_out_at is None
+    assert opened.status is TimeEntryStatus.DRAFT
+
+
+# --------------------------------------------------------------------------- self check-in (no QR)
+
+
+def test_self_check_in_creates_a_draft_self_reported_manual_entry(session: Session):
+    """(e) An assigned employee self-checks-in: DRAFT, self_reported, manual, no total."""
+    from app.models.time_entry import TimeEntrySource, TimeEntryStatus
+
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)
+    _seed_window(session)
+    moment = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+
+    outcome = scan_service.self_check_in(
+        session, employee_id=employee.id, site_id=site.id, context=_context(), now=moment
+    )
+    session.commit()
+
+    assert outcome.action is ScanAction.CHECK_IN
+    entry = outcome.entry
+    assert entry.status is TimeEntryStatus.DRAFT
+    assert entry.source is TimeEntrySource.MANUAL
+    assert entry.is_manual is True
+    assert scan_service.FLAG_SELF_REPORTED in entry.flags
+    assert entry.check_out_at is None
+    assert entry.check_in_at == moment
+    assert entry.manual_reason == "self check-in (no QR)"
+
+
+def test_self_check_in_audits_the_creation(session: Session):
+    """The self check-in is audited under the self_check_in reason."""
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)
+    _seed_window(session)
+
+    scan_service.self_check_in(
+        session, employee_id=employee.id, site_id=site.id, context=_context()
+    )
+    session.flush()
+
+    rows = list(
+        session.scalars(
+            select(ChangeLog).where(
+                ChangeLog.entity_type == "time_entries", ChangeLog.reason == "self_check_in"
+            )
+        )
+    )
+    assert rows, "a self check-in must leave an audit trail"
+
+
+def test_self_check_in_refused_when_not_assigned(session: Session):
+    """(f) A self check-in to a site the employee is not assigned to is refused."""
+    employee = _employee(session)
+    site = _site(session, assignment_mode=AssignmentMode.OPEN)  # open mode, but no assignment row
+    _seed_window(session)
+
+    with pytest.raises(scan_service.SelfCheckInSiteNotAssigned):
+        scan_service.self_check_in(
+            session, employee_id=employee.id, site_id=site.id, context=_context()
+        )
+    # Nothing was written.
+    assert list(session.scalars(select(TimeEntry))) == []
+
+
+def test_self_check_in_then_check_out_stays_draft(session: Session):
+    """(g) A self-checked-in shift, after check-out, stays DRAFT — MANUAL never auto-approves."""
+    from app.models.time_entry import TimeEntryStatus
+
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)
+    _seed_window(session)
+    _seed_implausible_hours(session)
+    check_in = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+
+    scan_service.self_check_in(
+        session, employee_id=employee.id, site_id=site.id, context=_context(), now=check_in
+    )
+    session.commit()
+
+    outcome = scan_service.check_out(
+        session, employee_id=employee.id, context=_context(), now=check_in + timedelta(hours=3)
+    )
+    session.commit()
+
+    assert outcome.action is ScanAction.CHECK_OUT
+    assert outcome.entry.total_minutes == 180
+    # MANUAL source is excluded from the QR-only auto-approve, so it stays DRAFT for manager approval.
+    assert outcome.entry.status is TimeEntryStatus.DRAFT
+    assert scan_service.FLAG_SELF_REPORTED in outcome.entry.flags
+
+
+def test_self_check_in_refused_with_open_shift_elsewhere(session: Session):
+    """A self check-in while a shift is open at another site raises the transition conflict."""
+    employee = _employee(session)
+    site_a = _site(session, number="S-A")
+    site_b = _site(session, number="S-B")
+    _assign(session, employee, site_b)
+    _seed_window(session)
+    _open_shift(session, employee, site_a, datetime(2025, 3, 10, 8, 0, tzinfo=UTC))
+
+    with pytest.raises(scan_service.OpenShiftElsewhere) as raised:
+        scan_service.self_check_in(
+            session, employee_id=employee.id, site_id=site_b.id, context=_context()
+        )
+    assert raised.value.other_site.id == site_a.id
+
+
+def test_self_check_in_refused_when_site_inactive(session: Session):
+    """An inactive site cannot take a self check-in."""
+    employee = _employee(session)
+    site = _site(session, status=SiteStatus.COMPLETED)
+    _assign(session, employee, site)
+    _seed_window(session)
+
+    with pytest.raises(scan_service.SiteNotActive):
+        scan_service.self_check_in(
+            session, employee_id=employee.id, site_id=site.id, context=_context()
+        )
+
+
+def test_self_check_in_refused_when_period_locked(session: Session):
+    """A self check-in into a locked month is refused, like a scan."""
+    employee = _employee(session)
+    site = _site(session)
+    _assign(session, employee, site)
+    _seed_window(session)
+    moment = datetime(2025, 3, 10, 8, 0, tzinfo=UTC)
+    session.add(PeriodLock(year=2025, month=3, locked_at=datetime.now(UTC)))
+    session.commit()
+
+    with pytest.raises(scan_service.PeriodLocked):
+        scan_service.self_check_in(
+            session, employee_id=employee.id, site_id=site.id, context=_context(), now=moment
+        )
+
+
+def test_self_check_in_with_no_employee_raises(session: Session):
+    """A login not linked to an employee cannot self-check-in."""
+    site = _site(session)
+    with pytest.raises(scan_service.NoEmployeeForCaller):
+        scan_service.self_check_in(
+            session, employee_id=None, site_id=site.id, context=_context()
+        )
+
+
+def test_my_assigned_sites_returns_only_active_assigned_sites(session: Session):
+    """my_assigned_sites returns the caller's assigned active sites (id and name) only."""
+    employee = _employee(session)
+    active = _site(session, number="A-active")
+    inactive = _site(session, number="B-inactive", status=SiteStatus.COMPLETED)
+    other = _site(session, number="C-unassigned")  # not assigned
+    _assign(session, employee, active)
+    _assign(session, employee, inactive)
+
+    sites = scan_service.my_assigned_sites(session, employee.id)
+    ids = {s.id for s in sites}
+    assert active.id in ids
+    assert inactive.id not in ids  # inactive excluded
+    assert other.id not in ids  # unassigned excluded
+    names = {s.name for s in sites}
+    assert active.name in names
+
+
+def test_my_assigned_sites_empty_without_employee(session: Session):
+    assert scan_service.my_assigned_sites(session, None) == []

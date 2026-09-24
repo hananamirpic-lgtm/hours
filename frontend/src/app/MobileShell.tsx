@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/auth/AuthProvider';
 import { LanguageToggle } from '@/components/LanguageToggle';
+import { HindiHelper } from '@/components/HindiHelper';
 
 export function MobileShell() {
   const { t } = useTranslation();
@@ -40,6 +41,7 @@ export function MobileShell() {
           }
         >
           {t('mobileNav.home')}
+          <HindiHelper textKey="mobileNav.home" />
         </NavLink>
         <NavLink
           to="/m/history"
@@ -48,6 +50,7 @@ export function MobileShell() {
           }
         >
           {t('mobileNav.myHours')}
+          <HindiHelper textKey="mobileNav.myHours" />
         </NavLink>
         <NavLink
           to="/m/profile"
@@ -56,6 +59,7 @@ export function MobileShell() {
           }
         >
           {t('mobileNav.profile')}
+          <HindiHelper textKey="mobileNav.profile" />
         </NavLink>
       </nav>
       <main className="mobile__content">

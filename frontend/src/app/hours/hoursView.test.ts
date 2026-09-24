@@ -8,6 +8,7 @@ const anEntry = (over: Partial<TimeEntryListItem> = {}): TimeEntryListItem => ({
   employee_id: 'emp-1',
   employee_name: 'Aaron',
   employee_name_en: 'Aaron',
+  employee_number: '2000',
   site_id: 'site-a',
   site_name: 'Site A',
   work_date: '2025-08-30',

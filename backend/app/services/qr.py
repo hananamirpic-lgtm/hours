@@ -23,11 +23,15 @@ its own token and a label saying which is which. A **unified** site yields one.
 
 from __future__ import annotations
 
+import functools
 import io
+import urllib.parse
 import zlib
 from dataclasses import dataclass
+from pathlib import Path
 
 import qrcode
+from PIL import Image, ImageDraw, ImageFont
 from qrcode.image.pil import PilImage
 
 from app.core.qr_token import QrAction, mint
@@ -38,6 +42,16 @@ from app.models.site import QrMode, Site
 _PAGE_WIDTH = 420
 _PAGE_HEIGHT = 595
 _QR_RENDER_PX = 360
+
+# The label under the QR is drawn as image pixels, not as PDF text, because the site name may be
+# Hebrew and the PDF base-14 fonts (Helvetica et al.) carry no Hebrew glyphs — a PDF-text label would
+# come out as "?????". So a bundled TrueType font with Hebrew and Latin coverage is rendered to an
+# image strip with Pillow, and that strip is composed onto the QR sheet the PDF embeds. `bidi`
+# reorders the mixed Hebrew/Latin label into visual order first, since Pillow (without libraqm) draws
+# glyphs in logical order and would otherwise reverse the Hebrew.
+_FONT_PATH = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoSansHebrew-Regular.ttf"
+_LABEL_FONT_PX = 28
+_LABEL_STRIP_PX = 72  # height of the text band drawn beneath the QR, in image pixels
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,19 +102,36 @@ def _label_for(site: Site, action: QrAction | None) -> str:
     return f"{base} · {_ACTION_LABEL[action]}"
 
 
-def render_site_qr(site: Site) -> SiteQr:
-    """Render every QR artefact a site offers, minting a current-version token for each.
+def _scan_url(public_app_url: str, token: str) -> str:
+    """Join the public app URL, the `/m/scan` path, and the `token` query parameter.
 
-    The token is minted at the site's *current* `qr_token_version`, so a sheet printed now encodes
-    the live version and a sheet printed before the last regeneration does not — which is the print
-    side of Requirement 8.6. The scan side (rejecting the stale token) is `qr_token.verify`.
+    All trailing slashes on the base collapse to exactly one separator before `m/scan`, so a base with
+    or without a trailing slash produces the same URL. The token is percent-encoded with no safe
+    characters, so its `site:` prefix, its `.` separator and any base64url `-`/`_` survive a round-trip
+    through a standards-compliant URL parser byte-for-byte.
     """
+    base = public_app_url.rstrip("/")
+    return f"{base}/m/scan?token={urllib.parse.quote(token, safe='')}"
+
+
+def render_site_qr(site: Site, *, public_app_url: str) -> SiteQr:
+    """Render every QR artefact a site offers, encoding a scan URL rather than the bare token.
+
+    The token is minted at the site's *current* `qr_token_version`, so a sheet printed now encodes the
+    live version and a sheet printed before the last regeneration does not — the print side of
+    Requirement 8.6; the scan side (rejecting the stale token) is `qr_token.verify`. What the QR encodes
+    is now `<public_app_url>/m/scan?token=<token>`, so scanning it with any phone camera opens the
+    employee portal. `public_app_url` is passed in so the renderer stays pure — the router resolves the
+    setting and refuses a blank value before calling here; the assert is the backstop against a
+    programming error silently encoding a base-less URL.
+    """
+    assert public_app_url.strip(), "public_app_url must be configured before rendering"
     pngs: list[QrArtifact] = []
     pdfs: list[QrArtifact] = []
     for action in _actions_for(site):
         token = mint(site.id, site.qr_token_version, action=action)
         label = _label_for(site, action)
-        png_bytes = _render_png(token)
+        png_bytes = _render_png(_scan_url(public_app_url, token))
         pngs.append(
             QrArtifact(
                 content=png_bytes,
@@ -149,14 +180,54 @@ def _render_png(token: str) -> bytes:
     return buffer.getvalue()
 
 
-# --------------------------------------------------------------------------- PDF
-# A minimal, dependency-free PDF: one page, the QR embedded as an image, the label drawn beneath it in
-# Helvetica. Enough for a printable code sheet and nothing more; the export task owns rich PDFs.
+# --------------------------------------------------------------------------- label rendering
 
 
-def _pdf_escape(text: str) -> str:
-    """Escape the characters a PDF text string may not carry literally."""
-    return text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+@functools.lru_cache(maxsize=1)
+def _label_font() -> ImageFont.FreeTypeFont:
+    """The bundled TrueType font used for the sheet label, loaded once and cached.
+
+    A file font rather than Pillow's bitmap default because the label may be Hebrew, which the default
+    font cannot draw. Cached because loading a TrueType face is not free and every rendered sheet uses
+    the same one.
+    """
+    return ImageFont.truetype(str(_FONT_PATH), _LABEL_FONT_PX)
+
+
+def _render_label_strip(label: str, width_px: int) -> Image.Image:
+    """Draw the label centred on a white strip `width_px` wide, for composing beneath the QR.
+
+    The text is drawn with Pillow's native right-to-left layout (`direction="rtl"`), which requires
+    libraqm (bundled in the image). Raqm runs the Unicode bidirectional algorithm and shapes the run
+    itself, so a Hebrew site name — one word or several — reads correctly, and a Latin site number
+    embedded in it stays readable, in a single deterministic step that does not vary by library
+    version the way a manual reorder did. The strip is a fixed-height band; the text is horizontally
+    centred from its measured extent so a short or long name both sit in the middle.
+    """
+    strip = Image.new("RGB", (width_px, _LABEL_STRIP_PX), "white")
+    draw = ImageDraw.Draw(strip)
+    font = _label_font()
+    left, top, right, bottom = draw.textbbox((0, 0), label, font=font, direction="rtl")
+    text_w, text_h = right - left, bottom - top
+    x = max(0, (width_px - text_w) // 2 - left)
+    y = max(0, (_LABEL_STRIP_PX - text_h) // 2 - top)
+    draw.text((x, y), label, font=font, fill="black", direction="rtl")
+    return strip
+
+
+def _compose_sheet_image(png: bytes, label: str) -> Image.Image:
+    """The printable sheet as one image: the QR above, the label strip below, on a white canvas.
+
+    Composing the label into the image (rather than drawing it as PDF text) is what lets a Hebrew site
+    name appear at all — the PDF's built-in fonts have no Hebrew glyphs. The QR keeps its own pixels
+    untouched, so the code still scans; only the human caption is added beneath it.
+    """
+    qr_image = Image.open(io.BytesIO(png)).convert("RGB")
+    width = qr_image.width
+    sheet = Image.new("RGB", (width, qr_image.height + _LABEL_STRIP_PX), "white")
+    sheet.paste(qr_image, (0, 0))
+    sheet.paste(_render_label_strip(label, width_px=width), (0, qr_image.height))
+    return sheet
 
 
 def _png_dimensions(png: bytes) -> tuple[int, int]:
@@ -167,72 +238,58 @@ def _png_dimensions(png: bytes) -> tuple[int, int]:
     return width, height
 
 
+# --------------------------------------------------------------------------- PDF
+# A minimal, dependency-free PDF: one page embedding a single composed image (the QR with its label
+# rendered beneath it as pixels). The label is drawn into the image rather than as PDF text so a
+# Hebrew site name renders — the base-14 PDF fonts carry no Hebrew glyphs. The export task owns rich
+# multi-page PDFs; this is only a printable code sheet.
+
+
 def _render_pdf(png: bytes, label: str) -> bytes:
-    """A one-page PDF placing the QR image centred with the label under it (Requirement 8.5).
+    """A one-page PDF embedding the composed sheet image — the QR with its label beneath it.
 
-    Written by hand as a small set of numbered objects with a cross-reference table, which is all a
-    single-image single-line page needs. The label is Latin-and-digit identifier text (site name and
-    number), drawn in a base-14 font that every PDF reader carries, so no font has to be embedded.
+    The QR and the label are composed into a single image first (`_compose_sheet_image`), so the label
+    is pixels, not PDF text. That is deliberate: the site name may be Hebrew, and the base-14 PDF fonts
+    carry no Hebrew glyphs, so a PDF-text label would render as "?????". Drawing the label into the
+    image with a bundled Hebrew-capable TrueType font sidesteps font embedding entirely — the PDF only
+    ever has to embed one RGB image. The page is sized to the image's aspect ratio, scaled to fit most
+    of the page width and centred, with the same numbered-object writer as before (Requirement 8.5).
     """
-    width_px, height_px = _png_dimensions(png)
+    sheet = _compose_sheet_image(png, label)
+    image_width, image_height = sheet.size
 
-    # Place the QR as a square sized to most of the page width, centred, with room for the label.
-    draw_size = _PAGE_WIDTH - 120
-    qr_x = (_PAGE_WIDTH - draw_size) / 2
-    qr_y = _PAGE_HEIGHT - 90 - draw_size
-    label_y = qr_y - 40
+    # Scale the sheet to most of the page width, preserving aspect ratio, and centre it on the page.
+    draw_width = _PAGE_WIDTH - 80
+    draw_height = draw_width * image_height / image_width
+    draw_x = (_PAGE_WIDTH - draw_width) / 2
+    draw_y = (_PAGE_HEIGHT - draw_height) / 2
 
-    # The QR is a raw-image XObject. It is embedded as a flate-compressed PNG stream via a DCT-free
-    # image dictionary; to keep the writer trivial the PNG's own bytes are re-decoded into raw RGB.
-    raw_rgb = _png_to_raw_rgb(png, width_px, height_px)
-    image_stream = zlib.compress(raw_rgb)
+    # The sheet is a raw-image XObject: a flate-compressed stream of interleaved RGB samples.
+    image_stream = zlib.compress(sheet.tobytes())
 
     content = (
-        f"q\n{draw_size} 0 0 {draw_size} {qr_x:.2f} {qr_y:.2f} cm\n/QR Do\nQ\n"
-        f"BT\n/F1 16 Tf\n{_label_x(label):.2f} {label_y:.2f} Td\n({_pdf_escape(label)}) Tj\nET\n"
-    ).encode("latin-1", errors="replace")
+        f"q\n{draw_width:.2f} 0 0 {draw_height:.2f} {draw_x:.2f} {draw_y:.2f} cm\n/QR Do\nQ\n"
+    ).encode("latin-1")
 
     objects: list[bytes] = []
-
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     objects.append(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
     objects.append(
         f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {_PAGE_WIDTH} {_PAGE_HEIGHT}] "
-        f"/Resources << /XObject << /QR 5 0 R >> /Font << /F1 6 0 R >> >> "
+        f"/Resources << /XObject << /QR 5 0 R >> >> "
         f"/Contents 4 0 R >>".encode("latin-1")
     )
     objects.append(
         b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream"
     )
     objects.append(
-        b"<< /Type /XObject /Subtype /Image /Width " + str(width_px).encode()
-        + b" /Height " + str(height_px).encode()
+        b"<< /Type /XObject /Subtype /Image /Width " + str(image_width).encode()
+        + b" /Height " + str(image_height).encode()
         + b" /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length "
         + str(len(image_stream)).encode() + b" >>\nstream\n" + image_stream + b"\nendstream"
     )
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
 
     return _assemble_pdf(objects)
-
-
-def _label_x(label: str) -> float:
-    """A rough horizontal start so the label sits near the centre; exact metrics are not worth it."""
-    approx_width = len(label) * 8
-    return max(20.0, (_PAGE_WIDTH - approx_width) / 2)
-
-
-def _png_to_raw_rgb(png: bytes, width: int, height: int) -> bytes:
-    """Decode a PNG to raw interleaved RGB bytes for embedding as a PDF image.
-
-    Uses Pillow, already a dependency through `qrcode[pil]`, so the writer above only has to deal in
-    raw samples and never in PNG chunk structure.
-    """
-    from PIL import Image
-
-    image = Image.open(io.BytesIO(png)).convert("RGB")
-    if image.size != (width, height):
-        image = image.resize((width, height))
-    return image.tobytes()
 
 
 def _assemble_pdf(objects: list[bytes]) -> bytes:

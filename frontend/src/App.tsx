@@ -25,12 +25,14 @@ import { PayrollPage } from '@/app/payroll/PayrollPage';
 import { PeriodsPage } from '@/app/periods/PeriodsPage';
 import { ReportsPage } from '@/app/reports/ReportsPage';
 import { SitesPage } from '@/app/sites/SitesPage';
+import { StaffingCompaniesPage } from '@/app/staffingCompanies/StaffingCompaniesPage';
 import { UsersPage } from '@/app/users/UsersPage';
 import { TwoFactorGate } from '@/app/users/TwoFactorGate';
 import { ChangePasswordGate } from '@/app/auth/ChangePasswordGate';
 import { MobileHomePage } from '@/app/MobileHomePage';
 import { MobileMyHoursPage } from '@/app/MobileMyHoursPage';
 import { MobileProfilePage } from '@/app/MobileProfilePage';
+import { MobileScanLandingPage } from '@/app/MobileScanLandingPage';
 import { MobileShell } from '@/app/MobileShell';
 import { NotFoundPage } from '@/app/NotFoundPage';
 import { PlaceholderPage } from '@/app/PlaceholderPage';
@@ -61,6 +63,7 @@ export default function App() {
         }
       >
         <Route index element={<MobileHomePage />} />
+        <Route path="scan" element={<MobileScanLandingPage />} />
         <Route path="history" element={<MobileMyHoursPage />} />
         <Route path="profile" element={<MobileProfilePage />} />
         <Route path="alerts" element={<PlaceholderPage titleKey="mobile.alerts" />} />
@@ -82,6 +85,7 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="staffing-companies" element={<StaffingCompaniesPage />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="sites" element={<SitesPage />} />
         <Route path="hours" element={<HoursPage />} />

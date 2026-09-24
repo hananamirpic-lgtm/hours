@@ -327,9 +327,27 @@ SiteManagerCaller = Annotated[Caller, Depends(require_roles(UserRole.SITE_MANAGE
 AccountingCaller = Annotated[Caller, Depends(require_roles(UserRole.ACCOUNTING))]
 EmployeeCaller = Annotated[Caller, Depends(require_roles(UserRole.EMPLOYEE))]
 
+#: Operational administration: an administrator and the operations administrator, who has full
+#: operational access but no financial visibility. This guards every non-finance endpoint that was
+#: previously administrator-only. It is emphatically NOT used for payroll or billing, which stay on
+#: `FinanceCaller`; `operations_admin` is absent from `FINANCE_ROLES`, so it is refused there.
+OperationsCaller = Annotated[
+    Caller, Depends(require_roles(UserRole.ADMIN, UserRole.OPERATIONS_ADMIN))
+]
+
 #: Guards for the role *groups* the requirements describe, so an endpoint names the policy it
 #: implements rather than restating a list of roles that then drifts between endpoints.
 FinanceCaller = Annotated[Caller, Depends(require_roles(*authz.FINANCE_ROLES))]
+
+#: Who may read a client record: the operational administrators (admin, operations_admin) and
+#: accounting. A client is a billing entity accounting works with, and the operations administrator
+#: manages clients — but the record carries no money figure, so there is nothing to redact and no
+#: reason to withhold it from the operations admin. A site manager still has no client endpoint
+#: (Requirement 2.5). Client writes stay on OperationsCaller (admin + operations_admin).
+ClientReaderCaller = Annotated[
+    Caller,
+    Depends(require_roles(UserRole.OPERATIONS_ADMIN, UserRole.ACCOUNTING)),
+]
 AttendanceWriterCaller = Annotated[Caller, Depends(require_roles(*authz.ATTENDANCE_WRITE_ROLES))]
 HoursReaderCaller = Annotated[Caller, Depends(require_roles(*authz.HOURS_READ_ROLES))]
 PersonnelReaderCaller = Annotated[Caller, Depends(require_roles(*authz.PERSONNEL_READ_ROLES))]

@@ -42,10 +42,13 @@ from app.api.deps import (
 )
 from app.core.rate_limit import rate_limit_scan
 from app.schemas.scan import (
+    AssignedSite,
+    MySitesResponse,
     OpenShift,
     ScanRequest,
     ScanResult,
     ScanStatusResponse,
+    SelfCheckInRequest,
     WorkHistoryDay,
     WorkHistoryResponse,
 )
@@ -71,6 +74,7 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     scan_service.SiteNotActive.code: HTTPStatus.CONFLICT,
     scan_service.PeriodLocked.code: HTTPStatus.CONFLICT,
     scan_service.UnassignedSiteRejected.code: HTTPStatus.CONFLICT,
+    scan_service.SelfCheckInSiteNotAssigned.code: HTTPStatus.CONFLICT,
     scan_service.OpenShiftElsewhere.code: HTTPStatus.CONFLICT,
     scan_service.NoOpenShift.code: HTTPStatus.CONFLICT,
     scan_service.CheckOutNotAfterCheckIn.code: HTTPStatus.CONFLICT,
@@ -228,6 +232,81 @@ def check_out(
         raise _raise_for(error) from error
 
     return _result_of(outcome)
+
+
+# --------------------------------------------------------------------------- self check-in (no QR)
+
+
+@router.post(
+    "/self-check-in",
+    response_model=ScanResult,
+    summary="Open a shift without a QR, by picking a site",
+    description=(
+        "The fallback when there is no QR to scan — the camera is broken, or no code is reachable — "
+        "so the employee opens a shift by picking one of their assigned sites instead. Because "
+        "nothing proves the employee is at the site, the entry is recorded as manual, flagged "
+        "self_reported, and left Draft: it must be approved by a manager and never auto-approves on "
+        "check-out. The same guards a scan check-in runs apply — active employee, active site, open "
+        "period — with one stricter rule: the employee may only self-check-in to a site they are "
+        "assigned to (the assignment is the presence signal a QR would otherwise be), so an "
+        "unassigned site is refused. An open shift at another site returns 409 open_shift_elsewhere "
+        "naming it, so the app can offer the transition."
+    ),
+    responses={
+        HTTPStatus.OK: {"model": ScanResult, "description": "The opened self-reported shift"},
+        HTTPStatus.FORBIDDEN: {"description": "The caller is not linked to an employee"},
+        HTTPStatus.CONFLICT: {
+            "description": (
+                "A guard refused: employee or site inactive, period locked, the site is not one the "
+                "employee is assigned to, or a shift is already open at another site"
+            )
+        },
+    },
+)
+def self_check_in(
+    payload: SelfCheckInRequest,
+    caller: EmployeeCaller,
+    session: DbSession,
+    context: AuthenticatedContext,
+) -> ScanResult:
+    try:
+        outcome = scan_service.self_check_in(
+            session,
+            employee_id=caller.user.employee_id,
+            site_id=payload.site_id,
+            context=context,
+        )
+        session.commit()
+    except scan_service.ScanError as error:
+        session.rollback()
+        raise _raise_for(error) from error
+
+    return _result_of(outcome)
+
+
+# --------------------------------------------------------------------------- my assigned sites
+
+
+@router.get(
+    "/my-sites",
+    response_model=MySitesResponse,
+    summary="The caller's own assigned sites, for the self-check-in picker",
+    description=(
+        "Returns the active sites the caller's linked employee is assigned to — each an id and a "
+        "name only — so the mobile app can offer a site picker for a no-QR self check-in "
+        "(Requirement 7.1). Always self-scoped: the caller's own assignments only, resolved from "
+        "their linked employee, never another person's, and no employee identifier is accepted from "
+        "the client. A caller with no linked employee or no assignments gets an empty list."
+    ),
+)
+def my_sites(
+    caller: EmployeeCaller,
+    session: DbSession,
+) -> MySitesResponse:
+    sites = scan_service.my_assigned_sites(session, caller.user.employee_id)
+    return MySitesResponse(
+        sites=[AssignedSite(id=site.id, name=site.name) for site in sites]
+    )
 
 
 # --------------------------------------------------------------------------- transition

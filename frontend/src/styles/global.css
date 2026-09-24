@@ -1023,6 +1023,44 @@ h1 {
   margin-block-start: var(--space);
 }
 
+/* --------------------------------------------------------------------------- self check-in (no QR) */
+
+/* The secondary no-QR entry point, kept visually beneath and lighter than the primary Scan button
+   so the QR path stays the obvious one. Logical properties throughout so it mirrors for Hebrew. */
+.mobile-home__self-check-in {
+  margin-block-start: var(--space);
+  background: transparent;
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.self-check-in {
+  text-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+  margin-block-start: var(--space);
+}
+
+.self-check-in__headline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.self-check-in__note {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.self-check-in__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+}
+
 /* --------------------------------------------------------------------------- history & alerts */
 
 .history,
@@ -1758,4 +1796,18 @@ h1 {
   .table tr {
     page-break-inside: avoid;
   }
+}
+
+/* The optional Hindi helper line under key employee (mobile) items. A display aid only: it sits on
+   its own line beneath the English/Hebrew text, is visually secondary, and is isolated LTR so the
+   Devanagari renders correctly even inside a right-to-left (Hebrew) page. Logical properties only, so
+   it mirrors with the rest of the layout. */
+.hindi-helper {
+  display: block;
+  margin-block-start: calc(var(--space) / 4);
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  direction: ltr;
+  unicode-bidi: isolate;
 }

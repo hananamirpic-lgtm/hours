@@ -7,9 +7,30 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# curl is used by the container health check.
+# Runtime OS dependencies:
+#   - curl: the container health check.
+#   - WeasyPrint's native stack (Requirement 19.2/19.3): libgobject/GLib, Pango, cairo,
+#     GDK-PixBuf and libffi. WeasyPrint is pure-Python but loads these shared libraries at
+#     render time; without them PDF export raises PdfRenderUnavailable rather than rendering.
+#   - shared-mime-info: WeasyPrint uses it to resolve embedded image mime types.
+#   - libraqm0: gives Pillow native complex-text/RTL layout (direction="rtl"), so the QR sheet's
+#     Hebrew site-name label is shaped and bidi-ordered deterministically across environments.
+#   - fonts: DejaVu covers Latin; Noto (fonts-noto-core) covers Hebrew, so the RTL Hebrew
+#     reports render real glyphs instead of tofu. (The QR sheet ships its own bundled font
+#     and does not depend on these.)
+# Installed in the shared base stage so both the dev and prod images have them.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        libcairo2 \
+        libffi8 \
+        shared-mime-info \
+        libraqm0 \
+        fonts-dejavu-core \
+        fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./

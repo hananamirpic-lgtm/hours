@@ -31,6 +31,7 @@ from app.models.site import (
     SiteRate,
     SiteStatus,
 )
+from app.models.staffing_company import StaffingCompany
 from app.models.time_entry import TimeEntry, TimeEntrySource, TimeEntryStatus
 from app.models.user import AppLanguage, User, UserRole
 from app.models.user_site import UserSite
@@ -63,6 +64,7 @@ __all__ = [
     "Site",
     "SiteRate",
     "SiteStatus",
+    "StaffingCompany",
     "TimeEntry",
     "TimeEntrySource",
     "TimeEntryStatus",

@@ -73,6 +73,14 @@ export const changeEmployeeStatus = (
     body: JSON.stringify({ status, ...(reason ? { reason } : {}) }),
   });
 
+/**
+ * Reset an employee's login password back to the initial password (POST .../reset-password). Admin
+ * only; the server forces a password change on the employee's next login and ends any open session.
+ * Returns nothing (204).
+ */
+export const resetEmployeePassword = (id: string): Promise<void> =>
+  apiFetch<void>(`/employees/${id}/reset-password`, { method: 'POST' });
+
 export const replaceEmployeeRates = (
   id: string,
   rates: EmployeeRateInput[],

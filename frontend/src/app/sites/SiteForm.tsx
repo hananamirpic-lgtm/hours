@@ -32,7 +32,6 @@ interface Fields {
   client_id: string;
   address: string;
   start_date: string;
-  end_date: string;
   status: SiteStatus;
   qr_mode: QrMode;
   assignment_mode: AssignmentMode;
@@ -48,7 +47,6 @@ const emptyFields: Fields = {
   client_id: '',
   address: '',
   start_date: '',
-  end_date: '',
   status: 'active',
   qr_mode: 'unified',
   assignment_mode: 'open',
@@ -64,7 +62,6 @@ const fromSite = (site: SiteResponse): Fields => ({
   client_id: site.client_id,
   address: site.address ?? '',
   start_date: site.start_date ?? '',
-  end_date: site.end_date ?? '',
   status: site.status,
   qr_mode: site.qr_mode,
   assignment_mode: site.assignment_mode,
@@ -108,7 +105,6 @@ export function SiteForm({
         client_id: fields.client_id,
         address: fields.address || null,
         start_date: fields.start_date || null,
-        end_date: fields.end_date || null,
         status: fields.status,
         qr_mode: fields.qr_mode,
         assignment_mode: fields.assignment_mode,
@@ -171,16 +167,10 @@ export function SiteForm({
         <input className="input" value={fields.address} onChange={set('address')} />
       </label>
 
-      <div className="form-row">
-        <label className="field">
-          <span className="field__label">{t('site.startDate')}</span>
-          <input className="input" type="date" value={fields.start_date} onChange={set('start_date')} />
-        </label>
-        <label className="field">
-          <span className="field__label">{t('site.endDate')}</span>
-          <input className="input" type="date" value={fields.end_date} onChange={set('end_date')} />
-        </label>
-      </div>
+      <label className="field">
+        <span className="field__label">{t('site.startDate')}</span>
+        <input className="input" type="date" value={fields.start_date} onChange={set('start_date')} />
+      </label>
 
       <div className="form-row">
         <label className="field">

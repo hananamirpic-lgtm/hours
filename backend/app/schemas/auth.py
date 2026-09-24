@@ -69,7 +69,9 @@ class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_password: str = Field(min_length=1, max_length=256)
-    new_password: str = Field(min_length=8, max_length=256)
+    #: Floor is 4 to admit an employee's 4-8 digit numeric PIN; the role-specific rule (employee =
+    #: 4-8 digits, console roles >= 8) is enforced by `app.services.auth.change_password`.
+    new_password: str = Field(min_length=4, max_length=256)
 
 
 class TotpSetupResponse(BaseModel):

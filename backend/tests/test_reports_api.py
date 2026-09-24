@@ -212,7 +212,8 @@ def _brief_scenario(reports_client, headers, session: Session):
     """The brief's two-site day, computed and billed, ready to read a report from.
 
     One client, two sites (A at 60 ₪, B at 75 ₪); one employee paid 35 ₪ working 4.5 h at A and 5.0 h
-    at B. Payroll allocates 157.50 at A and 175.00 at B; billing bills 270.00 at A and 375.00 at B.
+    at B, with a 30-minute gap between the sites split 15/15 as travel time. Payroll then allocates
+    166.25 at A and 183.75 at B; billing bills 285.00 at A and 393.75 at B (travel is paid and billed).
     Returns the client, the two sites and the employee.
     """
     employee = _make_employee(session)
@@ -244,13 +245,14 @@ def test_by_employee_reports_hours_and_cost(reports_client, sign_in, session: Se
     assert len(body["rows"]) == 1
     row = body["rows"][0]
     assert row["employee_id"] == str(employee.id)
-    # 4.5 h + 5.0 h = 9.5 h = 570 minutes; 480 regular + 90 overtime.
-    assert row["total_minutes"] == 570
+    # 4.5 h + 5.0 h clocked plus the 30-minute travel gap (split 15/15) = 600 minutes; 480 regular
+    # + 120 overtime after the travel minutes are folded in.
+    assert row["total_minutes"] == 600
     assert row["regular_minutes"] == 480
-    assert row["overtime_minutes"] == 90
-    # Cost is the payroll total: 35 ₪ over the whole 9.5 h, split into 8 h regular + 1.5 h overtime.
-    assert Decimal(row["cost"]) == Decimal("332.50")
-    assert Decimal(body["total_cost"]) == Decimal("332.50")
+    assert row["overtime_minutes"] == 120
+    # Cost is the payroll total: 35 ₪ over 10 h (9.5 clocked + 0.5 travel).
+    assert Decimal(row["cost"]) == Decimal("350.00")
+    assert Decimal(body["total_cost"]) == Decimal("350.00")
 
 
 # ===================================================================== by site (18.2)
@@ -266,12 +268,12 @@ def test_by_site_reports_hours_billing_cost_profit(reports_client, sign_in, sess
     body = response.json()
 
     by_site = {s["site_id"]: s for s in body["rows"]}
-    assert Decimal(by_site[str(site_a.id)]["billing"]) == Decimal("270.00")
-    assert Decimal(by_site[str(site_a.id)]["cost"]) == Decimal("157.50")
-    assert Decimal(by_site[str(site_a.id)]["profit"]) == Decimal("112.50")
-    assert Decimal(by_site[str(site_b.id)]["billing"]) == Decimal("375.00")
-    assert Decimal(by_site[str(site_b.id)]["cost"]) == Decimal("175.00")
-    assert Decimal(by_site[str(site_b.id)]["profit"]) == Decimal("200.00")
+    assert Decimal(by_site[str(site_a.id)]["billing"]) == Decimal("285.00")
+    assert Decimal(by_site[str(site_a.id)]["cost"]) == Decimal("166.25")
+    assert Decimal(by_site[str(site_a.id)]["profit"]) == Decimal("118.75")
+    assert Decimal(by_site[str(site_b.id)]["billing"]) == Decimal("393.75")
+    assert Decimal(by_site[str(site_b.id)]["cost"]) == Decimal("183.75")
+    assert Decimal(by_site[str(site_b.id)]["profit"]) == Decimal("210.00")
 
 
 # ===================================================================== by client (18.3)
@@ -290,10 +292,10 @@ def test_by_client_reports_amount_per_site_and_total(reports_client, sign_in, se
     row = body["rows"][0]
     assert row["client_id"] == str(client.id)
     per_site = {s["site_id"]: Decimal(s["amount"]) for s in row["sites"]}
-    assert per_site[str(site_a.id)] == Decimal("270.00")
-    assert per_site[str(site_b.id)] == Decimal("375.00")
-    assert Decimal(row["total"]) == Decimal("645.00")
-    assert Decimal(body["total"]) == Decimal("645.00")
+    assert per_site[str(site_a.id)] == Decimal("285.00")
+    assert per_site[str(site_b.id)] == Decimal("393.75")
+    assert Decimal(row["total"]) == Decimal("678.75")
+    assert Decimal(body["total"]) == Decimal("678.75")
 
 
 # ===================================================================== profitability (18.4)
@@ -309,9 +311,9 @@ def test_profitability_reports_billing_cost_gross_profit(reports_client, sign_in
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert Decimal(body["total_billing"]) == Decimal("645.00")
-    assert Decimal(body["total_cost"]) == Decimal("332.50")
-    assert Decimal(body["total_profit"]) == Decimal("312.50")
+    assert Decimal(body["total_billing"]) == Decimal("678.75")
+    assert Decimal(body["total_cost"]) == Decimal("350.00")
+    assert Decimal(body["total_profit"]) == Decimal("328.75")
     assert body["site_count"] == 2
 
 
@@ -326,9 +328,9 @@ def test_profitability_filters_by_site(reports_client, sign_in, session: Session
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["site_count"] == 1
-    assert Decimal(body["total_billing"]) == Decimal("270.00")
-    assert Decimal(body["total_cost"]) == Decimal("157.50")
-    assert Decimal(body["total_profit"]) == Decimal("112.50")
+    assert Decimal(body["total_billing"]) == Decimal("285.00")
+    assert Decimal(body["total_cost"]) == Decimal("166.25")
+    assert Decimal(body["total_profit"]) == Decimal("118.75")
     assert body["filters"]["site_id"] == str(site_a.id)
 
 
@@ -489,8 +491,9 @@ def test_site_manager_sees_hours_but_not_cost_on_by_employee(
     assert len(body["rows"]) == 1
     row = body["rows"][0]
     assert row["employee_id"] == str(employee.id)
-    # Only Site A's hours (4.5 h = 270 min), not the full 570.
-    assert row["total_minutes"] == 270
+    # Only Site A's hours: 270 clocked + its 15-minute half of the 30-minute travel gap = 285, not
+    # the full day. Cost is still hidden from a manager.
+    assert row["total_minutes"] == 285
     # No cost for a manager.
     assert row["cost"] is None
     assert body["total_cost"] is None

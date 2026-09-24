@@ -97,10 +97,6 @@ class Site(Base):
     __table_args__ = (
         UniqueConstraint("site_number", name="uq_sites_site_number"),
         UniqueConstraint("qr_token", name="uq_sites_qr_token"),
-        CheckConstraint(
-            "end_date IS NULL OR start_date IS NULL OR end_date >= start_date",
-            name="dates_ordered",
-        ),
         CheckConstraint("qr_token_version >= 1", name="qr_token_version_positive"),
         Index("ix_sites_client_id", "client_id"),
         Index("ix_sites_status", "status"),
@@ -127,7 +123,6 @@ class Site(Base):
     )
 
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     status: Mapped[SiteStatus] = mapped_column(
         _enum_column(SiteStatus, "site_status"), nullable=False, default=SiteStatus.ACTIVE
