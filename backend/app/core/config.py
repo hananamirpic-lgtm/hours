@@ -146,6 +146,25 @@ class Settings(BaseSettings):
     # actual cause would be lost.
     probe_deadline_grace_seconds: float = 1.0
 
+    # ------------------------------------------------------------------ service tickets (feature-flagged)
+    # Every field is a raw `str` with an empty default on purpose. Pydantic's own bool and int parsing
+    # is not used: `SERVICE_TICKETS_ENABLED=1` or `yes` must read as off, and a malformed number must
+    # fall back to the documented default instead of failing startup. The helpers in
+    # `app.service_tickets.config` interpret these strings and own the real defaults.
+    service_tickets_enabled: str = ""
+    service_customer_token_ttl_seconds: str = ""
+    service_signin_rate_max: str = ""
+    service_signin_rate_window_seconds: str = ""
+    service_submit_rate_max: str = ""
+    service_submit_rate_window_seconds: str = ""
+    service_request_rate_max: str = ""
+    service_request_rate_window_seconds: str = ""
+    service_signin_lock_attempts: str = ""
+    service_signin_lock_seconds: str = ""
+    service_client_ip_header: str = ""
+    service_trusted_proxy_cidrs: str = ""
+    service_accessibility_contact: str = ""
+
     @field_validator("jwt_secret_key", "encryption_key")
     @classmethod
     def _reject_short_secrets(cls, value: SecretStr) -> SecretStr:
