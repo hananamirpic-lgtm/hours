@@ -35,6 +35,7 @@ from app.models.staffing_company import StaffingCompany
 from app.models.time_entry import TimeEntry, TimeEntrySource, TimeEntryStatus
 from app.models.user import AppLanguage, User, UserRole
 from app.models.user_site import UserSite
+from app.service_tickets import models as service_ticket_models  # noqa: F401  (registers the svc_ tables)
 
 __all__ = [
     "AppLanguage",
