@@ -257,3 +257,46 @@ def test_operations_admin_can_list_and_read_clients(ops_client, sign_in, session
     read = ops_client.get(f"/api/clients/{client_id}", headers=ops_headers)
     assert read.status_code == 200, read.text
     assert read.json()["name"] == "Acme Ltd"
+
+
+# --------------------------------------------------------------------------- technician role
+
+
+def test_operations_admin_may_create_a_technician(ops_client, sign_in):
+    """Requirement 2.1: a technician has no money access, so the operations admin may assign it."""
+    headers, _ = sign_in(UserRole.OPERATIONS_ADMIN)
+    response = ops_client.post(
+        "/api/users",
+        json={"username": "tech1", "password": "correct-horse-battery", "role": "technician"},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["role"] == "technician"
+    assert response.json()["must_change_password"] is True
+
+
+def test_operations_admin_may_change_a_user_to_and_from_technician(ops_client, sign_in):
+    headers, _ = sign_in(UserRole.OPERATIONS_ADMIN)
+    _, manager = sign_in(UserRole.SITE_MANAGER)
+
+    to_technician = ops_client.patch(
+        f"/api/users/{manager.id}", json={"role": "technician"}, headers=headers
+    )
+    assert to_technician.status_code == 200, to_technician.text
+    assert to_technician.json()["role"] == "technician"
+
+    back = ops_client.patch(f"/api/users/{manager.id}", json={"role": "site_manager"}, headers=headers)
+    assert back.status_code == 200, back.text
+    assert back.json()["role"] == "site_manager"
+
+
+def test_operations_admin_may_not_turn_a_technician_into_a_finance_role(ops_client, sign_in):
+    """The money boundary still holds when the starting role is technician."""
+    headers, _ = sign_in(UserRole.OPERATIONS_ADMIN)
+    _, technician = sign_in(UserRole.TECHNICIAN)
+
+    response = ops_client.patch(
+        f"/api/users/{technician.id}", json={"role": "accounting"}, headers=headers
+    )
+    assert response.status_code == 403
+    assert _code(response) == "role_assignment_forbidden"

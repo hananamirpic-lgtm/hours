@@ -44,6 +44,7 @@ class UserRole(enum.StrEnum):
     SITE_MANAGER = "site_manager"
     ACCOUNTING = "accounting"
     EMPLOYEE = "employee"
+    TECHNICIAN = "technician"
 
 
 class AppLanguage(enum.StrEnum):

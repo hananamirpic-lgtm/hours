@@ -90,6 +90,8 @@ def get_enrolled_user(user: CurrentUser) -> User:
     `POST /auth/2fa/setup` and `POST /auth/2fa/verify` to enrol, `GET /auth/me` so the front end can
     see why it is blocked, and `POST /auth/logout` so a wrong account can be got out of.
     """
+    if user.role is UserRole.TECHNICIAN:
+        raise forbidden(CODE_INSUFFICIENT_ROLE)
     if user.is_2fa_enrolment_required:
         raise forbidden(auth_service.TotpEnrolmentRequired.code)
     # A non-administrator who was created with an administrator-chosen password (or predates the

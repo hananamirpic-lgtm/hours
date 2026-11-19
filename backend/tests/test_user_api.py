@@ -315,3 +315,101 @@ def test_a_new_admin_user_is_not_forced_to_change(users_client, sign_in):
     )
     assert created.status_code == 201, created.text
     assert created.json()["must_change_password"] is False
+
+
+# --------------------------------------------------------------------------- technician role
+
+
+def _technician_tokens(client, user) -> dict[str, str]:
+    response = client.post(
+        "/api/auth/login", json={"username": user.username, "password": DEFAULT_PASSWORD}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_an_admin_can_create_a_technician_who_must_change_the_password(users_client, sign_in):
+    """Requirement 2.1: a technician is created like any non-admin and owes a first-use change."""
+    admin, _ = sign_in(UserRole.ADMIN)
+    created = users_client.post(
+        "/api/users", json=_new_user_body(username="tech1", role="technician"), headers=admin
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "technician"
+    assert created.json()["must_change_password"] is True
+    assert "password_hash" not in created.json()
+
+
+@pytest.mark.parametrize("role", ["accounting", "technician"])
+def test_site_assignment_is_rejected_for_a_technician_as_for_accounting(
+    users_client, sign_in, session: Session, role
+):
+    """Requirement 2.2: a technician gets the same site-scope validation as accounting."""
+    admin, _ = sign_in(UserRole.ADMIN)
+    client_id = _make_client_row(session)
+    site_id = users_client.post(
+        "/api/sites", json=_site_body(client_id, number="S-T"), headers=admin
+    ).json()["id"]
+
+    response = users_client.post(
+        "/api/users",
+        json=_new_user_body(username="scoped", role=role, site_ids=[site_id]),
+        headers=admin,
+    )
+    assert response.status_code == 400
+    assert _code(response) == "site_scope_not_applicable"
+
+
+def test_an_admin_can_change_a_user_to_and_from_technician(users_client, sign_in):
+    admin, _ = sign_in(UserRole.ADMIN)
+    _, manager = sign_in(UserRole.SITE_MANAGER)
+
+    to_technician = users_client.patch(
+        f"/api/users/{manager.id}", json={"role": "technician"}, headers=admin
+    )
+    assert to_technician.status_code == 200, to_technician.text
+    assert to_technician.json()["role"] == "technician"
+
+    from_technician = users_client.patch(
+        f"/api/users/{manager.id}", json={"role": "accounting"}, headers=admin
+    )
+    assert from_technician.status_code == 200, from_technician.text
+    assert from_technician.json()["role"] == "accounting"
+
+
+def test_a_technician_can_use_the_shared_auth_endpoints(users_client, make_user):
+    """Requirement 7.3: the auth router stays open to a technician who owes nothing."""
+    technician = make_user(role=UserRole.TECHNICIAN, must_change_password=False)
+    tokens = _technician_tokens(users_client, technician)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    me = users_client.get("/api/auth/me", headers=headers)
+    assert me.status_code == 200, me.text
+    assert me.json()["role"] == "technician"
+
+    refreshed = users_client.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert refreshed.status_code == 200, refreshed.text
+    headers = {"Authorization": f"Bearer {refreshed.json()['access_token']}"}
+
+    changed = users_client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": DEFAULT_PASSWORD, "new_password": "a-brand-new-passphrase"},
+    )
+    assert changed.status_code == 200, changed.text
+
+    fresh = users_client.post(
+        "/api/auth/login", json={"username": technician.username, "password": "a-brand-new-passphrase"}
+    )
+    assert fresh.status_code == 200, fresh.text
+    fresh_headers = {"Authorization": f"Bearer {fresh.json()['access_token']}"}
+    assert users_client.post("/api/auth/logout", headers=fresh_headers).status_code == 204
+
+
+def test_a_technician_owing_a_password_change_can_still_reach_me_and_sign_out(users_client, make_user):
+    """The first-use obligation does not lock a technician out of the auth router."""
+    technician = make_user(role=UserRole.TECHNICIAN, must_change_password=True)
+    headers = {"Authorization": f"Bearer {_technician_tokens(users_client, technician)['access_token']}"}
+
+    assert users_client.get("/api/auth/me", headers=headers).status_code == 200
+    assert users_client.post("/api/auth/logout", headers=headers).status_code == 204

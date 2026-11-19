@@ -112,7 +112,7 @@ class RoleAssignmentForbidden(UserError):
 #: either can see money; granting one would be a privilege escalation past the operations-admin's own
 #: money boundary. An `admin` acting is not limited by this set.
 ASSIGNABLE_BY_OPERATIONS_ADMIN = frozenset(
-    {UserRole.SITE_MANAGER, UserRole.EMPLOYEE, UserRole.OPERATIONS_ADMIN}
+    {UserRole.SITE_MANAGER, UserRole.EMPLOYEE, UserRole.OPERATIONS_ADMIN, UserRole.TECHNICIAN}
 )
 
 
