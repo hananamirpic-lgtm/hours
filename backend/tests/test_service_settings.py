@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 
 import pytest
 
@@ -21,10 +22,22 @@ from app.service_tickets.config import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop every exported SERVICE_* variable so the tests do not depend on the shell."""
+    for name in list(os.environ):
+        if name.startswith("SERVICE_"):
+            monkeypatch.delenv(name, raising=False)
+
+
 def _build(**overrides: str) -> ServiceConfig:
-    """A ServiceConfig from a Settings built with only the given service values set."""
-    env = Settings.model_validate(
-        {
+    """A ServiceConfig from a Settings built with only the given service values set.
+
+    `_env_file=None` keeps SERVICE_* values in a .env file from leaking in as well.
+    """
+    env = Settings(
+        _env_file=None,
+        **{
             "database_url": "sqlite://",
             "redis_url": "redis://localhost:6379/0",
             "jwt_secret_key": "x" * 32,
@@ -34,7 +47,7 @@ def _build(**overrides: str) -> ServiceConfig:
             "s3_secret_access_key": "b",
             "s3_bucket_documents": "docs",
             **overrides,
-        }
+        },
     )
     return ServiceConfig.from_settings(env)
 
