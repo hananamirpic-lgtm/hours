@@ -27,6 +27,8 @@ from auth_support import DEFAULT_PASSWORD
 
 _PATH_VALUES = {"year": "2025", "month": "8"}
 _NOT_HOURS_PATHS = ("/docs", "/openapi.json", "/redoc")
+# The service-ticket discovery endpoint (Requirement 20.5) is not an Hours route.
+_DISCOVERY_PATH = "/api/features"
 
 
 def _requires_authentication(dependant) -> bool:
@@ -44,6 +46,8 @@ def _hours_routes() -> list[tuple[str, str, bool]]:
         if not isinstance(route, APIRoute):
             continue
         if route.path.startswith(auth_prefix) or route.path.startswith(_NOT_HOURS_PATHS):
+            continue
+        if route.path == _DISCOVERY_PATH:
             continue
         authenticated = _requires_authentication(route.dependant)
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):

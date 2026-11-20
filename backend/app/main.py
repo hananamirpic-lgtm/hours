@@ -19,6 +19,10 @@ from app.core.config import Settings, get_settings
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.models.user import set_2fa_enforcement
 from app.repositories.health import get_object_storage_client
+from app.service_tickets.api.features import build_features_router
+from app.service_tickets.api.preflight_guard import PreflightGuard
+from app.service_tickets.config import ServiceConfig
+from app.service_tickets.mount import mount
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_prefix)
+
+    # Service tickets (feature-flagged). The flag is read here, once per process start. The discovery
+    # route is always registered; the ticket routers only when the flag is on.
+    service_config = ServiceConfig.from_settings(settings)
+    app.include_router(build_features_router(service_config), prefix=settings.api_prefix)
+    mount(app, service_config, settings.api_prefix)
+    if not service_config.enabled:
+        # `add_middleware` inserts at the front, so the last one added is the outermost. This guard
+        # must sit outside CORSMiddleware, which would otherwise answer a preflight under the ticket
+        # prefix before routing.
+        app.add_middleware(
+            PreflightGuard,
+            api_prefix=settings.api_prefix,
+            hsts_enabled=settings.hsts_enabled,
+            hsts_max_age_seconds=settings.hsts_max_age_seconds,
+        )
     return app
 
 
