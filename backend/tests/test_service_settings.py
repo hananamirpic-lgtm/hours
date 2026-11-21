@@ -30,6 +30,14 @@ def _isolate_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _usable_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An Alembic run earlier in the process (`fileConfig`) can leave this logger disabled."""
+    config_logger = logging.getLogger("app.service_tickets.config")
+    monkeypatch.setattr(config_logger, "disabled", False)
+    monkeypatch.setattr(config_logger, "propagate", True)
+
+
 def _build(**overrides: str) -> ServiceConfig:
     """A ServiceConfig from a Settings built with only the given service values set.
 

@@ -98,6 +98,13 @@ class FakeClient:
         return {}
 
 
+@pytest.fixture(autouse=True)
+def _usable_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An Alembic run earlier in the process (`fileConfig`) can leave this logger disabled."""
+    monkeypatch.setattr(photo_store.logger, "disabled", False)
+    monkeypatch.setattr(photo_store.logger, "propagate", True)
+
+
 @pytest.fixture
 def fake() -> FakeClient:
     return FakeClient()

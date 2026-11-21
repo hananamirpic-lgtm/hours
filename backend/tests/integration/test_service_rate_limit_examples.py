@@ -204,6 +204,9 @@ def test_script_is_loaded_when_the_server_does_not_know_it(redis_client: redis.R
 def test_redis_unreachable_allows_the_request_and_logs_a_warning(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    # An earlier Alembic run in this process (env.py `fileConfig`) may have disabled this logger.
+    monkeypatch.setattr(rate_limit.logger, "disabled", False)
+    monkeypatch.setattr(rate_limit.logger, "propagate", True)
     down = redis.Redis.from_url(
         "redis://127.0.0.1:1/0", socket_connect_timeout=0.25, socket_timeout=0.25, decode_responses=True
     )

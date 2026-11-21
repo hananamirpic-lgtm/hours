@@ -930,7 +930,12 @@ def test_a_missing_object_is_the_same_404_and_logs_the_ticket_number(
     category: Category,
     photo_ticket,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # An Alembic run earlier in the process (`fileConfig`) can leave this logger disabled.
+    router_logger = logging.getLogger("app.service_tickets.api.photo_router")
+    monkeypatch.setattr(router_logger, "disabled", False)
+    monkeypatch.setattr(router_logger, "propagate", True)
     ticket, _ = photo_ticket(customer, category, stored=False)
     missing_key = ticket.photo_key
     reference = client.get(_photo_url(99999), headers=_bearer(customer))

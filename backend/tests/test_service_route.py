@@ -290,8 +290,12 @@ def test_a_failing_rollback_does_not_turn_the_503_into_a_500(
 
 
 def test_the_log_line_names_the_exception_class_and_nothing_from_the_driver(
-    client: TestClient, caplog: pytest.LogCaptureFixture
+    client: TestClient, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # An Alembic run earlier in the process (`fileConfig`) can leave this logger disabled.
+    route_logger = logging.getLogger("app.service_tickets.api.route")
+    monkeypatch.setattr(route_logger, "disabled", False)
+    monkeypatch.setattr(route_logger, "propagate", True)
     with caplog.at_level(logging.DEBUG, logger="app.service_tickets.api.route"):
         response = client.get("/svc/driver-secret")
 

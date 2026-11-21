@@ -45,6 +45,13 @@ def _reset_warning_gate() -> Iterator[None]:
     module._missing_header_gate.reset()
 
 
+@pytest.fixture(autouse=True)
+def _usable_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An Alembic run earlier in the process (`fileConfig`) can leave this logger disabled."""
+    monkeypatch.setattr(module.logger, "disabled", False)
+    monkeypatch.setattr(module.logger, "propagate", True)
+
+
 TRUSTED_PEER = "172.18.0.5"
 
 
