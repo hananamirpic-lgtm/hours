@@ -17,8 +17,7 @@ Two failures are deliberate:
   dependencies give another class than the table says (a route that lost its guard).
 * A table entry for which no route exists, unless the entry is marked pending for a later task.
 
-Extending it for the photo routes (task 16.4): the shared photo route is already in the table as
-`pending="16.4"`. When the route is added the test says so and asks for the marker to be removed. The
+The shared photo route (task 16.4) is in the table as `shared-photo` and its `pending` marker is gone. The
 multipart submission is `POST /tickets`, already in the table. Any other route a later task adds goes in
 the table with its class, and with `pending=<task number>` only while the route does not exist yet.
 
@@ -104,7 +103,7 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("GET", "/tickets", CUSTOMER),
     E("GET", "/tickets/{ticket_number}", CUSTOMER),
     E("POST", "/tickets/{ticket_number}/cancel", CUSTOMER),
-    E("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO, pending="16.4"),
+    E("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO),
     # --- staff: dashboard, tickets, history
     E("GET", "/staff/dashboard", TICKET_STAFF),
     E("GET", "/staff/tickets", TICKET_STAFF),
@@ -270,8 +269,8 @@ def test_the_real_enumeration_is_not_vacuous(flag_on_app):
     found, _ = classify_app(flag_on_app)
 
     assert len(found) >= 30
-    # The photo route is pending (task 16.4), so every other class is the one that must be seen.
-    assert set(found.values()) >= set(ALL_CLASSES) - {SHARED_PHOTO}
+    # The shared photo route exists since task 16.4, so every class is seen, the photo class included.
+    assert set(found.values()) >= set(ALL_CLASSES)
     # Every route under the prefix belongs to the package's own route class.
     routes = _service_routes(flag_on_app)
     assert all(isinstance(route, ServiceRoute) for route in routes)
@@ -289,17 +288,17 @@ def test_the_table_names_each_route_once_and_only_known_classes():
 
     assert len(keys) == len(ENDPOINT_TABLE)
     assert {entry.klass for entry in ENDPOINT_TABLE} <= set(ALL_CLASSES)
-    # The pending marker is a task number and only the photo route has one today.
-    assert {(e.method, e.path): e.pending for e in ENDPOINT_TABLE if e.pending} == {
-        ("GET", "/tickets/{ticket_number}/photo"): "16.4"
-    }
+    # The pending marker is a task number. No route is pending any more: the photo route (task 16.4) was
+    # the last one, and a route that a later task adds goes in with its marker until it exists.
+    assert {(e.method, e.path): e.pending for e in ENDPOINT_TABLE if e.pending} == {}
 
 
 # --------------------------------------------------------------------------- mount: order and flag
 
 
 def test_flag_on_mounts_customer_then_staff_under_the_prefix(flag_on_app):
-    """The mount order is fixed: every customer route is registered before every staff route."""
+    """The mount order is fixed: customer, photo, staff. Every customer route (the photo route included)
+    is registered before every staff route."""
     paths = [route.path for route in _service_routes(flag_on_app)]
     staff_prefix = f"{SERVICE_PREFIX}/staff"
     first_staff = next(i for i, path in enumerate(paths) if path.startswith(staff_prefix + "/"))
@@ -308,6 +307,15 @@ def test_flag_on_mounts_customer_then_staff_under_the_prefix(flag_on_app):
     assert all(not path.startswith(staff_prefix + "/") for path in paths[:first_staff])
     assert all(path.startswith(staff_prefix + "/") for path in paths[first_staff:])
     assert first_staff > 0
+
+
+def test_the_photo_route_is_mounted_between_the_customer_and_the_staff_routes(flag_on_app):
+    paths = [route.path for route in _service_routes(flag_on_app)]
+    photo = paths.index(f"{SERVICE_PREFIX}/tickets/{{ticket_number}}/photo")
+    cancel = paths.index(f"{SERVICE_PREFIX}/tickets/{{ticket_number}}/cancel")
+    first_staff = next(i for i, path in enumerate(paths) if path.startswith(f"{SERVICE_PREFIX}/staff/"))
+
+    assert cancel < photo < first_staff
 
 
 def test_flag_off_mounts_no_ticket_route(settings):

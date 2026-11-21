@@ -21,14 +21,14 @@ What is checked
 * **Role change, deactivation and revocation** apply from the next request, with the older token.
 * **R14.5.** A customer cannot set a staff status.
 
-Adding the shared photo route (task 16.4)
------------------------------------------
-`PROBES` already holds the photo probe (`GET /tickets/{ticket_number}/photo`, class shared-photo). It is
-left out while the endpoint table marks the route `pending`, and joins the matrix by itself when task 16.4
-removes the marker. The `p` column of `REFERENCE` holds its expectations (staff of the three ticket roles
-and a customer admitted, a customer who owes a password change refused). `ok=None` on its probe means
-"any status other than 401 or 403", because the exact success status belongs to task 16.4: tighten it
-there. The photo case of the ownership property (another customer's photo is a 404) is task 13.9's.
+The shared photo route (task 16.4)
+----------------------------------
+`PROBES` holds the photo probe (`GET /tickets/{ticket_number}/photo`, class shared-photo), and since task
+16.4 removed the endpoint table's `pending` marker it is part of the matrix. The `p` column of `REFERENCE`
+holds its expectations (staff of the three ticket roles and a customer admitted, a customer who owes a
+password change refused). The owner's ticket carries a stored photo (`PHOTO_KEY`, held by the fake store
+of each world), so an admitted caller gets 200. The photo case of the ownership property (another
+customer's photo is a 404) is task 13.9's.
 
 Findings
 --------
@@ -64,6 +64,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, event, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from test_service_api_photo import FakePhotoStore, jpeg_bytes
 from test_service_route_classification import (
     CONFIG_STAFF,
     CUSTOMER,
@@ -91,6 +92,7 @@ from app.service_tickets.models import (
     Ticket,
 )
 from app.service_tickets.mount import mount
+from app.service_tickets.photo_store import get_photo_store
 
 SERVICE = "/api/service"
 LONG_AGO = datetime(2025, 1, 1, 12, 0, tzinfo=UTC)
@@ -161,6 +163,9 @@ CUSTOMER_PASSWORD = "4321"
 CAT_A, CAT_B, CAT_C = _uid(0x301), _uid(0x302), _uid(0x303)  # A used by both tickets, B spare, C inactive
 TICKET_OWN, TICKET_OTHER = 10000, 10001  # the owner's ticket and the target customer's
 TICKET_OWN_ID, TICKET_OTHER_ID = _uid(0x401), _uid(0x402)
+#: The owner's ticket has a stored photo, so the photo probe has something to deliver (task 16.4). The
+#: object itself lives in the fake store of each world.
+PHOTO_KEY = "service-tickets/" + "0" * 31 + "1.jpg"
 ENTRY_ID = _uid(0x501)
 MISSING_UUID = _uid(0x9999)
 MISSING_TICKET = 99999
@@ -441,8 +446,8 @@ PROBES: tuple[Probe, ...] = (
         200,
         json={"current_password": CUSTOMER_PASSWORD, "new_password": "5566"},
     ),
-    # --- shared photo: left out of the matrix until the endpoint table drops its `pending` marker
-    Probe("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO, None),
+    # --- shared photo (task 16.4): the owner's ticket has a stored photo, so an admitted caller gets it
+    Probe("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO, 200),
     # --- ticket staff
     Probe("GET", "/staff/dashboard", TICKET_STAFF, 200),
     Probe("GET", "/staff/tickets", TICKET_STAFF, 200),
@@ -609,6 +614,7 @@ def _seed(session: Session) -> None:
                 apartment="12",
                 phone=owner.phone,
                 description="leaking tap",
+                photo_key=PHOTO_KEY if number == TICKET_OWN else None,
                 status="received",
                 assigned_technician_name="",
                 created_at=LONG_AGO,
@@ -707,11 +713,14 @@ class World:
             target.close()
         self.factory = sessionmaker(bind=self.engine, autoflush=False, expire_on_commit=False, future=True)
         self.numbers = Numbers()
+        self.photos = FakePhotoStore()
+        self.photos.seed(PHOTO_KEY, jpeg_bytes())
         config = _enabled_config()
         app = FastAPI()
         mount(app, config, "/api")
         app.dependency_overrides[get_db] = self._request_session
         app.dependency_overrides[customer_router.get_ticket_allocator] = lambda: self.numbers
+        app.dependency_overrides[get_photo_store] = lambda: self.photos
         app.dependency_overrides[customer_router.get_service_config] = lambda: config
         self.client = TestClient(app, raise_server_exceptions=False)
 
@@ -866,11 +875,8 @@ def test_every_listed_route_has_exactly_one_probe_of_the_right_class():
 
 def test_the_matrix_covers_every_class_that_exists():
     seen = {probe.klass for probe in ACTIVE_PROBES}
-    # The photo class joins when its endpoint-table marker goes (task 16.4).
-    assert seen >= {CUSTOMER, CUSTOMER_UNGATED, TICKET_STAFF, CONFIG_STAFF}
-    assert (SHARED_PHOTO in seen) == any(
-        e.klass == SHARED_PHOTO and e.pending is None for e in ENDPOINT_TABLE
-    )
+    # The shared photo class has been part of the matrix since task 16.4 removed its pending marker.
+    assert seen >= {CUSTOMER, CUSTOMER_UNGATED, TICKET_STAFF, CONFIG_STAFF, SHARED_PHOTO}
     assert len(ACTIVE_PROBES) >= 30
 
 

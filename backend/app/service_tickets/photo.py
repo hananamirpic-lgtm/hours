@@ -71,6 +71,10 @@ logger = logging.getLogger(__name__)
 #: The only formats that are decoded, in Pillow's spelling (R11.2).
 ALLOWED_FORMATS: tuple[str, ...] = ("JPEG", "PNG", "WEBP")
 
+#: A file part larger than this is rejected by the router, before this module sees it (R11.4). 10 MB as
+#: the requirements count it: 10 x 1,048,576 bytes.
+MAX_PHOTO_BYTES = 10_485_760
+
 #: Width times height above this is rejected before decoding (R11.5).
 MAX_PIXELS = 50_000_000
 

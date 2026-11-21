@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
+from test_service_api_photo import FakePhotoStore, jpeg_bytes
 
 from app.core.security import create_access_token, hash_password
 from app.db.session import get_db
@@ -41,6 +42,7 @@ from app.service_tickets.models import (
     ServiceSettings,
     Ticket,
 )
+from app.service_tickets.photo_store import get_photo_store
 from app.service_tickets.services.numbering import TicketNumbersExhausted
 
 PHONE = "0505556677"
@@ -82,7 +84,9 @@ def numbers() -> Numbers:
     return Numbers()
 
 
-def _build_app(session: Session, allocator: Callable[[Session], int]) -> FastAPI:
+def _build_app(
+    session: Session, allocator: Callable[[Session], int], store: FakePhotoStore | None = None
+) -> FastAPI:
     factory = sessionmaker(bind=session.get_bind(), autoflush=False, expire_on_commit=False, future=True)
 
     def request_session() -> Iterator[Session]:
@@ -94,6 +98,8 @@ def _build_app(session: Session, allocator: Callable[[Session], int]) -> FastAPI
     app.dependency_overrides[get_db] = request_session
     app.dependency_overrides[customer_router.get_ticket_allocator] = lambda: allocator
     app.dependency_overrides[customer_router.get_service_config] = lambda: _config()
+    if store is not None:
+        app.dependency_overrides[get_photo_store] = lambda: store
     return app
 
 
@@ -109,8 +115,13 @@ def _config() -> ServiceConfig:
 
 
 @pytest.fixture
-def client(session: Session, numbers: Numbers) -> Iterator[TestClient]:
-    with TestClient(_build_app(session, numbers), raise_server_exceptions=False) as test_client:
+def photos() -> FakePhotoStore:
+    return FakePhotoStore()
+
+
+@pytest.fixture
+def client(session: Session, numbers: Numbers, photos: FakePhotoStore) -> Iterator[TestClient]:
+    with TestClient(_build_app(session, numbers, photos), raise_server_exceptions=False) as test_client:
         yield test_client
 
 
@@ -497,13 +508,38 @@ def test_a_repeated_field_is_invalid_for_that_field(
     assert _ticket_count(session) == 0
 
 
-def test_a_photo_part_is_accepted_and_ignored_until_the_photo_task(
-    client: TestClient, session: Session, customer: Customer, category: Category
+def test_a_photo_part_is_decoded_stored_and_referenced_by_the_ticket(
+    client: TestClient,
+    session: Session,
+    customer: Customer,
+    category: Category,
+    photos: FakePhotoStore,
+) -> None:
+    response = _submit(client, customer, _good(category), photo=jpeg_bytes())
+
+    assert response.status_code == 201
+    key = _stored(session, response.json()["ticket_number"]).photo_key
+    assert key is not None and key.startswith("service-tickets/") and key.endswith(".jpg")
+    assert photos.keys("put") == [key]
+    assert photos.objects[key][:2] == b"\xff\xd8"
+
+
+def test_a_photo_part_that_is_not_an_image_is_422_and_creates_no_ticket(
+    client: TestClient,
+    session: Session,
+    customer: Customer,
+    category: Category,
+    photos: FakePhotoStore,
+    numbers: Numbers,
 ) -> None:
     response = _submit(client, customer, _good(category), photo=b"\xff\xd8not really a jpeg")
 
-    assert response.status_code == 201
-    assert _stored(session, response.json()["ticket_number"]).photo_key is None
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == {
+        "code": "invalid_photo_type",
+        "fields": {"photo": "invalid_photo_type"},
+    }
+    assert (_ticket_count(session), photos.ops, numbers.calls) == (0, [], 0)
 
 
 def test_a_body_that_is_not_a_form_fails_every_required_field(
@@ -534,6 +570,38 @@ def test_a_broken_multipart_body_is_422_with_the_package_envelope(
     assert response.status_code == 422
     assert "fields" in response.json()["detail"]["error"]
     assert _ticket_count(session) == 0
+
+
+_BOUNDARY = "multipart/form-data; boundary=abc"
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [
+        pytest.param(_BOUNDARY, b"this is not multipart data", id="body-does-not-start-with-boundary"),
+        pytest.param(_BOUNDARY, b"\r\n--other\r\nx", id="wrong-boundary"),
+        pytest.param(_BOUNDARY, b"--abc\r\nbroken header line\r\n\r\n", id="bad-part-header"),
+        pytest.param("multipart/form-data", b"--abc--", id="no-boundary-parameter"),
+    ],
+)
+def test_a_multipart_body_without_a_valid_boundary_is_422_invalid_request_not_500(
+    client: TestClient,
+    session: Session,
+    customer: Customer,
+    numbers: Numbers,
+    photos: FakePhotoStore,
+    content_type: str,
+    body: bytes,
+) -> None:
+    response = client.post(
+        f"{URL}/tickets", content=body, headers={**_bearer(customer), "Content-Type": content_type}
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"error": {"code": "invalid_request", "fields": {"body": "invalid_request"}}}
+    }
+    assert (_ticket_count(session), photos.ops, numbers.calls) == (0, [], 0)
 
 
 def test_exhausted_ticket_numbers_are_503_and_store_nothing(

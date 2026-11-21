@@ -1,8 +1,28 @@
 """Customer endpoints of the service ticket API (design.md, "API surface"; Requirements 5, 6, 7.11).
 
 One `APIRouter` with `route_class=ServiceRoute`, mounted under `{api_prefix}/service` by task 13.7. It
-holds the customer authentication endpoints (task 13.2) and the form and ticket endpoints (task 13.3);
-the photo part of the submission (task 16.4) is marked by a hook in `_store_ticket`.
+holds the customer authentication endpoints (task 13.2), the form and ticket endpoints (task 13.3) and
+the photo part of the submission (task 16.4). The photo delivery route is in `photo_router`.
+
+Submission check order (design.md, "Customer and shared endpoints", R9, R11)
+---------------------------------------------------------------------------
+1. Parse the form. A body that cannot be parsed is 422 `fields: {"body": "invalid_request"}`.
+2. A file part over 10,485,760 bytes is 413 `photo_too_large`, before anything else about the form is
+   looked at. Every file part is read with a hard cap of that size plus one byte.
+3. In a worker thread: read the form configuration, validate every field, and settle the photo. The
+   photo is settled as follows: a file part named `photo` while `photo_upload_enabled` is false is
+   `photo_upload_disabled` whether or not it is valid; more than one file part is `too_many_photos`;
+   otherwise the one photo is decoded by `process_photo_limited` (`invalid_photo_type`,
+   `photo_dimensions_too_large`). Every failure goes into the one 422 `fields` map, in form order with
+   `photo` after the validated fields and unknown fields last.
+4. Any failure: 422, nothing stored, no ticket number taken.
+5. Otherwise: allocate the number, take `created_at`, `store.put` the JPEG, insert, commit. A failing
+   put is 503 `photo_storage_unavailable` and no ticket. A failing insert or commit deletes the object
+   (best effort) and the error goes on.
+
+A file part is a part with a file name (`UploadFile`); a part without one is a text field. A text field
+named `photo` is not a photo: it is `unknown_field`, whether or not uploads are enabled. A zero-byte file
+part named `photo` is a photo, and an invalid one (`invalid_photo_type`, R11.3), whatever its file name.
 
 Transactions
 ------------
@@ -25,16 +45,18 @@ message or a response.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
+from python_multipart.exceptions import FormParserError
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
-from starlette.datastructures import FormData
+from starlette.datastructures import FormData, UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.deps import SettingsDep
@@ -56,13 +78,26 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_TOKEN,
     CODE_INVALID_TRANSITION,
     CODE_PASSWORD_NOT_CHANGED,
+    CODE_PHOTO_STORAGE_UNAVAILABLE,
+    CODE_PHOTO_TOO_LARGE,
+    CODE_PHOTO_UPLOAD_DISABLED,
     CODE_TICKET_NOT_FOUND,
     CODE_TICKET_NUMBERS_EXHAUSTED,
     CODE_TICKET_STATUS_CHANGED,
     CODE_TOO_MANY_ATTEMPTS,
+    CODE_TOO_MANY_PHOTOS,
+    CODE_UNKNOWN_FIELD,
 )
 from app.service_tickets.grammars import GrammarError, parse_page, parse_ticket_number_path
 from app.service_tickets.models import Category, Customer
+from app.service_tickets.photo import MAX_PHOTO_BYTES, PhotoError, ProcessedPhoto
+from app.service_tickets.photo_store import (
+    PhotoStorageUnavailable,
+    PhotoStore,
+    get_photo_store,
+    new_key,
+    process_photo_limited,
+)
 from app.service_tickets.schemas import (
     CancelTicketRequest,
     CategoryRef,
@@ -79,9 +114,14 @@ from app.service_tickets.schemas import (
 )
 from app.service_tickets.services import config_admin, lifecycle, signin, ticket_queries
 from app.service_tickets.services.lifecycle import CustomerActor
-from app.service_tickets.services.numbering import Allocator, TicketNumbersExhausted
+from app.service_tickets.services.numbering import (
+    Allocator,
+    TicketNumbersExhausted,
+    allocate_ticket_number,
+)
 from app.service_tickets.services.tickets import (
     FIELD_PHOTO,
+    CleanSubmission,
     SubmissionValidationError,
     create_ticket,
     validate_submission,
@@ -104,6 +144,9 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_TICKET_STATUS_CHANGED: HTTPStatus.CONFLICT,
     CODE_INVALID_TRANSITION: HTTPStatus.CONFLICT,
     CODE_TICKET_NUMBERS_EXHAUSTED: HTTPStatus.SERVICE_UNAVAILABLE,
+    # Photo (task 16.4).
+    CODE_PHOTO_TOO_LARGE: HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+    CODE_PHOTO_STORAGE_UNAVAILABLE: HTTPStatus.SERVICE_UNAVAILABLE,
 }
 
 #: The error code of each failure outcome of `services.signin` that carries no data.
@@ -288,6 +331,9 @@ def get_ticket_allocator() -> Allocator | None:
 
 TicketAllocatorDep = Annotated[Allocator | None, Depends(get_ticket_allocator)]
 
+#: The ticket photo store. Tests override `get_photo_store` with a fake.
+PhotoStoreDep = Annotated[PhotoStore, Depends(get_photo_store)]
+
 
 def _ticket_row(view: ticket_queries.CustomerTicketRowView) -> CustomerTicketRow:
     return CustomerTicketRow(
@@ -338,8 +384,9 @@ def _submission_values(form: FormData) -> dict[str, object]:
     """The form parts by name, for `validate_submission`.
 
     A name that appears twice cannot be a single value, so a repeated field is passed on as `None`,
-    which fails its own field's validation (the same code a missing value gets). The `photo` part is
-    not passed on: it is a known field that the photo handling below owns.
+    which fails its own field's validation (the same code a missing value gets). A part named `photo`
+    is not passed on: it is a known field that the photo handling below owns (`FileParts`). A file part
+    under any other name is passed on as it is; its name makes it `unknown_field`.
     """
     values: dict[str, object] = {}
     for name, value in form.multi_items():
@@ -349,26 +396,151 @@ def _submission_values(form: FormData) -> dict[str, object]:
     return values
 
 
-def _store_ticket(
-    session: Session, customer_id: uuid.UUID, values: dict[str, object], allocator: Allocator | None
-) -> int:
-    """Validate, allocate, insert and commit. Runs in a worker thread: it uses the blocking session."""
-    form = config_admin.get_form_config(session)
-    active_category_ids = {category.id for category in form.categories}
+@dataclass(frozen=True, slots=True)
+class FileParts:
+    """The file parts of one submission, already read, and whether a text field is named `photo`.
+
+    `parts` holds (field name, content) in form order, for a part of any name. Reading is capped, so no
+    content is longer than `MAX_PHOTO_BYTES`.
+    """
+
+    parts: tuple[tuple[str, bytes], ...]
+    text_photo: bool
+
+
+async def _read_file_parts(form: FormData) -> FileParts:
+    """Read every file part with a hard cap of `MAX_PHOTO_BYTES` plus one byte.
+
+    A part over the limit is 413 `photo_too_large`. It is raised here, before the fields are looked at
+    (R11.4), and without reading more of that part than the limit plus one byte, so an over-limit part is
+    detected without holding it in memory. A file part is an `UploadFile`: Starlette makes one of every
+    part that has a file name, and a plain string of every part that has none.
+    """
+    parts: list[tuple[str, bytes]] = []
+    text_photo = False
+    for name, value in form.multi_items():
+        if isinstance(value, UploadFile):
+            content = await value.read(MAX_PHOTO_BYTES + 1)
+            if len(content) > MAX_PHOTO_BYTES:
+                raise _error(CODE_PHOTO_TOO_LARGE)
+            parts.append((name, content))
+        elif name == FIELD_PHOTO:
+            text_photo = True
+    return FileParts(parts=tuple(parts), text_photo=text_photo)
+
+
+def _settle_photo(files: FileParts, *, enabled: bool) -> tuple[ProcessedPhoto | None, str | None]:
+    """The processed photo, or the code of the photo failure. `(None, None)` means no photo was sent.
+
+    Order: uploads off with a part named `photo` is `photo_upload_disabled` (valid or not, R11.11);
+    more than one file part is `too_many_photos` (R11.14); otherwise the one photo is decoded in a
+    decode slot (`invalid_photo_type`, `photo_dimensions_too_large`). A 503 for a full decode queue
+    propagates as it is.
+    """
+    photos = [content for name, content in files.parts if name == FIELD_PHOTO]
+    if photos and not enabled:
+        return None, CODE_PHOTO_UPLOAD_DISABLED
+    if len(files.parts) > 1:
+        return None, CODE_TOO_MANY_PHOTOS
+    if not photos:
+        return None, None
     try:
-        clean = validate_submission(values, form.settings, active_category_ids)
-        # HOOK (task 16.4): the photo is checked before this point and stored after the number is
-        # allocated; `photo_key` below then becomes the stored object key. Until then no photo is kept.
-        ticket = create_ticket(session, _Owner(customer_id), clean, None, allocator=allocator)
+        return process_photo_limited(photos[0]), None
+    except PhotoError as error:
+        return None, error.code
+
+
+def _merge_problems(fields: dict[str, str], photo_code: str | None, *, text_photo: bool) -> dict[str, str]:
+    """The field problems and the photo problem as one map: validated fields, `photo`, unknown fields.
+
+    A text field named `photo` is `unknown_field` unless the photo already has a problem of its own.
+    """
+    merged = {name: code for name, code in fields.items() if code != CODE_UNKNOWN_FIELD}
+    unknown = {name: code for name, code in fields.items() if code == CODE_UNKNOWN_FIELD}
+    if photo_code is not None:
+        merged[FIELD_PHOTO] = photo_code
+    elif text_photo:
+        unknown[FIELD_PHOTO] = CODE_UNKNOWN_FIELD
+    merged.update(unknown)
+    return merged
+
+
+def _insert_ticket(
+    session: Session,
+    customer_id: uuid.UUID,
+    clean: CleanSubmission,
+    photo: ProcessedPhoto | None,
+    allocator: Allocator | None,
+    store: PhotoStore,
+) -> int:
+    """Allocate the number, store the photo, insert and commit. Returns the ticket number.
+
+    The order is the design's: number, then `put`, then insert and commit. `created_at` is read right
+    after the allocation and handed to `create_ticket`, so a slow `put` cannot make a later number
+    carry an earlier time (R10.3). A failing `put` is 503 and no ticket (the object is not deleted: a
+    failed `put` stored nothing). A failing insert or commit deletes the object, best effort, and the
+    error goes on to `ServiceRoute`, which rolls back and answers.
+    """
+    key: str | None = None
+    stored = False
+    try:
+        allocated = allocate_ticket_number(session, allocator)
+        created_at = datetime.now(UTC)
+        if photo is not None:
+            key = new_key()
+            store.put(key, photo.data)
+            stored = True
+        ticket = create_ticket(
+            session,
+            _Owner(customer_id),
+            clean,
+            key,
+            now=lambda: created_at,
+            allocator=lambda _session: allocated,
+        )
         number = ticket.ticket_number
         session.commit()
-    except SubmissionValidationError as error:
-        session.rollback()
-        raise service_error(HTTPStatus.UNPROCESSABLE_ENTITY, fields=error.fields) from error
     except TicketNumbersExhausted as error:
         session.rollback()
         raise _error(error.code) from error
+    except PhotoStorageUnavailable as error:
+        session.rollback()
+        raise _error(error.code) from error
+    except Exception:
+        if stored and key is not None:
+            store.delete(key)
+        raise
     return number
+
+
+def _store_ticket(
+    session: Session,
+    customer_id: uuid.UUID,
+    values: dict[str, object],
+    files: FileParts,
+    allocator: Allocator | None,
+    store: PhotoStore,
+) -> int:
+    """Validate, decode the photo, then allocate, store, insert and commit.
+
+    Runs in a worker thread: it uses the blocking session, and decoding is CPU bound. Every failure of
+    the fields and of the photo is collected into one 422; nothing is allocated or stored until there
+    is none.
+    """
+    form = config_admin.get_form_config(session)
+    active_category_ids = {category.id for category in form.categories}
+    clean: CleanSubmission | None = None
+    problems: dict[str, str] = {}
+    try:
+        clean = validate_submission(values, form.settings, active_category_ids)
+    except SubmissionValidationError as error:
+        problems = dict(error.fields)
+    photo, photo_code = _settle_photo(files, enabled=form.settings.photo_upload_enabled)
+    problems = _merge_problems(problems, photo_code, text_photo=files.text_photo)
+    if problems or clean is None:
+        session.rollback()
+        raise service_error(HTTPStatus.UNPROCESSABLE_ENTITY, fields=problems)
+    return _insert_ticket(session, customer_id, clean, photo, allocator, store)
 
 
 @router.post("/tickets", response_model=TicketCreated, status_code=HTTPStatus.CREATED)
@@ -377,24 +549,33 @@ async def submit_ticket(
     principal: CustomerPrincipalDep,
     session: ServiceSession,
     allocator: TicketAllocatorDep,
+    store: PhotoStoreDep,
 ) -> TicketCreated:
-    """Open a ticket from a `multipart/form-data` form (R9).
+    """Open a ticket from a `multipart/form-data` form (R9, R11).
 
     The handler reads the form itself, instead of declaring `Form(...)` parameters, so the order of the
     checks is ours and an unknown part is `unknown_field`, not something FastAPI decides. By the time
     it runs the customer is authenticated and past the password gate, so a refused customer never has
     their body parsed. The owner is `principal.customer_id`, never a form value.
 
-    The handler is `async` only to await the form. Everything that touches the blocking session runs in
-    a worker thread (`_store_ticket`), as the synchronous handlers of this router do.
+    The handler is `async` only to await the form and the file parts. Everything that touches the
+    blocking session, the decoder or the object store runs in a worker thread (`_store_ticket`), as the
+    synchronous handlers of this router do.
+
+    A body that cannot be parsed is 422 `invalid_request` under `body`. Starlette reports most of those
+    as an `HTTPException` (a missing boundary, too many parts) but lets python-multipart's own parse
+    error through (a body that does not start with the boundary), so both are caught here.
     """
     try:
         form = await request.form()
-    except StarletteHTTPException as error:  # a malformed or oversized multipart body
+    except (StarletteHTTPException, FormParserError) as error:  # a malformed or oversized multipart body
         raise service_error(HTTPStatus.UNPROCESSABLE_ENTITY, fields={"body": CODE_INVALID_REQUEST}) from error
     try:
+        files = await _read_file_parts(form)
         values = _submission_values(form)
-        number = await run_in_threadpool(_store_ticket, session, principal.customer_id, values, allocator)
+        number = await run_in_threadpool(
+            _store_ticket, session, principal.customer_id, values, files, allocator, store
+        )
     finally:
         await form.close()
     return TicketCreated(ticket_number=number)

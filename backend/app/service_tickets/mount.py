@@ -23,14 +23,14 @@ from app.service_tickets.config import ServiceConfig
 
 
 def _ticket_routers() -> list[APIRouter]:
-    """The ticket routers in their fixed mount order: customer (with the shared photo route), then staff.
+    """The ticket routers in their fixed mount order: customer, shared photo, then staff.
 
     The routers are imported here, not at module level, so that with the flag off nothing of the Ticket
     API beyond this module is even imported by `create_app()` (R21.3).
     """
-    from app.service_tickets.api import customer_router, staff_router
+    from app.service_tickets.api import customer_router, photo_router, staff_router
 
-    return [customer_router.router, staff_router.router]
+    return [customer_router.router, photo_router.router, staff_router.router]
 
 
 def add_startup_check(app: FastAPI, check: Callable[[], object]) -> None:

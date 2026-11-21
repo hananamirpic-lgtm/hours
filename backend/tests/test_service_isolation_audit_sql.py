@@ -14,8 +14,8 @@ routers, successes and failures, customer side and staff side, through one fixtu
     - no response (body or header) carries a value read from an existing table, other than a staff
       username copied into `assigned_technician_name` or a history entry's `technician_name` (R20.12);
     - the contents of every non-`svc_` table are identical after the run;
-    - every object key the photo pipeline touches starts with `service-tickets/` (R20.11), see the TODO
-      at `object_store_keys`.
+    - every object key the photo pipeline touches starts with `service-tickets/` (R20.11), see
+      `object_store_keys`.
 
 The fixtures table is keyed by (method, path template). A route of the ticket routers that has no
 entry fails both tests, and so does an entry for a route that does not exist. The routes come from the
@@ -30,8 +30,11 @@ session on the in-memory test database, real tokens, an allocator override (SQLi
 the `Category.seq` numbering listener. SQLite foreign keys are switched on so that deleting a category a
 ticket uses takes its deactivation path.
 
-Adding the photo route (task 16.4): add its entry to `ENDPOINT_TABLE` (done there), add the photo route
-and a multipart submission with a photo to `_explicit_fixtures`, and fill in `object_store_keys`.
+The photo route (task 16.4) is covered by the same table: its entry in `ENDPOINT_TABLE` has no `pending`
+marker, `_explicit_fixtures` holds the delivery route and a multipart submission with a photo, and the
+app of this file has an in-memory `FakePhotoStore` injected through `get_photo_store`. The store records
+every key it is asked to put, get or delete (it has no list operation, as the real one has none), and
+`object_store_keys` returns that record for the run.
 """
 
 from __future__ import annotations
@@ -53,11 +56,13 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, event, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
+from test_service_api_photo import FakePhotoStore, jpeg_bytes
 from test_service_route_classification import (
     CONFIG_STAFF,
     CUSTOMER,
     CUSTOMER_UNGATED,
     ENDPOINT_TABLE,
+    SHARED_PHOTO,
     TICKET_STAFF,
 )
 
@@ -79,6 +84,7 @@ from app.service_tickets.models import (
     ServiceSettings,
     Ticket,
 )
+from app.service_tickets.photo_store import get_photo_store
 from app.service_tickets.services.numbering import TicketNumbersExhausted
 
 API = "/api/service"
@@ -163,7 +169,7 @@ def _config() -> ServiceConfig:
     return ServiceConfig.from_settings(SimpleNamespace(**dict.fromkeys(names, "")))  # type: ignore[arg-type]
 
 
-def _build_app(session: Session, numbers: Numbers) -> FastAPI:
+def _build_app(session: Session, numbers: Numbers, photos: FakePhotoStore) -> FastAPI:
     factory = sessionmaker(bind=session.get_bind(), autoflush=False, expire_on_commit=False, future=True)
 
     def request_session() -> Iterator[Session]:
@@ -176,6 +182,7 @@ def _build_app(session: Session, numbers: Numbers) -> FastAPI:
     app.dependency_overrides[get_db] = request_session
     app.dependency_overrides[customer_router.get_ticket_allocator] = lambda: numbers
     app.dependency_overrides[customer_router.get_service_config] = _config
+    app.dependency_overrides[get_photo_store] = lambda: photos
     return app
 
 
@@ -186,10 +193,16 @@ class World:
     """Committed seed data that the fixtures table refers to by name, and the factories it calls."""
 
     def __init__(
-        self, session: Session, make_user: Callable[..., Any], numbers: Numbers, hashed: str
+        self,
+        session: Session,
+        make_user: Callable[..., Any],
+        numbers: Numbers,
+        hashed: str,
+        photos: FakePhotoStore,
     ) -> None:
         self.session = session
         self.numbers = numbers
+        self.photos = photos
         self._hash = hashed
         self._phones = itertools.count(1)
         self._ticket_numbers = itertools.count(20000)
@@ -277,6 +290,7 @@ class World:
         owner: Customer | None = None,
         category: Category | None = None,
         name: str = "",
+        photo_key: str | None = None,
     ) -> Ticket:
         created = datetime(2025, 3, 1, 8, 0, tzinfo=UTC)
         row = Ticket(
@@ -288,6 +302,7 @@ class World:
             apartment="12",
             phone="0505556677",
             description="The tap leaks.",
+            photo_key=photo_key,
             urgent=False,
             status=status,
             assigned_technician_name=name,
@@ -298,6 +313,17 @@ class World:
         self.session.add(row)
         self.session.commit()
         return row
+
+    def photo_ticket(self, owner: Customer | None = None, *, stored: bool = True) -> Ticket:
+        """A ticket with a photo key. The object is in the fake store unless `stored` is false.
+
+        `seed` puts the object in without recording a call, so the record of the run holds only keys
+        the ticket routes themselves touched.
+        """
+        key = f"{PHOTO_PREFIX}{uuid.uuid4().hex}.jpg"
+        if stored:
+            self.photos.seed(key, jpeg_bytes())
+        return self.ticket(owner=owner, photo_key=key)
 
     def entry(self, ticket: Ticket) -> HistoryEntry:
         row = HistoryEntry(
@@ -332,15 +358,26 @@ def numbers() -> Numbers:
 
 
 @pytest.fixture
-def world(
-    session: Session, make_user, numbers: Numbers, password_hash: str, sequence, foreign_keys_on
-) -> World:
-    return World(session, make_user, numbers, password_hash)
+def photos() -> FakePhotoStore:
+    return FakePhotoStore()
 
 
 @pytest.fixture
-def client(session: Session, numbers: Numbers, world: World) -> Iterator[TestClient]:
-    with TestClient(_build_app(session, numbers), raise_server_exceptions=False) as test_client:
+def world(
+    session: Session,
+    make_user,
+    numbers: Numbers,
+    password_hash: str,
+    photos: FakePhotoStore,
+    sequence,
+    foreign_keys_on,
+) -> World:
+    return World(session, make_user, numbers, password_hash, photos)
+
+
+@pytest.fixture
+def client(session: Session, numbers: Numbers, photos: FakePhotoStore, world: World) -> Iterator[TestClient]:
+    with TestClient(_build_app(session, numbers, photos), raise_server_exceptions=False) as test_client:
         yield test_client
 
 
@@ -583,16 +620,14 @@ def response_leaks(
 # --------------------------------------------------------------------------------- the object store
 
 
-def object_store_keys() -> list[str]:
-    """Every object key read, written, listed or deleted by the ticket system during the run.
+def object_store_keys(store: FakePhotoStore) -> list[str]:
+    """Every object key read, written or deleted by the ticket system during the run.
 
-    TODO(task 16.4): no ticket photo store exists yet, so no ticket route can touch an object and this
-    returns nothing. When the photo pipeline lands, inject a fake object store into the app of this file
-    (a dependency override, like the allocator), have it append every key it is asked to put, get, list
-    or delete to a list, add the photo route and a multipart submission with a photo to
-    `_explicit_fixtures`, and return that list here. Nothing else in the test needs to change.
+    The app of this file gets `store` through the `get_photo_store` dependency override, and the store
+    records the key of every call it receives, in order. It has no list operation, like the real store,
+    so there is nothing else to record. Objects the fixtures seed are not recorded.
     """
-    return []
+    return [key for _operation, key in store.ops]
 
 
 # --------------------------------------------------------------------------------- calls and requests
@@ -631,6 +666,10 @@ def anonymous(path: str, **kwargs: Any) -> Req:
 def _form(fields: dict[str, str]) -> list[Any]:
     """A multipart body without a real file: every field is a plain form part."""
     return [(name, (None, value)) for name, value in fields.items()]
+
+
+def _photo_part(content: bytes) -> tuple[str, Any]:
+    return ("photo", ("IMG_0001.JPG", content, "image/jpeg"))
 
 
 def _good_form(w: World, **overrides: str) -> list[Any]:
@@ -758,12 +797,33 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
         w.numbers.exhausted_once = True
         return as_customer(w, w.cust, "/tickets", files=_good_form(w))
 
+    def submit_with(*parts: Any) -> Callable[[World], Req]:
+        return lambda w: as_customer(w, w.cust, "/tickets", files=[*_good_form(w), *parts])
+
+    def store_down(w: World) -> Req:
+        w.photos.fail_put_once = True
+        return as_customer(w, w.cust, "/tickets", files=[*_good_form(w), _photo_part(jpeg_bytes())])
+
     add(
         "POST",
         "/tickets",
         Call("opens a ticket", 201, submit("cust")),
+        Call("opens a ticket with a photo", 201, submit_with(_photo_part(jpeg_bytes()))),
         Call("invalid city", 422, submit("cust", city="")),
         Call("unknown form field", 422, submit("cust", surprise="1"), "unknown_field"),
+        Call(
+            "the photo is not an image",
+            422,
+            submit_with(_photo_part(b"not an image")),
+            "invalid_photo_type",
+        ),
+        Call(
+            "two photos",
+            422,
+            submit_with(_photo_part(jpeg_bytes()), _photo_part(jpeg_bytes())),
+            "too_many_photos",
+        ),
+        Call("the object store is down", 503, store_down, "photo_storage_unavailable"),
         Call("ticket numbers are used up", 503, submit_exhausted, "ticket_numbers_exhausted"),
         Call("a password change is owed", 403, submit("owing"), owed),
     )
@@ -818,6 +878,71 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
             403,
             lambda w: as_customer(w, w.owing, "/tickets/20000/cancel", json={"expected_status": "received"}),
             owed,
+        ),
+    )
+
+    # ------------------------------------------------------------------ shared: the ticket photo
+    def photo_of(w: World, who: Customer, *, owner: Customer | None = None, stored: bool = True) -> Req:
+        ticket = w.photo_ticket(owner or who, stored=stored)
+        return as_customer(w, who, f"/tickets/{ticket.ticket_number}/photo")
+
+    def photo_as_staff(w: World, user: User) -> Req:
+        ticket = w.photo_ticket(w.cust)
+        return as_staff(w, user, f"/tickets/{ticket.ticket_number}/photo")
+
+    def photo_store_down(w: World) -> Req:
+        w.photos.fail_get_once = True
+        return photo_of(w, w.cust)
+
+    add(
+        "GET",
+        "/tickets/{ticket_number}/photo",
+        Call("the owner", 200, lambda w: photo_of(w, w.cust)),
+        Call("an administrator", 200, lambda w: photo_as_staff(w, w.admin)),
+        Call("an operations administrator", 200, lambda w: photo_as_staff(w, w.ops)),
+        Call("a technician", 200, lambda w: photo_as_staff(w, w.tech)),
+        Call(
+            "someone else's photo",
+            404,
+            lambda w: photo_of(w, w.cust, owner=w.cust2),
+            "ticket_not_found",
+        ),
+        Call(
+            "a ticket without a photo",
+            404,
+            lambda w: as_customer(w, w.cust, f"/tickets/{w.ticket().ticket_number}/photo"),
+            "ticket_not_found",
+        ),
+        Call(
+            "no such ticket",
+            404,
+            lambda w: as_customer(w, w.cust, "/tickets/99999/photo"),
+            "ticket_not_found",
+        ),
+        Call(
+            "malformed number",
+            404,
+            lambda w: as_customer(w, w.cust, "/tickets/abc/photo"),
+            "ticket_not_found",
+        ),
+        Call(
+            "the object is gone",
+            404,
+            lambda w: photo_of(w, w.cust, stored=False),
+            "ticket_not_found",
+        ),
+        Call("the object store is down", 503, photo_store_down, "photo_storage_unavailable"),
+        Call(
+            "a password change is owed",
+            403,
+            lambda w: photo_of(w, w.owing),
+            owed,
+        ),
+        Call(
+            "a deactivated technician",
+            401,
+            lambda w: photo_as_staff(w, w.gone),
+            "invalid_token",
         ),
     )
 
@@ -1357,6 +1482,16 @@ def _generated(key: Key) -> list[Call]:
             calls.append(
                 Call("a technician", 403, lambda w: as_staff(w, w.tech, path, **kwargs), "insufficient_role")
             )
+    elif klass == SHARED_PHOTO:
+        calls.append(Call("no token", 401, lambda _w: anonymous(path, **kwargs), "not_authenticated"))
+        calls.append(
+            Call(
+                "a role of Hours",
+                403,
+                lambda w: as_staff(w, w.accounting, path, **kwargs),
+                "insufficient_role",
+            )
+        )
     return calls
 
 
@@ -1447,7 +1582,7 @@ def test_ticket_api_audit_log_count_unchanged(
 
 
 def test_ticket_api_sql_isolation(
-    client: TestClient, world: World, session: Session, recorder: Recorder
+    client: TestClient, world: World, session: Session, recorder: Recorder, photos: FakePhotoStore
 ) -> None:
     """Property 28: no Hours write, no Hours read but the caller's `users` row, no Hours value returned."""
     problems = coverage_problems(enumerate_routes(client.app), set(FIXTURES))
@@ -1506,9 +1641,11 @@ def test_ticket_api_sql_isolation(
         "svc_field_labels",
         "svc_signin_failures",
     } <= written
-    # R20.11: every object key starts with the photo prefix. No ticket route touches the store yet
-    # (task 16.4 fills in `object_store_keys`).
-    assert all(key.startswith(PHOTO_PREFIX) for key in object_store_keys())
+    # R20.11: every object key starts with the photo prefix, and the run really touched the store: a
+    # submission put a photo and the delivery route read photos.
+    keys = object_store_keys(photos)
+    assert keys and all(key.startswith(PHOTO_PREFIX) for key in keys), keys
+    assert {operation for operation, _ in photos.ops} >= {"put", "get"}
 
 
 # --------------------------------------------------------------------------------- the checks themselves
