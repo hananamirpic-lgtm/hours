@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from http import HTTPStatus
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -45,17 +45,23 @@ from app.service_tickets.api.deps import (
 from app.service_tickets.api.errors import service_error
 from app.service_tickets.api.route import ServiceRoute
 from app.service_tickets.error_codes import (
+    CODE_CUSTOMER_NOT_FOUND,
     CODE_HISTORY_ENTRY_NOT_FOUND,
+    CODE_INVALID_APARTMENT,
     CODE_INVALID_ASSIGNED_TECHNICIAN_NAME,
+    CODE_INVALID_CITY,
     CODE_INVALID_DATE_RANGE,
     CODE_INVALID_EXPECTED_STATUS,
     CODE_INVALID_FILTER,
+    CODE_INVALID_FULL_NAME,
     CODE_INVALID_HISTORY_TEXT,
     CODE_INVALID_PAGE,
+    CODE_INVALID_PHONE,
     CODE_INVALID_TARGET_STATUS,
     CODE_INVALID_TECHNICIAN_NAME,
     CODE_INVALID_TICKET_NUMBER,
     CODE_INVALID_TRANSITION,
+    CODE_PHONE_ALREADY_REGISTERED,
     CODE_TICKET_NOT_FOUND,
     CODE_TICKET_STATUS_CHANGED,
 )
@@ -72,20 +78,35 @@ from app.service_tickets.grammars import (
 from app.service_tickets.models import HistoryEntry
 from app.service_tickets.schemas import (
     AssignedTechnicianRequest,
+    CategoryCount,
     CategoryRef,
+    CustomerCreateRequest,
+    CustomerRecord,
+    CustomerRecordPage,
+    CustomerUpdateRequest,
     DashboardResponse,
     HistoryEntryOut,
     NumberWarning,
+    ReportResponse,
     StaffTicketDetail,
     StaffTicketPage,
     StaffTicketRow,
     StatusChangeRequest,
+    StatusCounts,
 )
+from app.service_tickets.services import customers as customer_service
 from app.service_tickets.services import dashboard as dashboard_service
 from app.service_tickets.services import history as history_service
 from app.service_tickets.services import lifecycle, ticket_queries
+from app.service_tickets.services import reports as reports_service
+from app.service_tickets.services.customers import (
+    CustomerError,
+    CustomerValidationError,
+    CustomerView,
+)
 from app.service_tickets.services.history import HistoryValidationError
 from app.service_tickets.services.lifecycle import LifecycleError
+from app.service_tickets.services.reports import ReportTicketRow
 from app.service_tickets.services.ticket_queries import (
     StaffTicketDetailView,
     StaffTicketPageView,
@@ -106,6 +127,9 @@ _NO_TICKET = 0
 #: An entry id that no entry has (the nil UUID), for a malformed entry id in the path.
 _NO_ENTRY = uuid.UUID(int=0)
 
+#: A customer id that no customer has (the nil UUID), for a malformed customer id in the path.
+_NO_CUSTOMER = uuid.UUID(int=0)
+
 #: Status of every domain error `code` the staff router can answer. Sections that add routes add their
 #: codes here. A code that is not listed is not a domain refusal: the exception propagates (HTTP 500).
 _ERROR_STATUS: dict[str, HTTPStatus] = {
@@ -119,6 +143,13 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_INVALID_ASSIGNED_TECHNICIAN_NAME: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_HISTORY_TEXT: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_TECHNICIAN_NAME: HTTPStatus.UNPROCESSABLE_ENTITY,
+    # customers
+    CODE_CUSTOMER_NOT_FOUND: HTTPStatus.NOT_FOUND,
+    CODE_PHONE_ALREADY_REGISTERED: HTTPStatus.CONFLICT,
+    CODE_INVALID_PHONE: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_FULL_NAME: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_CITY: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_APARTMENT: HTTPStatus.UNPROCESSABLE_ENTITY,
     # list and report query parameters
     CODE_INVALID_PAGE: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_TICKET_NUMBER: HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -136,7 +167,7 @@ def _http_error(error: Exception) -> Exception:
     status = _ERROR_STATUS.get(code) if isinstance(code, str) else None
     if status is None:
         return error
-    fields = error.fields if isinstance(error, HistoryValidationError) else None
+    fields = error.fields if isinstance(error, HistoryValidationError | CustomerValidationError) else None
     return service_error(status, code, fields=fields)
 
 
@@ -145,7 +176,7 @@ def _domain_errors(session: Session) -> Iterator[None]:
     """Answer a service or parser refusal with the package's envelope, after a rollback."""
     try:
         yield
-    except (LifecycleError, GrammarError, HistoryValidationError) as error:
+    except (LifecycleError, GrammarError, HistoryValidationError, CustomerError) as error:
         session.rollback()
         mapped = _http_error(error)
         if mapped is error:
@@ -404,8 +435,191 @@ def edit_history_entry(
 
 
 # --------------------------------------------------------------------------------- customers, reports
-# Added by task 13.5: GET/POST /customers, PUT /customers/{id}, POST /customers/{id}/deactivate,
-# /reactivate, /reset-password, GET /reports.
+# Task 13.5: GET/POST /customers, PUT /customers/{id}, POST /customers/{id}/deactivate,
+# /reactivate, /reset-password (204), GET /reports. All ticket staff may use them (R1.9), so they sit
+# behind the router-level `staff_principal` only.
+#
+# No response here carries a password hash, the initial password or the token version: `CustomerRecord`
+# declares none of them and the services return `CustomerView` values that have no such field (R3.12).
+# Nothing in this section logs: a phone number must never reach a log line.
+
+
+def _customer_id_in_path(raw: str) -> uuid.UUID:
+    """The customer id of a path segment. A malformed one becomes the nil UUID, which no customer has,
+    so it is answered exactly like an unknown id: 404 `customer_not_found` (R3.14)."""
+    customer_id = parse_uuid_path(raw)
+    return _NO_CUSTOMER if customer_id is None else customer_id
+
+
+def _active_filter(raw: str | None) -> bool | None:
+    """The customers state filter: absent, blank or `all` is every customer, `true` active only,
+    `false` inactive only (R3.10). Anything else is `invalid_filter`."""
+    if raw is None:
+        return None
+    value = raw.strip().lower()
+    if value in ("", "all"):
+        return None
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise InvalidFilter
+
+
+def _customer_out(view: CustomerView) -> CustomerRecord:
+    return CustomerRecord.model_validate(view)
+
+
+@router.get("/customers", response_model=CustomerRecordPage)
+def list_customers(
+    session: ServiceSession,
+    page: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    active: Annotated[str | None, Query()] = None,
+) -> CustomerRecordPage:
+    """One page (50) of customers by name, filtered by search text and state (R3.10)."""
+    with _domain_errors(session):
+        page_number = parse_page(page)
+        state = _active_filter(active)
+        result = customer_service.list_customers(
+            session,
+            search=search if search is not None and search.strip() else None,
+            active=state,
+            page=page_number,
+        )
+    return CustomerRecordPage(
+        items=[_customer_out(view) for view in result.items],
+        page=result.page,
+        page_size=result.page_size,
+        total=result.total,
+    )
+
+
+@router.post("/customers", response_model=CustomerRecord, status_code=HTTPStatus.CREATED)
+def create_customer(body: CustomerCreateRequest, session: ServiceSession) -> CustomerRecord:
+    """Add a customer with the initial password and the must-change flag set (R3.2)."""
+    with _domain_errors(session):
+        view = customer_service.create_customer(
+            session,
+            phone=body.phone,
+            full_name=body.full_name,
+            city=body.city,
+            apartment=body.apartment,
+        )
+        out = _customer_out(view)
+    session.commit()
+    return out
+
+
+@router.put("/customers/{customer_id}", response_model=CustomerRecord)
+def update_customer(
+    customer_id: str, body: CustomerUpdateRequest, session: ServiceSession
+) -> CustomerRecord:
+    """Replace name, phone, city and apartment; outstanding tokens stay valid (R3.6, R3.13)."""
+    with _domain_errors(session):
+        view = customer_service.update_customer(
+            session,
+            _customer_id_in_path(customer_id),
+            phone=body.phone,
+            full_name=body.full_name,
+            city=body.city,
+            apartment=body.apartment,
+        )
+        out = _customer_out(view)
+    session.commit()
+    return out
+
+
+@router.post("/customers/{customer_id}/deactivate", response_model=CustomerRecord)
+def deactivate_customer(customer_id: str, session: ServiceSession) -> CustomerRecord:
+    """Set the customer inactive and revoke every token issued so far (R3.7)."""
+    with _domain_errors(session):
+        out = _customer_out(
+            customer_service.deactivate_customer(session, _customer_id_in_path(customer_id))
+        )
+    session.commit()
+    return out
+
+
+@router.post("/customers/{customer_id}/reactivate", response_model=CustomerRecord)
+def reactivate_customer(customer_id: str, session: ServiceSession) -> CustomerRecord:
+    """Set the customer active; password and flags stay as they were (R3.8)."""
+    with _domain_errors(session):
+        out = _customer_out(
+            customer_service.reactivate_customer(session, _customer_id_in_path(customer_id))
+        )
+    session.commit()
+    return out
+
+
+@router.post(
+    "/customers/{customer_id}/reset-password",
+    status_code=HTTPStatus.NO_CONTENT,
+    response_class=Response,
+)
+def reset_customer_password(customer_id: str, session: ServiceSession) -> Response:
+    """Give the customer the initial password again and clear the sign-in lock. No body (R3.9, R3.12)."""
+    with _domain_errors(session):
+        customer_service.reset_password(session, _customer_id_in_path(customer_id))
+    session.commit()
+    return Response(status_code=HTTPStatus.NO_CONTENT)
+
+
+def _report_row_out(row: ReportTicketRow) -> StaffTicketRow:
+    return StaffTicketRow(
+        ticket_number=row.ticket_number,
+        created_at=row.created_at,
+        customer_name=row.customer_name,
+        city=row.city,
+        apartment=row.apartment,
+        category=CategoryRef(id=row.category.id, name_he=row.category.name_he, name_en=row.category.name_en),
+        status=row.status,  # type: ignore[arg-type]  # the column check constraint holds the four values
+        assigned_technician_name=row.assigned_technician_name,
+        urgent=row.urgent,
+    )
+
+
+@router.get("/reports", response_model=ReportResponse)
+def get_report(
+    session: ServiceSession,
+    page: Annotated[str | None, Query()] = None,
+    date_from: Annotated[str | None, Query()] = None,
+    date_to: Annotated[str | None, Query()] = None,
+    city: Annotated[str | None, Query()] = None,
+    category_id: Annotated[str | None, Query()] = None,
+) -> ReportResponse:
+    """Counts per status and per category, and a page (25) of the matching tickets (R18.1 to R18.9)."""
+    with _domain_errors(session):
+        page_number = parse_page(page)
+        start, end = parse_date_range(date_from, date_to)
+        report = reports_service.get_report(
+            session,
+            date_from=start,
+            date_to=end,
+            city=city,
+            category_id=_category_filter(category_id),
+            page=page_number,
+        )
+    return ReportResponse(
+        total=report.total,
+        open=report.open,
+        by_status=StatusCounts(**report.by_status),
+        by_category=[
+            CategoryCount(
+                category=CategoryRef(
+                    id=item.category.id, name_he=item.category.name_he, name_en=item.category.name_en
+                ),
+                count=item.count,
+            )
+            for item in report.by_category
+        ],
+        tickets=StaffTicketPage(
+            items=[_report_row_out(row) for row in report.tickets],
+            page=report.page,
+            page_size=report.page_size,
+            total=report.total,
+        ),
+    )
 
 # --------------------------------------------------------------------------------- configuration
 # Added by task 13.6: GET /categories (ticket staff), then the category writes, /settings and /labels
