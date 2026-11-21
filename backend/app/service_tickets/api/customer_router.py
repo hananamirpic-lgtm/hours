@@ -4,8 +4,12 @@ One `APIRouter` with `route_class=ServiceRoute`, mounted under `{api_prefix}/ser
 holds the customer authentication endpoints (task 13.2), the form and ticket endpoints (task 13.3) and
 the photo part of the submission (task 16.4). The photo delivery route is in `photo_router`.
 
-Submission check order (design.md, "Customer and shared endpoints", R9, R11)
----------------------------------------------------------------------------
+Submission check order (design.md, "Customer and shared endpoints", R9, R11, R22)
+--------------------------------------------------------------------------------
+0. Before the handler: the 12 MiB body guard (413), the token and the per-customer request window (429),
+   the customer row (401) and the password gate (403). In the handler, before anything is read: reserve a
+   submission slot (429 `rate_limited` when the window is full). The slot is given back on every outcome
+   but a created ticket (see `submit_ticket`).
 1. Parse the form. A body that cannot be parsed is 422 `fields: {"body": "invalid_request"}`.
 2. A file part over 10,485,760 bytes is 413 `photo_too_large`, before anything else about the form is
    looked at. Every file part is read with a hard cap of that size plus one byte.
@@ -50,6 +54,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Annotated, Any
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
 from python_multipart.exceptions import FormParserError
@@ -59,16 +64,19 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData, UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.deps import SettingsDep
+from app.service_tickets.api import limits
 from app.service_tickets.api.deps import (
     CustomerPrincipal,
     CustomerPrincipalDep,
     CustomerPrincipalUngatedDep,
+    ServiceConfigDep,
     ServiceSession,
+    get_service_config,  # noqa: F401 - re-exported: tests override `customer_router.get_service_config`
+    signin_address_limit,
 )
 from app.service_tickets.api.errors import service_error
+from app.service_tickets.api.limits import ClockDep
 from app.service_tickets.api.route import CODE_INVALID_REQUEST, ServiceRoute
-from app.service_tickets.config import ServiceConfig
 from app.service_tickets.error_codes import (
     CODE_INVALID_CREDENTIALS,
     CODE_INVALID_EXPECTED_STATUS,
@@ -158,14 +166,6 @@ _OUTCOME_CODES: dict[type, str] = {
 }
 
 
-def get_service_config(settings: SettingsDep) -> ServiceConfig:
-    """The typed service-ticket configuration. Tests override this dependency to pick their own."""
-    return ServiceConfig.from_settings(settings)
-
-
-ServiceConfigDep = Annotated[ServiceConfig, Depends(get_service_config)]
-
-
 def _error(code: str, headers: dict[str, str] | None = None) -> HTTPException:
     return service_error(_ERROR_STATUS[code], code, headers=headers)
 
@@ -228,9 +228,18 @@ def _token_response(outcome: signin.Success | signin.PasswordChanged) -> Service
 # --------------------------------------------------------------------------- authentication (task 13.2)
 
 
-@router.post("/auth/sign-in", response_model=ServiceTokenResponse)
+@router.post(
+    "/auth/sign-in",
+    response_model=ServiceTokenResponse,
+    dependencies=[Depends(signin_address_limit)],
+)
 def sign_in(body: SignInBody, session: ServiceSession, config: ServiceConfigDep) -> ServiceTokenResponse:
-    """Sign a customer in. No token is read: a token sent with the request is ignored (R5.11)."""
+    """Sign a customer in. No token is read: a token sent with the request is ignored (R5.11).
+
+    The per-address window (`signin_address_limit`) is a route dependency, so it runs before the body
+    model is validated and before this function reads the phone: a request over the limit is 429
+    `rate_limited` with no verification and no failure row, whatever the phone's state (R22.7, R5.13).
+    """
     phone = body.phone if isinstance(body.phone, str) else None
     outcome = signin.sign_in(
         session, phone_raw=phone, password_raw=body.password, now=_now(), settings=config
@@ -301,6 +310,9 @@ def change_password(
     session.commit()
     if isinstance(outcome, signin.PasswordChanged):
         return _token_response(outcome)
+    if isinstance(outcome, signin.Locked):
+        # Answered 429, so not counted toward the customer's request window (R22.3).
+        limits.release_request_slot(principal.customer_id)
     raise _failure(outcome)
 
 
@@ -550,8 +562,19 @@ async def submit_ticket(
     session: ServiceSession,
     allocator: TicketAllocatorDep,
     store: PhotoStoreDep,
+    config: ServiceConfigDep,
+    clock: ClockDep,
 ) -> TicketCreated:
-    """Open a ticket from a `multipart/form-data` form (R9, R11).
+    """Open a ticket from a `multipart/form-data` form (R9, R11, R22.2).
+
+    Submission slot (R22.2). Once the customer is authenticated and past the password gate, and before
+    the form is read, one slot of the customer's submission window is reserved (`take_submit_slot`). A full
+    window is 429 `rate_limited` with `Retry-After`; nothing has been read, stored or numbered. From then
+    on the slot is given back (`release_submit_slot`) on every outcome except a created ticket: a 422, a
+    413, a 503, any other error, and a client that disconnects mid-request. The release is in one
+    `finally` guarded by `created`, so it runs exactly once and only when no ticket was committed. The
+    Redis calls are blocking, so they run in the thread pool; the release is shielded from cancellation.
+
 
     The handler reads the form itself, instead of declaring `Form(...)` parameters, so the order of the
     checks is ours and an unknown part is `unknown_field`, not something FastAPI decides. By the time
@@ -566,18 +589,30 @@ async def submit_ticket(
     as an `HTTPException` (a missing boundary, too many parts) but lets python-multipart's own parse
     error through (a body that does not start with the boundary), so both are caught here.
     """
+    customer_id = principal.customer_id
+    # A full window raises here, with nothing reserved and nothing to give back.
+    await run_in_threadpool(limits.take_submit_slot, customer_id, config, clock())
+    created = False
     try:
-        form = await request.form()
-    except (StarletteHTTPException, FormParserError) as error:  # a malformed or oversized multipart body
-        raise service_error(HTTPStatus.UNPROCESSABLE_ENTITY, fields={"body": CODE_INVALID_REQUEST}) from error
-    try:
-        files = await _read_file_parts(form)
-        values = _submission_values(form)
-        number = await run_in_threadpool(
-            _store_ticket, session, principal.customer_id, values, files, allocator, store
-        )
+        try:
+            form = await request.form()
+        except (StarletteHTTPException, FormParserError) as error:  # a malformed or oversized body
+            raise service_error(
+                HTTPStatus.UNPROCESSABLE_ENTITY, fields={"body": CODE_INVALID_REQUEST}
+            ) from error
+        try:
+            files = await _read_file_parts(form)
+            values = _submission_values(form)
+            number = await run_in_threadpool(
+                _store_ticket, session, customer_id, values, files, allocator, store
+            )
+            created = True  # the commit is done: the slot stays taken for the rest of the window
+        finally:
+            await form.close()
     finally:
-        await form.close()
+        if not created:
+            with anyio.CancelScope(shield=True):
+                await run_in_threadpool(limits.release_submit_slot, customer_id)
     return TicketCreated(ticket_number=number)
 
 

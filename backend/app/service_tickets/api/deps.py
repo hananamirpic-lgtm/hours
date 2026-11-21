@@ -17,8 +17,33 @@ session `add`. The check order is the one of R1.14, and it is the same for every
 * `photo_principal`: the one shared route. Staff first, then customer. Whichever kind the token is,
   that kind's own checks apply; a token that is neither is 401.
 
-Rate limiting is not here. The per-customer request window joins `customer_principal` when the
-limiter exists (task 17.5).
+Rate limiting (task 17.5; R22; design.md, "Request check order")
+-----------------------------------------------------------------
+The per-customer request window (120 per 60 s, `svc:rl:req:<customer id>`) is taken by every customer
+dependency (`customer_principal`, `customer_principal_ungated`) and by the customer branch of
+`photo_principal`, at one fixed place:
+
+    bearer present -> token verifies as a customer token (signature, expiry, kind)
+    -> REQUEST WINDOW (429 `rate_limited`) -> customer row read (401 revoked or inactive)
+    -> forced password change (403)
+
+* The customer id has to come from a token whose signature verified, so the window cannot sit before
+  that step. It sits before the first database read, so a request over the limit costs no query and
+  says nothing about the customer's row.
+* A token that does not verify (missing, expired, bad signature, a staff token, any other kind) is
+  answered 401 or 403 as before and counts against nothing.
+* Rate limiting therefore precedes the 401 of a token that verifies but whose customer is revoked or
+  inactive: over the limit, such a token gets 429 (the same answer as for a live one, so it reveals no
+  account state); under the limit it gets its 401 as before. That one case is where the order differs from
+  a literal reading of R1.14, as the design's flowchart says (rate limits first). Every request that
+  reaches the row read has been counted, revoked or inactive ones included.
+* Staff tokens are never limited by this feature: the staff dependencies take no slot, and a staff token
+  on a customer endpoint is 403 before the window.
+* Customer sign-in is not behind a customer dependency, so it is never counted here (R22.3). Its own
+  per-address limit is `signin_address_limit` below.
+
+All of these calls are synchronous Redis calls. The dependencies are plain `def`, so FastAPI runs them in
+its thread pool and they do not block the event loop.
 """
 
 from __future__ import annotations
@@ -33,11 +58,14 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import BearerCredentials, DbSession
+from app.api.deps import BearerCredentials, DbSession, SettingsDep
 from app.core.security import TokenError, TokenType, decode_token
 from app.models.user import UserRole
 from app.service_tickets import customer_token
+from app.service_tickets.api import limits
 from app.service_tickets.api.errors import service_error
+from app.service_tickets.api.limits import ClockDep
+from app.service_tickets.config import ServiceConfig
 from app.service_tickets.error_codes import (
     CODE_CUSTOMER_TOKEN_NOT_ACCEPTED,
     CODE_INSUFFICIENT_ROLE,
@@ -81,6 +109,27 @@ def get_service_session(request: Request, session: DbSession) -> Session:
 
 
 ServiceSession = Annotated[Session, Depends(get_service_session)]
+
+
+def get_service_config(settings: SettingsDep) -> ServiceConfig:
+    """The typed service-ticket configuration. Tests override this dependency to pick their own.
+
+    Defined here (and re-exported by `customer_router`) because the principals below need the limits,
+    and the router imports this module.
+    """
+    return ServiceConfig.from_settings(settings)
+
+
+ServiceConfigDep = Annotated[ServiceConfig, Depends(get_service_config)]
+
+
+def signin_address_limit(request: Request, config: ServiceConfigDep, clock: ClockDep) -> None:
+    """Route dependency of customer sign-in: the per-address window (R22.1, R22.7).
+
+    FastAPI resolves route dependencies before it validates the body model, so a request rejected here
+    has had its phone and password neither read nor validated. See `limits.check_signin_address`.
+    """
+    limits.check_signin_address(request, config, clock())
 
 
 def _unauthorized(code: str) -> HTTPException:
@@ -134,13 +183,17 @@ def _customer_from_claims(
     )
 
 
-def _resolve_customer(session: Session, token: str, *, gated: bool) -> CustomerPrincipal:
+def _resolve_customer(
+    session: Session, token: str, *, gated: bool, config: ServiceConfig, clock: limits.Clock
+) -> CustomerPrincipal:
     try:
         claims = customer_token.decode_customer_token(token)
     except customer_token.CustomerTokenError as error:
         if _is_valid_staff_token(token):
             raise _forbidden(CODE_STAFF_TOKEN_NOT_ACCEPTED) from error
         raise _unauthorized(CODE_INVALID_TOKEN) from error
+    # The token verified, so its customer id can be trusted as a key. No database read has happened.
+    limits.take_request_slot(claims.customer_id, config, clock())
     return _customer_from_claims(session, claims, gated=gated)
 
 
@@ -164,22 +217,27 @@ def config_staff_principal(principal: StaffPrincipalDep) -> StaffPrincipal:
     return principal
 
 
-def customer_principal(session: ServiceSession, credentials: BearerCredentials) -> CustomerPrincipal:
-    return _resolve_customer(session, _bearer_token(credentials), gated=True)
+def customer_principal(
+    session: ServiceSession, credentials: BearerCredentials, config: ServiceConfigDep, clock: ClockDep
+) -> CustomerPrincipal:
+    return _resolve_customer(session, _bearer_token(credentials), gated=True, config=config, clock=clock)
 
 
-def customer_principal_ungated(session: ServiceSession, credentials: BearerCredentials) -> CustomerPrincipal:
-    return _resolve_customer(session, _bearer_token(credentials), gated=False)
+def customer_principal_ungated(
+    session: ServiceSession, credentials: BearerCredentials, config: ServiceConfigDep, clock: ClockDep
+) -> CustomerPrincipal:
+    return _resolve_customer(session, _bearer_token(credentials), gated=False, config=config, clock=clock)
 
 
 def photo_principal(
-    session: ServiceSession, credentials: BearerCredentials
+    session: ServiceSession, credentials: BearerCredentials, config: ServiceConfigDep, clock: ClockDep
 ) -> StaffPrincipal | CustomerPrincipal:
     """Staff resolution first, then customer resolution, each with its own checks.
 
     A customer token fails staff resolution at the signature, before any database read, so at most
     one row is read. A staff token that is no longer good (deactivated, revoked) is 401 here, never
-    `staff_token_not_accepted`: the route accepts staff.
+    `staff_token_not_accepted`: the route accepts staff. Staff are not rate limited; a customer is,
+    after the token verifies and before the customer row is read (see the module docstring).
     """
     token = _bearer_token(credentials)
     try:
@@ -189,6 +247,7 @@ def photo_principal(
             claims = customer_token.decode_customer_token(token)
         except customer_token.CustomerTokenError as error:
             raise _unauthorized(CODE_INVALID_TOKEN) from error
+        limits.take_request_slot(claims.customer_id, config, clock())
         return _customer_from_claims(session, claims, gated=True)
     return _admit_staff(principal)
 
