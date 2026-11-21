@@ -25,6 +25,7 @@ from app.db import session as db_session
 from app.main import create_app
 from app.repositories import health as health_repository
 from app.service_tickets import mount as mount_module
+from app.service_tickets.api.body_limit import BodyLimitMiddleware
 from app.service_tickets.api.preflight_guard import PreflightGuard
 from app.service_tickets.customer_token import mint_customer_token
 
@@ -142,7 +143,8 @@ def test_guard_is_outermost_only_while_the_flag_is_off(settings):
 
     # `user_middleware` lists the outermost first.
     assert off == [PreflightGuard, CORSMiddleware, SecurityHeadersMiddleware]
-    assert on == [CORSMiddleware, SecurityHeadersMiddleware]
+    # With the flag on, the body guard is the innermost user middleware (task 18.1).
+    assert on == [CORSMiddleware, SecurityHeadersMiddleware, BodyLimitMiddleware]
 
 
 @pytest.mark.parametrize("scope_type", ["lifespan", "websocket"])

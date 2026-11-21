@@ -19,6 +19,7 @@ from app.core.config import Settings, get_settings
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.models.user import set_2fa_enforcement
 from app.repositories.health import get_object_storage_client
+from app.service_tickets.api.body_limit import BodyLimitMiddleware
 from app.service_tickets.api.features import build_features_router
 from app.service_tickets.api.preflight_guard import PreflightGuard
 from app.service_tickets.config import ServiceConfig
@@ -73,6 +74,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/openapi.json",
     )
 
+    # Service tickets (feature-flagged). The flag is read here, once per process start.
+    service_config = ServiceConfig.from_settings(settings)
+    if service_config.enabled:
+        # `add_middleware` inserts at the front, so the first one added is the innermost. The body
+        # guard goes in first, inside the header and CORS middlewares, so its 413 still gets their
+        # headers (Requirements 22.6, 25.6). It is not added while the flag is off.
+        app.add_middleware(BodyLimitMiddleware, api_prefix=settings.api_prefix)
+
     # The hardening response headers (Requirement 20.9). Added before CORS so it is outermost and
     # stamps every response, including CORS preflight replies and error bodies.
     app.add_middleware(
@@ -95,9 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(api_router, prefix=settings.api_prefix)
 
-    # Service tickets (feature-flagged). The flag is read here, once per process start. The discovery
-    # route is always registered; the ticket routers only when the flag is on.
-    service_config = ServiceConfig.from_settings(settings)
+    # The discovery route is always registered; the ticket routers only when the flag is on.
     app.include_router(build_features_router(service_config), prefix=settings.api_prefix)
     mount(app, service_config, settings.api_prefix)
     if not service_config.enabled:
