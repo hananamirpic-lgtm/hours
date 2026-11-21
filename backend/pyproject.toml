@@ -32,6 +32,10 @@ dependencies = [
     # The Hebrew label is laid out right-to-left by Pillow's native shaper (libraqm, installed in the
     # Docker image), so it renders correctly and deterministically without a Python bidi reorder.
     "qrcode[pil]==8.0",
+    # Pillow is pinned exactly because the service-ticket attachment validator (Requirement 11.2)
+    # decodes JPEG, PNG and WebP uploads with it; `qrcode[pil]` and `weasyprint` only require
+    # `pillow>=9.1.0`, so this pin is compatible with both.
+    "pillow==12.3.0",
 
     # Scheduled jobs (Requirement 14). APScheduler runs the daily and weekly notification jobs in the
     # API process for milestone 1 (design "Background work: APScheduler in milestone 1"); the cloud
@@ -47,6 +51,9 @@ dependencies = [
     # them.
     "openpyxl==3.1.5",
     "weasyprint==63.1",
+    # Service tickets (Requirements 9.9, 11.2). Starlette cannot parse `multipart/form-data` without
+    # it, and the ticket creation endpoint takes a form with file attachments.
+    "python-multipart==0.0.20",
 ]
 
 [project.optional-dependencies]
