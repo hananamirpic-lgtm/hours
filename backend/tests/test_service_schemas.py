@@ -51,7 +51,7 @@ def _response_models() -> dict[str, type[BaseModel]]:
 
 #: Models a customer can receive. Every other response model is for staff.
 CUSTOMER_AUDIENCE = (
-    "TokenResponse",
+    "ServiceTokenResponse",
     "CustomerProfile",
     "FormConfig",
     "TicketCreated",
@@ -233,7 +233,7 @@ def test_customer_ticket_models_have_no_staff_only_field_anywhere_in_their_schem
 
 @pytest.mark.parametrize("name", CUSTOMER_AUDIENCE)
 def test_nothing_a_customer_receives_carries_a_staff_only_field(name: str) -> None:
-    # CustomerProfile and TokenResponse share no name with the staff list, but the loop proves it.
+    # CustomerProfile and ServiceTokenResponse share no name with the staff list, but the loop proves it.
     assert _schema_property_names(_models()[name]) & STAFF_ONLY_FIELDS == set()
 
 
@@ -452,9 +452,9 @@ def test_customer_profile_hides_id_hash_and_counters() -> None:
 
 
 def test_dashboard_warning_defaults_to_null() -> None:
-    payload = schemas.DashboardResponse(open=3, in_progress=1, urgent=0).model_dump()
+    payload = schemas.ServiceDashboardResponse(open=3, in_progress=1, urgent=0).model_dump()
     assert payload == {"open": 3, "in_progress": 1, "urgent": 0, "ticket_number_warning": None}
-    warned = schemas.DashboardResponse(
+    warned = schemas.ServiceDashboardResponse(
         open=3, in_progress=1, urgent=0, ticket_number_warning=schemas.NumberWarning(remaining=999)
     )
     assert warned.model_dump()["ticket_number_warning"] == {"remaining": 999}
@@ -513,13 +513,17 @@ def test_form_config_has_categories_labels_and_settings_only() -> None:
 
 def test_token_response_fields_and_bearer_type() -> None:
     expected = {"access_token", "token_type", "expires_in", "must_change_password"}
-    assert _fields(schemas.TokenResponse) == expected
-    token = schemas.TokenResponse(access_token="t", expires_in=900, must_change_password=True)
+    assert _fields(schemas.ServiceTokenResponse) == expected
+    token = schemas.ServiceTokenResponse(access_token="t", expires_in=900, must_change_password=True)
     assert token.token_type == "bearer"
     with pytest.raises(ValidationError):
-        schemas.TokenResponse(access_token="t", token_type="mac", expires_in=1, must_change_password=False)  # type: ignore[arg-type]
+        schemas.ServiceTokenResponse(  # type: ignore[arg-type]
+            access_token="t", token_type="mac", expires_in=1, must_change_password=False
+        )
     with pytest.raises(ValidationError):  # there is no refresh token
-        schemas.TokenResponse(access_token="t", expires_in=1, must_change_password=False, refresh_token="r")  # type: ignore[call-arg]
+        schemas.ServiceTokenResponse(  # type: ignore[call-arg]
+            access_token="t", expires_in=1, must_change_password=False, refresh_token="r"
+        )
 
 
 # --- no schema carries a credential
@@ -539,7 +543,7 @@ def test_the_module_defines_exactly_these_models() -> None:
         "CustomerTicketDetail",
         "CustomerTicketPage",
         "CustomerTicketRow",
-        "DashboardResponse",
+        "ServiceDashboardResponse",
         "FormConfig",
         "FormSettings",
         "HistoryEntryOut",
@@ -553,7 +557,7 @@ def test_the_module_defines_exactly_these_models() -> None:
         "StaffTicketRow",
         "StatusCounts",
         "TicketCreated",
-        "TokenResponse",
+        "ServiceTokenResponse",
     }
     assert set(_request_models()) | set(_response_models()) == set(_models())
     assert set(_request_models()).isdisjoint(_response_models())

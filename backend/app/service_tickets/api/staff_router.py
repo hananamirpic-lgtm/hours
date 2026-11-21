@@ -98,13 +98,13 @@ from app.service_tickets.schemas import (
     CustomerRecord,
     CustomerRecordPage,
     CustomerUpdateRequest,
-    DashboardResponse,
     FormSettings,
     HistoryEntryOut,
     LabelsResponse,
     LabelTexts,
     NumberWarning,
     ReportResponse,
+    ServiceDashboardResponse,
     SettingsResponse,
     SettingsUpdateRequest,
     StaffTicketDetail,
@@ -333,8 +333,8 @@ class _HistoryBody(BaseModel):
 # --------------------------------------------------------------------------------- dashboard
 
 
-@router.get("/dashboard", response_model=DashboardResponse)
-def get_dashboard(session: ServiceSession, principal: StaffPrincipalDep) -> DashboardResponse:
+@router.get("/dashboard", response_model=ServiceDashboardResponse)
+def get_dashboard(session: ServiceSession, principal: StaffPrincipalDep) -> ServiceDashboardResponse:
     """Three counts from one read; the ticket-numbers warning only for configuration staff (R17.1, R10.9)."""
     with _domain_errors(session):
         counts = dashboard_service.get_dashboard(session, config_staff=principal.role in CONFIG_STAFF_ROLES)
@@ -343,7 +343,7 @@ def get_dashboard(session: ServiceSession, principal: StaffPrincipalDep) -> Dash
         if counts.ticket_numbers_remaining is not None
         else None
     )
-    return DashboardResponse(
+    return ServiceDashboardResponse(
         open=counts.open,
         in_progress=counts.in_progress,
         urgent=counts.urgent,

@@ -41,6 +41,7 @@ def _hours_routes() -> list[tuple[str, str, bool]]:
     """(method, path, requires authentication) for every route outside the auth router and the docs."""
     app = create_app(get_settings())
     auth_prefix = f"{get_settings().api_prefix}/auth"
+    service_prefix = f"{get_settings().api_prefix}/service"
     found = []
     for route in app.routes:
         if not isinstance(route, APIRoute):
@@ -48,6 +49,10 @@ def _hours_routes() -> list[tuple[str, str, bool]]:
         if route.path.startswith(auth_prefix) or route.path.startswith(_NOT_HOURS_PATHS):
             continue
         if route.path == _DISCOVERY_PATH:
+            continue
+        # The Ticket API exists only while the flag is on and has its own principals, which admit a
+        # technician on the staff routes; it is classified by `test_service_route_classification.py`.
+        if route.path == service_prefix or route.path.startswith(service_prefix + "/"):
             continue
         authenticated = _requires_authentication(route.dependant)
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):

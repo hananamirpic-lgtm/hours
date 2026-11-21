@@ -13,11 +13,14 @@ from app.service_tickets.config import ServiceConfig
 
 
 def _ticket_routers() -> list[APIRouter]:
-    """The ticket routers in their fixed mount order.
+    """The ticket routers in their fixed mount order: customer (with the shared photo route), then staff.
 
-    Empty for now; task 13.7 adds the customer and staff routers here.
+    The routers are imported here, not at module level, so that with the flag off nothing of the Ticket
+    API beyond this module is even imported by `create_app()` (R21.3).
     """
-    return []
+    from app.service_tickets.api import customer_router, staff_router
+
+    return [customer_router.router, staff_router.router]
 
 
 def mount(app: FastAPI, config: ServiceConfig, api_prefix: str) -> None:

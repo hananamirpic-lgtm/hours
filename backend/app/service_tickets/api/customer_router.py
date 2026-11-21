@@ -73,8 +73,8 @@ from app.service_tickets.schemas import (
     FormConfig,
     FormSettings,
     LabelTexts,
+    ServiceTokenResponse,
     TicketCreated,
-    TokenResponse,
     customer_ticket_detail,
 )
 from app.service_tickets.services import config_admin, lifecycle, signin, ticket_queries
@@ -174,8 +174,8 @@ class ChangePasswordBody(BaseModel):
     new_password: Any = None
 
 
-def _token_response(outcome: signin.Success | signin.PasswordChanged) -> TokenResponse:
-    return TokenResponse(
+def _token_response(outcome: signin.Success | signin.PasswordChanged) -> ServiceTokenResponse:
+    return ServiceTokenResponse(
         access_token=outcome.access_token,
         expires_in=outcome.expires_in,
         must_change_password=outcome.must_change_password,
@@ -185,8 +185,8 @@ def _token_response(outcome: signin.Success | signin.PasswordChanged) -> TokenRe
 # --------------------------------------------------------------------------- authentication (task 13.2)
 
 
-@router.post("/auth/sign-in", response_model=TokenResponse)
-def sign_in(body: SignInBody, session: ServiceSession, config: ServiceConfigDep) -> TokenResponse:
+@router.post("/auth/sign-in", response_model=ServiceTokenResponse)
+def sign_in(body: SignInBody, session: ServiceSession, config: ServiceConfigDep) -> ServiceTokenResponse:
     """Sign a customer in. No token is read: a token sent with the request is ignored (R5.11)."""
     phone = body.phone if isinstance(body.phone, str) else None
     outcome = signin.sign_in(
@@ -238,13 +238,13 @@ def _load_profile(session: Session, principal: CustomerPrincipal) -> CustomerPro
     )
 
 
-@router.post("/auth/change-password", response_model=TokenResponse)
+@router.post("/auth/change-password", response_model=ServiceTokenResponse)
 def change_password(
     body: ChangePasswordBody,
     principal: CustomerPrincipalUngatedDep,
     session: ServiceSession,
     config: ServiceConfigDep,
-) -> TokenResponse:
+) -> ServiceTokenResponse:
     """Change the customer's own password. Works while `must_change_password` is set (R6.3)."""
     outcome = signin.change_password(
         session,

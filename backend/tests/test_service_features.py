@@ -179,10 +179,19 @@ def test_mount_includes_the_routers_only_while_the_flag_is_on(settings, monkeypa
     assert "/api/service/probe" in on_paths
 
 
-def test_mount_adds_no_route_today(settings):
-    assert {r.path for r in _app(settings, enabled=True).routes} == {
-        r.path for r in _app(settings, enabled=False).routes
-    }
+def test_mount_adds_the_ticket_routes_and_nothing_else(settings):
+    """Task 13.7: the flag adds the customer and staff routes under the prefix and changes no other path."""
+    on_paths = {r.path for r in _app(settings, enabled=True).routes}
+    off_paths = {r.path for r in _app(settings, enabled=False).routes}
+
+    def under_prefix(path: str) -> bool:
+        return path == "/api/service" or path.startswith("/api/service/")
+
+    assert {p for p in off_paths if under_prefix(p)} == set()
+    assert {p for p in on_paths if under_prefix(p)} != set()
+    assert {p for p in on_paths if not under_prefix(p)} == off_paths
+    assert "/api/service/auth/sign-in" in on_paths
+    assert "/api/service/staff/dashboard" in on_paths
 
 
 # =========================================================================== task 5.2 additions

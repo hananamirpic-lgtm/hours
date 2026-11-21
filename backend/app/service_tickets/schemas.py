@@ -6,7 +6,7 @@ Locale-neutral like every other schema: no message text, only values the front e
 inheritance between them, and the customer classes are *declared* without the staff-only fields instead
 of filtering them at serialisation time. A field a model does not have cannot be sent, whatever the
 caller passes in. The customer-facing models are `CustomerTicketRow`, `CustomerTicketDetail`,
-`CustomerTicketPage`, `CustomerProfile`, `FormConfig` and `TokenResponse`. They have no history, no
+`CustomerTicketPage`, `CustomerProfile`, `FormConfig` and `ServiceTokenResponse`. They have no history, no
 assigned technician name, no last-modified time, no customer id, no photo key and no credential
 (R12.4). A staff customer record (`CustomerRecord`) carries no password hash or token version either
 (R3.12): no schema in this module has a credential field.
@@ -191,7 +191,7 @@ class FormSettings(_Response):
 # --- customer responses
 
 
-class TokenResponse(_Response):
+class ServiceTokenResponse(_Response):
     """A customer token (`sign-in`, `change-password`). Never a refresh token: there is none."""
 
     access_token: str
@@ -400,7 +400,7 @@ class NumberWarning(_Response):
     remaining: int
 
 
-class DashboardResponse(_Response):
+class ServiceDashboardResponse(_Response):
     """`GET /staff/dashboard`: three counts from one read (R17.1, R17.3)."""
 
     open: int
