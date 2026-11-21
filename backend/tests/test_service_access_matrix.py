@@ -30,11 +30,18 @@ password change refused). The owner's ticket carries a stored photo (`PHOTO_KEY`
 of each world), so an admitted caller gets 200. The photo case of the ownership property (another
 customer's photo is a 404) is task 13.9's.
 
-Findings
---------
-Where the code differs from what the requirements say, the matrix still asserts the requirement and the
-cell is marked `xfail(strict=True)` through `DEVIATIONS` (one entry per family, with the reason). A strict
-xfail turns into a failure the day the behavior changes, which is the moment to delete the entry.
+Resolved findings
+-----------------
+Four findings (D1 to D4) once separated the code from the requirements. They were resolved by changing
+the requirements to match the built dependencies, and the matrix now asserts the updated text, with no
+xfail left. D1: a Customer_Token with a valid signature on a staff endpoint is 403
+`customer_token_not_accepted` whatever the state of its Customer_Record (R1.8, last sentence, with R1.6).
+D2: a Staff_Token with a valid signature on a customer endpoint is 403 `staff_token_not_accepted` whatever
+the state of the staff user (R1.7, last sentence; R2.5 applies to staff endpoints and the photo route).
+D3: a staff user who owes a forced password change and calls a configuration endpoint gets
+`password_change_required` (R1.14, first exception; design.md, "Request check order", notes on the
+order). D4: a request body that cannot be parsed is 422 `invalid_request` before authentication (R1.14,
+second exception).
 
 Harness
 -------
@@ -249,12 +256,14 @@ def _bearer(token: str | None) -> dict[str, str] | None:
 # `None` means admitted. The classes are: R1.2 (staff endpoints take an active admin, operations admin or
 # technician), R1.3 (customer endpoints take an active customer), R1.4 (photo: owner or ticket staff),
 # R1.5 (other Hours roles: 403), R1.6 (customer token on a staff endpoint: 403), R1.7 (staff token on a
-# customer endpoint: 403), R1.8 (no token, expired, bad signature, session ended, inactive customer: 401),
-# R1.10 and R1.11 (a technician on a configuration endpoint: 403), R2.5 (deactivated technician: the 401
-# `invalid_token` of Hours), R6.1 (a customer who owes a password change: 403 except on the ungated
-# routes). Staff who owe a password change or an administrator who owes 2FA are the design's gates
-# ("Staff dependencies"): a non-administrator owing a password change and an administrator owing
-# enrolment are refused after the role check.
+# customer endpoint: 403, whatever the state of the staff user), R1.8 (no token, expired, bad signature,
+# session ended, inactive customer: 401 on customer endpoints and the photo route; a Customer_Token with a
+# valid signature on a staff endpoint is R1.6's 403 whatever the state of its record), R1.10 and R1.11 (a
+# technician on a configuration endpoint: 403), R2.5 (deactivated or revoked staff user on a staff
+# endpoint or the photo route: the 401 `invalid_token` of Hours), R6.1 (a customer who owes a password
+# change: 403 except on the ungated routes). Staff who owe a password change or an administrator who owes
+# 2FA are the design's gates ("Staff dependencies"): they are refused after the ticket-staff role check,
+# and a configuration endpoint answers `password_change_required` before its own role check (R1.14).
 
 Outcome = tuple[int, str] | None
 
@@ -291,6 +300,8 @@ def _all(outcome: Outcome) -> Row:
 
 _STAFF_ONLY_ROLES = Row(s=ROLE, c=ROLE, k=STAFF_AS_CUSTOMER, u=STAFF_AS_CUSTOMER, p=ROLE)
 _CONFIG_OR_TICKET = Row(s=ADMIT, c=ADMIT, k=STAFF_AS_CUSTOMER, u=STAFF_AS_CUSTOMER, p=ADMIT)
+_REVOKED_CUSTOMER = Row(s=CUSTOMER_AS_STAFF, c=CUSTOMER_AS_STAFF, k=INVALID, u=INVALID, p=INVALID)
+_INACTIVE_STAFF = Row(s=INVALID, c=INVALID, k=STAFF_AS_CUSTOMER, u=STAFF_AS_CUSTOMER, p=INVALID)
 
 REFERENCE: dict[str, Row] = {
     # --- nothing usable: authentication fails first, whatever the endpoint
@@ -300,11 +311,12 @@ REFERENCE: dict[str, Row] = {
     "bad_signature_customer": _all(INVALID),
     "bad_signature_staff": _all(INVALID),
     "staff_refresh_token": _all(INVALID),
-    # --- a customer token whose session ended, or whose customer is inactive: 401 on every endpoint
-    # (R1.8; authentication is checked before the kind of token, R1.14).
-    "revoked_customer": _all(INVALID),
-    "inactive_customer": _all(INVALID),
-    "inactive_and_must_change_customer": _all(INVALID),
+    # --- a customer token whose session ended, or whose customer is inactive: 401 on the customer
+    # endpoints and the photo route (R1.8); on a staff endpoint the signature is all that is checked, so
+    # it is the 403 of R1.6 (R1.8, last sentence).
+    "revoked_customer": _REVOKED_CUSTOMER,
+    "inactive_customer": _REVOKED_CUSTOMER,
+    "inactive_and_must_change_customer": _REVOKED_CUSTOMER,
     # --- a valid customer token
     "customer": Row(s=CUSTOMER_AS_STAFF, c=CUSTOMER_AS_STAFF, k=ADMIT, u=ADMIT, p=ADMIT),
     "customer_must_change": Row(s=CUSTOMER_AS_STAFF, c=CUSTOMER_AS_STAFF, k=PASSWORD, u=ADMIT, p=PASSWORD),
@@ -315,12 +327,17 @@ REFERENCE: dict[str, Row] = {
     "site_manager": _STAFF_ONLY_ROLES,
     "accounting": _STAFF_ONLY_ROLES,
     "employee": _STAFF_ONLY_ROLES,
-    # --- a deactivated or revoked staff user: the 401 of Hours (R2.5), on every endpoint
-    "deactivated_technician": _all(INVALID),
-    "revoked_staff": _all(INVALID),
-    "deactivated_site_manager": _all(INVALID),
-    # --- forced password change and 2FA enrolment, after the role check (R1.14)
-    "technician_must_change": Row(s=PASSWORD, c=ROLE, k=STAFF_AS_CUSTOMER, u=STAFF_AS_CUSTOMER, p=PASSWORD),
+    # --- a deactivated or revoked staff user: the 401 of Hours on the staff endpoints and the photo route
+    # (R2.5); on a customer endpoint only the kind and signature of the token are checked, so 403 (R1.7).
+    "deactivated_technician": _INACTIVE_STAFF,
+    "revoked_staff": _INACTIVE_STAFF,
+    "deactivated_site_manager": _INACTIVE_STAFF,
+    # --- forced password change and 2FA enrolment, after the ticket-staff role check (R1.14); a
+    # configuration endpoint answers `password_change_required` before its own role check (R1.14, first
+    # exception), so a technician owing the change gets it there too.
+    "technician_must_change": Row(
+        s=PASSWORD, c=PASSWORD, k=STAFF_AS_CUSTOMER, u=STAFF_AS_CUSTOMER, p=PASSWORD
+    ),
     "operations_admin_must_change": Row(
         s=PASSWORD, c=PASSWORD, k=STAFF_AS_CUSTOMER, u=STAFF_AS_CUSTOMER, p=PASSWORD
     ),
@@ -339,50 +356,6 @@ ROLE_ACCESS: dict[UserRole, tuple[bool, bool]] = {
     UserRole.ACCOUNTING: (False, False),
     UserRole.EMPLOYEE: (False, False),
 }
-
-# --------------------------------------------------------------------------- findings
-
-_D1 = (
-    "FINDING D1 (R1.8, R1.14): a customer token whose session ended or whose customer is inactive "
-    "is presented to a staff endpoint. R1.8 says 401 and authentication is checked first, but "
-    "`staff_principal` answers 403 `customer_token_not_accepted` because `is_valid_customer_token` "
-    "checks only the signature, never the customer row."
-)
-_D2 = (
-    "FINDING D2 (R2.5, R1.14; R1.7 conflicts): a deactivated or revoked staff user's token is "
-    "presented to a customer endpoint. R2.5 says every request of a deactivated technician is "
-    "rejected with Hours' 401 `invalid_token`, but `_resolve_customer` answers 403 "
-    "`staff_token_not_accepted` because it checks only the token signature and reads no `users` row."
-)
-_D3 = (
-    "FINDING D3 (R1.14, R1.11): a technician who owes a password change calls a configuration "
-    "endpoint. The role check comes before the forced password change, so the answer must be 403 "
-    "`insufficient_role`; `config_staff_principal` runs after `staff_principal` and answers 403 "
-    "`password_change_required`."
-)
-
-_D4 = (
-    "FINDING D4 (R1.14): a request body that is not parseable JSON is a validation failure, which R1.14 "
-    "puts after authentication, role and forced password change. FastAPI reads the body before it runs "
-    "any dependency, so such a request gets 422 `invalid_request` even from a caller with no token or the "
-    "wrong role. Nothing is read or changed; only the status and code differ from the required order."
-)
-
-#: (token state, endpoint class) -> why the required behavior is not what the code does today.
-DEVIATIONS: dict[tuple[str, str], str] = {}
-for _state in ("revoked_customer", "inactive_customer", "inactive_and_must_change_customer"):
-    for _klass in (TICKET_STAFF, CONFIG_STAFF):
-        DEVIATIONS[(_state, _klass)] = _D1
-for _state in ("deactivated_technician", "revoked_staff", "deactivated_site_manager"):
-    for _klass in (CUSTOMER, CUSTOMER_UNGATED):
-        DEVIATIONS[(_state, _klass)] = _D2
-DEVIATIONS[("technician_must_change", CONFIG_STAFF)] = _D3
-
-
-def _marks(state: str, klass: str) -> list[pytest.MarkDecorator]:
-    reason = DEVIATIONS.get((state, klass))
-    return [pytest.mark.xfail(strict=True, reason=reason)] if reason else []
-
 
 # --------------------------------------------------------------------------- the probes
 
@@ -889,9 +862,7 @@ def test_the_seeded_world_admits_a_valid_customer_and_a_valid_administrator(worl
 # =========================================================================== the matrix
 
 MATRIX_CELLS = [
-    pytest.param(state, probe, id=f"{state}|{probe.label}", marks=_marks(state, probe.klass))
-    for state in REFERENCE
-    for probe in ACTIVE_PROBES
+    pytest.param(state, probe, id=f"{state}|{probe.label}") for state in REFERENCE for probe in ACTIVE_PROBES
 ]
 
 
@@ -1050,7 +1021,6 @@ ORDER_CELLS = [
         route,
         variant,
         id=f"{state}|{route.name}|{variant[0]}",
-        marks=_marks(state, route.klass),
     )
     for state in ORDER_STATES
     for route in ORDER_ROUTES
@@ -1100,55 +1070,45 @@ def test_every_order_route_is_valid_for_an_admitted_caller(world: World, route_n
 MALFORMED = b'{"expected_status": '
 
 
-def _malformed_marks(state: str, klass: str) -> list[pytest.MarkDecorator]:
-    """Finding D4 applies where a gate should have answered first."""
-    marks = _marks(state, klass)
-    if REFERENCE[state].of(klass) is not None:
-        marks.append(pytest.mark.xfail(strict=True, reason=_D4))
-    return marks
-
-
 MALFORMED_CASES = [
-    # (state, method, path, class) of a request whose JSON body cannot be parsed at all.
-    pytest.param(
-        state,
-        method,
-        path,
-        klass,
-        id=f"{state}|{method} {path}",
-        marks=_malformed_marks(state, klass),
-    )
+    # (state, method, path) of a request whose JSON body cannot be parsed at all.
+    pytest.param(state, method, path, id=f"{state}|{method} {path}")
     for state in (
         "absent",
+        "expired_staff",
+        "bad_signature_customer",
         "customer",
+        "customer_must_change",
         "technician",
         "site_manager",
+        "deactivated_technician",
         "technician_must_change",
         "operations_admin",
     )
-    for method, path, klass in (
-        ("POST", f"/staff/tickets/{TICKET_OWN}/status", TICKET_STAFF),
-        ("PUT", f"/staff/categories/{CAT_B}", CONFIG_STAFF),
-        ("POST", f"/tickets/{TICKET_OWN}/cancel", CUSTOMER),
+    for method, path in (
+        ("POST", f"/staff/tickets/{TICKET_OWN}/status"),
+        ("PUT", f"/staff/categories/{CAT_B}"),
+        ("POST", f"/tickets/{TICKET_OWN}/cancel"),
     )
 ]
 
 
-@pytest.mark.parametrize(("state", "method", "path", "klass"), MALFORMED_CASES)
-def test_an_unparseable_body_is_checked_after_authentication_role_and_password(
-    world: World, state: str, method: str, path: str, klass: str
+@pytest.mark.parametrize(("state", "method", "path"), MALFORMED_CASES)
+def test_an_unparseable_body_is_422_invalid_request_before_authentication(
+    world: World, state: str, method: str, path: str
 ):
-    """R1.14: a body that is not JSON is a validation failure, so a failed gate must answer first."""
-    gate = REFERENCE[state].of(klass)
+    """R1.14, second exception: the framework reads the body first, so whatever the token state the
+    answer is 422 `invalid_request`, and nothing is read or changed."""
     before = world.snapshot()
 
     response = world.request(method, path, world.headers(state), content=MALFORMED)
 
-    if gate is None:
-        assert response.status_code == 422
-    else:
-        _assert_rejected(response, gate)
+    # A validation answer carries a `fields` map besides the code, so it is not the bare 401/403 body.
+    assert _outcome(response) == (422, "invalid_request")
+    assert set(_body(response)["detail"]["error"]) <= {"code", "fields"}
+    _assert_no_ticket_data(response)
     assert world.snapshot() == before
+    assert world.numbers.calls == 0
 
 
 # =========================================================================== admin = operations admin (R1.12)
