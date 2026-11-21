@@ -40,12 +40,15 @@ from app.service_tickets.api.deps import (
     CONFIG_STAFF_ROLES,
     ServiceSession,
     StaffPrincipalDep,
+    config_staff_principal,
     staff_principal,
 )
 from app.service_tickets.api.errors import service_error
 from app.service_tickets.api.route import ServiceRoute
 from app.service_tickets.error_codes import (
+    CODE_CATEGORY_NOT_FOUND,
     CODE_CUSTOMER_NOT_FOUND,
+    CODE_DUPLICATE_CATEGORY,
     CODE_HISTORY_ENTRY_NOT_FOUND,
     CODE_INVALID_APARTMENT,
     CODE_INVALID_ASSIGNED_TECHNICIAN_NAME,
@@ -55,15 +58,21 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_FILTER,
     CODE_INVALID_FULL_NAME,
     CODE_INVALID_HISTORY_TEXT,
+    CODE_INVALID_LABEL_EN,
+    CODE_INVALID_LABEL_HE,
+    CODE_INVALID_NAME_EN,
+    CODE_INVALID_NAME_HE,
     CODE_INVALID_PAGE,
     CODE_INVALID_PHONE,
     CODE_INVALID_TARGET_STATUS,
     CODE_INVALID_TECHNICIAN_NAME,
     CODE_INVALID_TICKET_NUMBER,
     CODE_INVALID_TRANSITION,
+    CODE_LAST_ACTIVE_CATEGORY,
     CODE_PHONE_ALREADY_REGISTERED,
     CODE_TICKET_NOT_FOUND,
     CODE_TICKET_STATUS_CHANGED,
+    CODE_UNKNOWN_FIELD,
 )
 from app.service_tickets.grammars import (
     GrammarError,
@@ -75,30 +84,46 @@ from app.service_tickets.grammars import (
     parse_ticket_search,
     parse_uuid_path,
 )
-from app.service_tickets.models import HistoryEntry
+from app.service_tickets.models import Category, FieldLabel, HistoryEntry, ServiceSettings
 from app.service_tickets.schemas import (
     AssignedTechnicianRequest,
     CategoryCount,
+    CategoryCreateRequest,
+    CategoryDeleteResult,
+    CategoryList,
+    CategoryRecord,
     CategoryRef,
+    CategoryUpdateRequest,
     CustomerCreateRequest,
     CustomerRecord,
     CustomerRecordPage,
     CustomerUpdateRequest,
     DashboardResponse,
+    FormSettings,
     HistoryEntryOut,
+    LabelsResponse,
+    LabelTexts,
     NumberWarning,
     ReportResponse,
+    SettingsResponse,
+    SettingsUpdateRequest,
     StaffTicketDetail,
     StaffTicketPage,
     StaffTicketRow,
     StatusChangeRequest,
     StatusCounts,
 )
+from app.service_tickets.services import config_admin as config_service
 from app.service_tickets.services import customers as customer_service
 from app.service_tickets.services import dashboard as dashboard_service
 from app.service_tickets.services import history as history_service
 from app.service_tickets.services import lifecycle, ticket_queries
 from app.service_tickets.services import reports as reports_service
+from app.service_tickets.services.config_admin import (
+    ConfigError,
+    ConfigValidationError,
+    DuplicateCategory,
+)
 from app.service_tickets.services.customers import (
     CustomerError,
     CustomerValidationError,
@@ -155,6 +180,15 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_INVALID_TICKET_NUMBER: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_DATE_RANGE: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_FILTER: HTTPStatus.UNPROCESSABLE_ENTITY,
+    # configuration
+    CODE_CATEGORY_NOT_FOUND: HTTPStatus.NOT_FOUND,
+    CODE_DUPLICATE_CATEGORY: HTTPStatus.CONFLICT,
+    CODE_LAST_ACTIVE_CATEGORY: HTTPStatus.CONFLICT,
+    CODE_INVALID_NAME_HE: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_NAME_EN: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_LABEL_HE: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_LABEL_EN: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_UNKNOWN_FIELD: HTTPStatus.UNPROCESSABLE_ENTITY,
 }
 
 
@@ -167,7 +201,11 @@ def _http_error(error: Exception) -> Exception:
     status = _ERROR_STATUS.get(code) if isinstance(code, str) else None
     if status is None:
         return error
-    fields = error.fields if isinstance(error, HistoryValidationError | CustomerValidationError) else None
+    fields: dict[str, str] | None = None
+    if isinstance(error, HistoryValidationError | CustomerValidationError | ConfigValidationError):
+        fields = error.fields
+    elif isinstance(error, DuplicateCategory):
+        fields = {name: code for name in error.fields}  # the clashing languages
     return service_error(status, code, fields=fields)
 
 
@@ -176,7 +214,7 @@ def _domain_errors(session: Session) -> Iterator[None]:
     """Answer a service or parser refusal with the package's envelope, after a rollback."""
     try:
         yield
-    except (LifecycleError, GrammarError, HistoryValidationError, CustomerError) as error:
+    except (LifecycleError, GrammarError, HistoryValidationError, CustomerError, ConfigError) as error:
         session.rollback()
         mapped = _http_error(error)
         if mapped is error:
@@ -621,6 +659,173 @@ def get_report(
         ),
     )
 
+
 # --------------------------------------------------------------------------------- configuration
-# Added by task 13.6: GET /categories (ticket staff), then the category writes, /settings and /labels
-# behind `config_staff_principal`.
+# Task 13.6. `GET /categories` is open to all ticket staff, because the ticket list and report
+# filters must offer inactive categories too (R19.9, R1.9); it sits behind the router-level
+# `staff_principal` only. Every other route here declares `config_staff_principal`, so a technician
+# gets 403 `insufficient_role` on all of them, reads included, before the body or the path is looked
+# at, and nothing is changed (R1.10, R1.11, R19.1, R19.16). That dependency reuses the cached
+# `staff_principal` result, so the user row is still read once.
+#
+# Texts are validated by the service, not by the request models, so a request with several bad texts
+# reports all of them in `fields` and stores nothing in either language (R19.5).
+
+#: A category id that no category has (the nil UUID), for a malformed category id in the path.
+_NO_CATEGORY = uuid.UUID(int=0)
+
+
+def _category_id_in_path(raw: str) -> uuid.UUID:
+    """The category id of a path segment. A malformed one becomes the nil UUID, which no category has,
+    so it is answered exactly like an unknown id: 404 `category_not_found`."""
+    category_id = parse_uuid_path(raw)
+    return _NO_CATEGORY if category_id is None else category_id
+
+
+def _category_record(category: Category) -> CategoryRecord:
+    return CategoryRecord.model_validate(category)
+
+
+def _settings_out(row: ServiceSettings) -> SettingsResponse:
+    return SettingsResponse(
+        settings=FormSettings(
+            description_required=row.description_required,
+            photo_upload_enabled=row.photo_upload_enabled,
+        )
+    )
+
+
+def _labels_out(rows: dict[str, FieldLabel]) -> LabelsResponse:
+    return LabelsResponse(
+        labels={key: LabelTexts(he=row.label_he, en=row.label_en) for key, row in rows.items()}  # type: ignore[misc]
+    )
+
+
+class _LabelTextsBody(BaseModel):
+    """The two texts of one label, lenient on purpose: a missing or non-string text reaches the service
+    and gets `invalid_label_he` or `invalid_label_en` there (with every other failing text, R19.5)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    he: Any = None
+    en: Any = None
+
+
+class _LabelsBody(BaseModel):
+    """Body of `PUT /staff/labels`. Keys are plain strings so that an unknown field key reaches the
+    service and is reported as `unknown_field` next to any other failing text, instead of being a
+    generic validation error. Same JSON shape as `schemas.LabelsUpdateRequest`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    labels: dict[str, _LabelTextsBody]
+
+
+@router.get("/categories", response_model=CategoryList)
+def list_categories(session: ServiceSession) -> CategoryList:
+    """Every category, active and inactive, oldest first (R1.9, R19.9)."""
+    with _domain_errors(session):
+        rows = config_service.list_categories(session)
+    return CategoryList(items=[_category_record(row) for row in rows])
+
+
+@router.post(
+    "/categories",
+    response_model=CategoryRecord,
+    status_code=HTTPStatus.CREATED,
+    dependencies=[Depends(config_staff_principal)],
+)
+def create_category(body: CategoryCreateRequest, session: ServiceSession) -> CategoryRecord:
+    """Add an active category (R19.6)."""
+    with _domain_errors(session):
+        out = _category_record(config_service.create_category(session, body.name_he, body.name_en))
+    session.commit()
+    return out
+
+
+@router.put(
+    "/categories/{category_id}",
+    response_model=CategoryRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def rename_category(category_id: str, body: CategoryUpdateRequest, session: ServiceSession) -> CategoryRecord:
+    """Replace both names of a category (R19.5, R19.7, R19.8)."""
+    with _domain_errors(session):
+        category = config_service.rename_category(
+            session, _category_id_in_path(category_id), body.name_he, body.name_en
+        )
+        out = _category_record(category)
+    session.commit()
+    return out
+
+
+@router.post(
+    "/categories/{category_id}/deactivate",
+    response_model=CategoryRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def deactivate_category(category_id: str, session: ServiceSession) -> CategoryRecord:
+    """Hide a category from the ticket form; refused for the last active one (R19.9, R19.13)."""
+    with _domain_errors(session):
+        out = _category_record(config_service.deactivate_category(session, _category_id_in_path(category_id)))
+    session.commit()
+    return out
+
+
+@router.post(
+    "/categories/{category_id}/reactivate",
+    response_model=CategoryRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def reactivate_category(category_id: str, session: ServiceSession) -> CategoryRecord:
+    """List a category in the ticket form again (R19.10)."""
+    with _domain_errors(session):
+        out = _category_record(config_service.reactivate_category(session, _category_id_in_path(category_id)))
+    session.commit()
+    return out
+
+
+@router.delete(
+    "/categories/{category_id}",
+    response_model=CategoryDeleteResult,
+    dependencies=[Depends(config_staff_principal)],
+)
+def delete_category(category_id: str, session: ServiceSession) -> CategoryDeleteResult:
+    """Remove an unused category (`removed`) or deactivate a used one (`deactivated`) (R19.11 to R19.13)."""
+    with _domain_errors(session):
+        outcome = config_service.delete_category(session, _category_id_in_path(category_id))
+    session.commit()
+    return CategoryDeleteResult(result=outcome)  # type: ignore[arg-type]  # REMOVED or DEACTIVATED
+
+
+@router.get("/settings", response_model=SettingsResponse, dependencies=[Depends(config_staff_principal)])
+def get_settings(session: ServiceSession) -> SettingsResponse:
+    """The two form options. Configuration staff only: a technician gets 403 (R19.16)."""
+    with _domain_errors(session):
+        return _settings_out(config_service.get_service_settings(session))
+
+
+@router.put("/settings", response_model=SettingsResponse, dependencies=[Depends(config_staff_principal)])
+def update_settings(body: SettingsUpdateRequest, session: ServiceSession) -> SettingsResponse:
+    """Set both form options; existing tickets are untouched (R19.2, R19.3)."""
+    with _domain_errors(session):
+        row = config_service.update_service_settings(
+            session,
+            description_required=body.description_required,
+            photo_upload_enabled=body.photo_upload_enabled,
+        )
+        out = _settings_out(row)
+    session.commit()
+    return out
+
+
+@router.put("/labels", response_model=LabelsResponse, dependencies=[Depends(config_staff_principal)])
+def update_labels(body: _LabelsBody, session: ServiceSession) -> LabelsResponse:
+    """Replace the labels named in the body; the others keep theirs (R19.4, R19.5)."""
+    with _domain_errors(session):
+        rows = config_service.update_labels(
+            session, {key: (texts.he, texts.en) for key, texts in body.labels.items()}
+        )
+        out = _labels_out(rows)
+    session.commit()
+    return out
