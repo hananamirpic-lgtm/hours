@@ -25,10 +25,24 @@ import { toError } from '@/lib/apiError';
 //
 // The roles offered depend on WHO is creating the user. An administrator may assign any console role,
 // including the operations admin. An operations admin has no financial visibility and must not mint a
-// login that does, so it may assign only site_manager, employee and operations_admin — never admin or
-// accounting (the server enforces the same rule; this just keeps the UI honest).
-const ADMIN_ASSIGNABLE_ROLES: UserRole[] = ['admin', 'operations_admin', 'site_manager', 'accounting'];
-const OPERATIONS_ADMIN_ASSIGNABLE_ROLES: UserRole[] = ['operations_admin', 'site_manager', 'employee'];
+// login that does, so it may assign only site_manager, employee, operations_admin and technician —
+// never admin or accounting (the server enforces the same rule; this just keeps the UI honest).
+//
+// A technician works service tickets only and has no Hours access and no site scope, so both acting
+// roles may create one and change a user to or from it (service-tickets Requirement 2.1).
+const ADMIN_ASSIGNABLE_ROLES: UserRole[] = [
+  'admin',
+  'operations_admin',
+  'site_manager',
+  'accounting',
+  'technician',
+];
+const OPERATIONS_ADMIN_ASSIGNABLE_ROLES: UserRole[] = [
+  'operations_admin',
+  'site_manager',
+  'employee',
+  'technician',
+];
 
 const rolesAssignableBy = (actingRole: UserRole | undefined): UserRole[] =>
   actingRole === 'operations_admin' ? OPERATIONS_ADMIN_ASSIGNABLE_ROLES : ADMIN_ASSIGNABLE_ROLES;

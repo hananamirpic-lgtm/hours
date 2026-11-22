@@ -21,8 +21,8 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/management/Qu
 
 const PAGE_SIZE = 25;
 // Employee logins are managed from the Employees tab (Requirement 5), so the Users tab lists and
-// filters only the three console roles.
-const CONSOLE_ROLES: UserRole[] = ['admin', 'site_manager', 'accounting'];
+// filters only the console roles, plus the service-ticket technician (service-tickets Requirement 2.8).
+const CONSOLE_ROLES: UserRole[] = ['admin', 'site_manager', 'accounting', 'technician'];
 
 const matches = (item: UserListItem, term: string): boolean => {
   if (!term) {

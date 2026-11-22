@@ -549,7 +549,8 @@
     "operations_admin": "מנהל תפעול",
     "site_manager": "מנהל אתר",
     "accounting": "הנהלת חשבונות",
-    "employee": "עובד"
+    "employee": "עובד",
+    "technician": "טכנאי"
   },
   "staffingCompany": {
     "new": "חברת כוח אדם חדשה",
@@ -581,7 +582,8 @@
     "reports": "דוחות",
     "users": "משתמשים",
     "audit": "יומן ביקורת",
-    "settings": "הגדרות"
+    "settings": "הגדרות",
+    "tickets": "קריאות שירות"
   },
   "settings": {
     "title": "הגדרות",
