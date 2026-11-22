@@ -142,6 +142,15 @@
     "footer": {
       "accessibilityLink": "הצהרת נגישות",
       "accessibilityContact": "פניות בנושא נגישות: {{contact}}"
+    },
+    "notFound": {
+      "title": "הדף לא נמצא",
+      "body": "הכתובת שביקשתם אינה קיימת בשירות הקריאות.",
+      "back": "חזרה לקריאות שלי"
+    },
+    "session": {
+      "loadError": "לא ניתן לטעון את פרטי החשבון כרגע.",
+      "retry": "נסו שוב"
     }
   },
   "management": {

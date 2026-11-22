@@ -142,6 +142,15 @@
     "footer": {
       "accessibilityLink": "Accessibility statement",
       "accessibilityContact": "Accessibility requests: {{contact}}"
+    },
+    "notFound": {
+      "title": "Page not found",
+      "body": "The address you asked for does not exist in the service ticket portal.",
+      "back": "Back to my tickets"
+    },
+    "session": {
+      "loadError": "Could not load your account details right now.",
+      "retry": "Try again"
     }
   },
   "management": {
