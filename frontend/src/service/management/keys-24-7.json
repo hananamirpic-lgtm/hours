@@ -1,0 +1,38 @@
+{
+  "en": {
+    "management": {
+      "settings": {
+        "categories": {
+          "createTitle": "Add category",
+          "editTitle": "Edit category",
+          "rowAction": "{{action}}: {{name}}",
+          "rowError": "{{name}}: {{message}}",
+          "working": "Working…",
+          "deactivateDone": "The category was deactivated.",
+          "reactivateDone": "The category was reactivated."
+        },
+        "labels": {
+          "noChanges": "There are no changes to save."
+        }
+      }
+    }
+  },
+  "he": {
+    "management": {
+      "settings": {
+        "categories": {
+          "createTitle": "הוספת קטגוריה",
+          "editTitle": "עריכת קטגוריה",
+          "rowAction": "{{action}}: {{name}}",
+          "rowError": "{{name}}: {{message}}",
+          "working": "מבצע…",
+          "deactivateDone": "הקטגוריה הושבתה.",
+          "reactivateDone": "הקטגוריה הופעלה מחדש."
+        },
+        "labels": {
+          "noChanges": "אין שינויים לשמירה."
+        }
+      }
+    }
+  }
+}
