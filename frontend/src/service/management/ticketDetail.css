@@ -1,0 +1,119 @@
+/*
+ * Management ticket detail page (task 24.4). Imported by ticketDetailSections.tsx.
+ *
+ * Logical properties only, so one sheet serves Hebrew right-to-left and English left-to-right. Tokens come
+ * from the console stylesheet (styles/global.css). Wrapping layout and no fixed heights.
+ */
+.ticket-detail {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+}
+
+.ticket-detail .page-header {
+  margin-block-end: 0;
+}
+
+/* The back link is an anchor styled as a button: centre its text and drop the underline. */
+.ticket-detail-back {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.ticket-detail-section p {
+  margin-block: 0 var(--space);
+}
+
+.ticket-detail-section-header {
+  margin-block-end: var(--space);
+}
+
+.ticket-detail-fields {
+  margin: 0;
+}
+
+.ticket-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) / 2) calc(var(--space) * 2);
+  padding-block: calc(var(--space) * 1.25);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.ticket-detail-row:last-child {
+  border-block-end: none;
+}
+
+.ticket-detail-row dt {
+  flex: 1 1 10rem;
+  margin: 0;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.ticket-detail-row dd {
+  flex: 3 1 14rem;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+/* User text (description, history entries) is shown as text with its line breaks kept, never as markup. */
+.ticket-detail-description {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* SOS: an icon and the word, so urgency never depends on colour alone. */
+.ticket-detail-sos {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space) / 2);
+}
+
+.ticket-detail-photo-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space);
+  color: var(--color-primary);
+}
+
+.ticket-detail-photo {
+  display: block;
+  max-inline-size: min(100%, 24rem);
+  block-size: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.ticket-detail-textarea {
+  padding-block: var(--space);
+  resize: vertical;
+}
+
+.ticket-detail-entry-form {
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.ticket-detail-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticket-detail-history-item {
+  padding-block: calc(var(--space) * 1.5);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.ticket-detail-history-item:last-child {
+  border-block-end: none;
+}
+
+/* A gap between the created and edited times, drawn with space so no literal text is needed. */
+.ticket-detail-separator {
+  display: inline-block;
+  inline-size: calc(var(--space) * 2);
+}
