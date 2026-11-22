@@ -193,7 +193,9 @@
     },
     "notAuthorized": {
       "title": "Not authorized",
-      "body": "You are not authorized to view this screen."
+      "body": "You are not authorized to view this screen.",
+      "home": "Go to your home page",
+      "portal": "Go to the customer portal"
     },
     "configUnavailable": {
       "title": "Screen not available",
@@ -253,7 +255,8 @@
         "reopen": "Reopen",
         "none": "No actions"
       },
-      "statusChangeFailed": "The action \"{{action}}\" on ticket {{number}} failed."
+      "statusChangeFailed": "The action \"{{action}}\" on ticket {{number}} failed.",
+      "actionLabel": "{{action}}, ticket {{number}}"
     },
     "ticket": {
       "title": "Ticket {{number}}",
@@ -338,7 +341,10 @@
         "apartment": "Apartment number",
         "initialPasswordNote": "A new customer gets the initial password 1234 and must choose a new password at the first sign-in.",
         "created": "The customer was added.",
-        "updated": "The customer details were saved."
+        "updated": "The customer details were saved.",
+        "fullNameHint": "1 to 100 characters",
+        "cityHint": "Up to 100 characters",
+        "apartmentHint": "Up to 20 characters"
       },
       "deactivate": "Deactivate",
       "deactivateTitle": "Deactivate customer",
@@ -351,7 +357,9 @@
       "resetPassword": "Reset password",
       "resetTitle": "Reset password",
       "resetPrompt": "Reset the password of {{name}} to 1234? The customer must choose a new password at the next sign-in, and their active sessions end.",
-      "resetDone": "The password was reset to 1234. The customer must choose a new password at the next sign-in."
+      "resetDone": "The password was reset to 1234. The customer must choose a new password at the next sign-in.",
+      "rowAction": "{{action}}: {{name}}",
+      "working": "Working…"
     },
     "reports": {
       "title": "Service ticket reports",
@@ -369,7 +377,10 @@
       "byCategory": "By category",
       "tickets": "Tickets in the report",
       "empty": "No tickets match the filters.",
-      "loadError": "Could not load the report."
+      "loadError": "Could not load the report.",
+      "filtersLabel": "Report filters",
+      "summary": "Totals",
+      "noCategories": "No issue category has a ticket in this report."
     },
     "settings": {
       "categories": {
@@ -392,7 +403,14 @@
         "removed": "The category was deleted.",
         "deactivated": "The category was deactivated, not deleted, because tickets use it.",
         "empty": "There are no categories.",
-        "loadError": "Could not load the categories."
+        "loadError": "Could not load the categories.",
+        "createTitle": "Add category",
+        "editTitle": "Edit category",
+        "rowAction": "{{action}}: {{name}}",
+        "rowError": "{{name}}: {{message}}",
+        "working": "Working…",
+        "deactivateDone": "The category was deactivated.",
+        "reactivateDone": "The category was reactivated."
       },
       "labels": {
         "title": "Field labels",
@@ -402,7 +420,8 @@
         "labelEn": "Label in English",
         "hint": "1 to 60 characters",
         "saved": "The labels were saved.",
-        "loadError": "Could not load the labels."
+        "loadError": "Could not load the labels.",
+        "noChanges": "There are no changes to save."
       },
       "options": {
         "title": "Form options",

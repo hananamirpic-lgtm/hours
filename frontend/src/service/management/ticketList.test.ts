@@ -11,7 +11,6 @@ import { createPortalI18n, type PortalLanguage } from '../portal/portalI18n';
 import en from '@/i18n/locales/en/service.json';
 import he from '@/i18n/locales/he/service.json';
 import { dashboardListFilters, dashboardListTarget } from './dashboardModel';
-import keys243 from './keys-24-3.json';
 import {
   EMPTY_FILTERS,
   INITIAL_LIST,
@@ -346,8 +345,6 @@ function view(overrides: Partial<TicketListViewProps> = {}): TicketListViewProps
 
 function render(language: PortalLanguage, element: ReactElement): string {
   const i18n = createPortalI18n(language);
-  // Task 24.8 merges the keys of keys-24-3.json into the locale files; until then the test adds them.
-  i18n.addResourceBundle(language, 'service', keys243[language], true, true);
   return renderToStaticMarkup(
     createElement(
       I18nextProvider,

@@ -51,7 +51,6 @@ import {
   type LabelFormErrors,
 } from './configModel';
 import { OPTION_ORDER, OptionsFormView, optionInputId } from './configOptionsView';
-import keys247 from './keys-24-7.json';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { LabelsPage } from './pages/LabelsPage';
 import { OptionsPage } from './pages/OptionsPage';
@@ -77,8 +76,6 @@ const SETTINGS: FormSettings = { description_required: true, photo_upload_enable
 
 function i18nFor(language: PortalLanguage) {
   const instance = createPortalI18n(language);
-  // The keys of this task that task 24.8 has not merged into service.json yet.
-  instance.addResourceBundle(language, 'service', keys247[language], true, true);
   return instance;
 }
 

@@ -16,7 +16,6 @@ import { reportQuery } from '../api/staff';
 import { createPortalI18n, type PortalLanguage } from '../portal/portalI18n';
 import en from '@/i18n/locales/en/service.json';
 import he from '@/i18n/locales/he/service.json';
-import keys246 from './keys-24-6.json';
 import {
   EMPTY_REPORT_FILTERS,
   INITIAL_REPORT,
@@ -196,8 +195,6 @@ function view(overrides: Partial<ReportsViewProps> = {}): ReportsViewProps {
 
 function render(language: PortalLanguage, props: ReportsViewProps): string {
   const i18n = createPortalI18n(language);
-  // Task 24.8 merges the keys of keys-24-6.json into the locale files; until then the test adds them.
-  i18n.addResourceBundle(language, 'service', keys246[language], true, true);
   const element: ReactElement = createElement(ReportsView, props);
   return renderToStaticMarkup(
     createElement(

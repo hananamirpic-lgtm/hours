@@ -46,7 +46,6 @@ import {
 } from './customersModel';
 import { CustomersTable } from './CustomersTable';
 import { CustomersToolbar } from './CustomersToolbar';
-import keys245 from './keys-24-5.json';
 import { CustomersPage } from './pages/CustomersPage';
 
 const noop = (): void => undefined;
@@ -72,8 +71,6 @@ const sivan: StaffCustomer = {
 
 function i18nFor(language: PortalLanguage) {
   const instance = createPortalI18n(language);
-  // The keys of this task that task 24.8 has not merged into service.json yet.
-  instance.addResourceBundle(language, 'service', keys245[language], true, true);
   return instance;
 }
 
@@ -317,16 +314,6 @@ describe('per-field errors (R3.3, R3.4, R3.5)', () => {
 
 // --- markup -----------------------------------------------------------------------------------------
 
-describe('the keys of this task', () => {
-  it('has the same keys and placeholders in Hebrew and English', () => {
-    const leaves = (tree: unknown, prefix = ''): string[] =>
-      Object.entries(tree as Record<string, unknown>).flatMap(([key, value]) =>
-        typeof value === 'string' ? [`${prefix}${key}`] : leaves(value, `${prefix}${key}.`),
-      );
-    expect(leaves(keys245.he).sort()).toEqual(leaves(keys245.en).sort());
-    expect(keys245.he.management.customers.rowAction).toBe(keys245.en.management.customers.rowAction);
-  });
-});
 
 describe('CustomersTable', () => {
   it.each(LANGUAGES)('shows every column, the state as text and row buttons that name the customer in %s', (language) => {

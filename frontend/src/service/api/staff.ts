@@ -353,7 +353,7 @@ export async function updateSettings(settings: FormSettings): Promise<FormSettin
 
 /**
  * `PUT /staff/labels`: replaces the labels named in `labels`; the others keep theirs. The answer holds all
- * seven labels. A 422 carries `fields` keyed `"<field>.he"` or `"<field>.en"` (and the bare field key for
+ * seven labels. A 422 carries `fields` keyed `"<field>.label_he"` or `"<field>.label_en"` (and the bare field key for
  * `unknown_field`).
  */
 export async function updateLabels(
