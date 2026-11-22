@@ -11,6 +11,7 @@
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import {
   changeTicketStatus,
   getTicket,
@@ -25,14 +26,15 @@ import {
 import { SERVICE_NAMESPACE } from '../namespace';
 import {
   EMPTY_FILTERS,
-  INITIAL_LIST,
   clampPage,
   displayedPage,
   listLanguage,
+  listStateFromParams,
   replaceRow,
   sameRequest,
   toListQuery,
   type AppliedList,
+  type ListUrlState,
   type StatusFailure,
   type TicketListFilters,
 } from '../ticketListModel';
@@ -41,13 +43,24 @@ import { TicketListView } from '../ticketListView';
 /** Every cached list page, whatever its filters: `staffKeys.ticketList(query)` starts with this. */
 const LIST_KEY_PREFIX = [...staffKeys.tickets, 'list'] as const;
 
+/**
+ * Opens the list with the filters of the URL (`?status=...&urgent_only=true`, R17.4). The container is keyed on
+ * the navigation (`location.key`), so a dashboard link, back/forward, or a click on the same link again starts
+ * it afresh from the URL. Applying the form does not write the URL, so it never changes the key.
+ */
 export function TicketListPage() {
+  const location = useLocation();
+  const initial = useMemo(() => listStateFromParams(new URLSearchParams(location.search)), [location.search]);
+  return <TicketListContainer key={location.key} initial={initial} />;
+}
+
+function TicketListContainer({ initial }: { readonly initial: ListUrlState }) {
   const { i18n } = useTranslation(SERVICE_NAMESPACE);
   const language = listLanguage(i18n.language);
   const queryClient = useQueryClient();
 
-  const [draft, setDraft] = useState<TicketListFilters>(EMPTY_FILTERS);
-  const [applied, setApplied] = useState<AppliedList>(INITIAL_LIST);
+  const [draft, setDraft] = useState<TicketListFilters>(initial.draft);
+  const [applied, setApplied] = useState<AppliedList>(initial.applied);
   const request = useMemo(() => toListQuery(applied), [applied]);
 
   const list = useQuery({

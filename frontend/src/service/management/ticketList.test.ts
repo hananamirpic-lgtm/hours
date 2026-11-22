@@ -10,6 +10,7 @@ import type { StaffCategory, StaffTicketPage, StaffTicketRow, TicketStatus } fro
 import { createPortalI18n, type PortalLanguage } from '../portal/portalI18n';
 import en from '@/i18n/locales/en/service.json';
 import he from '@/i18n/locales/he/service.json';
+import { dashboardListFilters, dashboardListTarget } from './dashboardModel';
 import keys243 from './keys-24-3.json';
 import {
   EMPTY_FILTERS,
@@ -25,6 +26,7 @@ import {
   listErrorField,
   listErrorKey,
   listLanguage,
+  listStateFromParams,
   pageInfo,
   replaceRow,
   rowClassName,
@@ -180,6 +182,62 @@ describe('toListQuery (R15.3, R15.5, R15.8)', () => {
     expect(toggleStatus([], 'closed')).toEqual(['closed']);
     expect(toggleStatus(['closed'], 'received')).toEqual(['received', 'closed']);
     expect(toggleStatus(['received', 'closed'], 'received')).toEqual(['closed']);
+  });
+});
+
+describe('listStateFromParams (R17.4, R15.5)', () => {
+  const fromSearch = (search: string) => listStateFromParams(new URLSearchParams(search));
+
+  it('opens with no filters for an empty query', () => {
+    expect(fromSearch('')).toEqual({ draft: EMPTY_FILTERS, applied: INITIAL_LIST });
+  });
+
+  it('reads the three dashboard links into the draft and the applied filters', () => {
+    const open = fromSearch('?status=received&status=in_progress');
+    expect(open.draft.statuses).toEqual(['received', 'in_progress']);
+    expect(open.draft.urgentOnly).toBe(false);
+    expect(fromSearch('?status=in_progress').draft.statuses).toEqual(['in_progress']);
+    const urgent = fromSearch('?status=received&status=in_progress&urgent_only=true');
+    expect(urgent.draft).toEqual({ ...EMPTY_FILTERS, statuses: ['received', 'in_progress'], urgentOnly: true });
+    expect(urgent.applied.filters).toEqual(urgent.draft);
+    expect(urgent.applied.page).toBe(1);
+  });
+
+  it.each(['open', 'inProgress', 'urgent'] as const)('round-trips the dashboard link of %s to its request', (key) => {
+    const { search } = dashboardListTarget(key);
+    expect(toListQuery(listStateFromParams(new URLSearchParams(search)).applied)).toEqual({
+      ...dashboardListFilters(key),
+      page: 1,
+    });
+  });
+
+  it('reads the other filters, the order toggle and the page with the names of the API', () => {
+    const state = fromSearch(
+      '?search=12345&category_id=c1&city=Haifa&date_from=2025-01-02&date_to=2025-02-03&urgent_first=true&page=3&status=closed',
+    );
+    expect(state.draft).toEqual({
+      search: '12345',
+      statuses: ['closed'],
+      categoryId: 'c1',
+      city: 'Haifa',
+      urgentOnly: false,
+      dateFrom: '2025-01-02',
+      dateTo: '2025-02-03',
+    });
+    expect(state.applied).toEqual({ filters: state.draft, urgentFirst: true, page: 3 });
+  });
+
+  it('ignores unknown statuses, duplicates, other flag values, bad dates and bad pages', () => {
+    const state = fromSearch(
+      '?status=bogus&status=closed&status=closed&status=&urgent_only=1&urgent_first=yes&date_from=2025-02-30&date_to=tomorrow&page=0',
+    );
+    expect(state.draft).toEqual({ ...EMPTY_FILTERS, statuses: ['closed'] });
+    expect(state.applied.urgentFirst).toBe(false);
+    expect(state.applied.page).toBe(1);
+    expect(fromSearch('?page=-2').applied.page).toBe(1);
+    expect(fromSearch('?page=2.5').applied.page).toBe(1);
+    expect(fromSearch('?page=abc').applied.page).toBe(1);
+    expect(fromSearch('?urgent_only=true&status=cancelled').draft.urgentOnly).toBe(true);
   });
 });
 

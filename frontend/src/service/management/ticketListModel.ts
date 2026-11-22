@@ -114,6 +114,51 @@ export function toListQuery(applied: AppliedList): TicketListQuery {
   return query;
 }
 
+// --- the list state in the URL (R17.4, R15.5) ------------------------------------------------------
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** `value` when it is a real calendar date written `YYYY-MM-DD`, else an empty string. */
+function validDate(value: string | null): string {
+  const match = value === null ? null : ISO_DATE.exec(value);
+  if (value === null || match === null) return '';
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const real = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  return real ? value : '';
+}
+
+/** The draft filters and the applied state a list link opens with. */
+export interface ListUrlState {
+  readonly draft: TicketListFilters;
+  readonly applied: AppliedList;
+}
+
+/**
+ * The list state of the URL search params, with the names `ticketListQuery` writes: `status` (repeatable),
+ * `search`, `category_id`, `city`, `urgent_only`, `date_from`, `date_to`, `urgent_first` and `page`.
+ * An unknown status, a flag other than `true`, a malformed date or a page that is not a positive integer is
+ * ignored. The draft equals the applied filters, so the controls show what the list is filtered by.
+ */
+export function listStateFromParams(params: URLSearchParams): ListUrlState {
+  const wanted = new Set(params.getAll('status'));
+  const filters: TicketListFilters = {
+    search: params.get('search') ?? '',
+    statuses: STATUS_ORDER.filter((status) => wanted.has(status)),
+    categoryId: (params.get('category_id') ?? '').trim(),
+    city: params.get('city') ?? '',
+    urgentOnly: params.get('urgent_only') === 'true',
+    dateFrom: validDate(params.get('date_from')),
+    dateTo: validDate(params.get('date_to')),
+  };
+  const rawPage = params.get('page') ?? '';
+  const page = /^\d+$/.test(rawPage) && Number(rawPage) >= 1 && Number.isSafeInteger(Number(rawPage)) ? Number(rawPage) : 1;
+  return {
+    draft: filters,
+    applied: { filters, urgentFirst: params.get('urgent_first') === 'true', page },
+  };
+}
+
 /** True when two applied states send the same request, so a re-submit must refetch instead of changing the key. */
 export function sameRequest(a: AppliedList, b: AppliedList): boolean {
   return JSON.stringify(toListQuery(a)) === JSON.stringify(toListQuery(b));
