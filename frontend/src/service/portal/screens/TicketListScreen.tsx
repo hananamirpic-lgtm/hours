@@ -12,6 +12,7 @@ import { useEffect, useRef, useState, type Ref } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { listTickets, ticketKeys } from '../../api/tickets';
 import { useAnnouncer } from '../Announcer';
+import { PageHeading } from '../PageHeading';
 import { directionOf, getLanguage, usePortalTranslation } from '../portalI18n';
 import {
   TICKET_LIST_QUERY_OPTIONS,
@@ -67,9 +68,9 @@ export function TicketListView({ state, pagination, fallbackPage, onRetry, onRef
 
   return (
     <section className="portal-ticket-list" dir={directionOf(language)} lang={language}>
-      <h1 ref={headingRef} tabIndex={-1}>
+      <PageHeading pageKey="list" headingRef={headingRef}>
         {t('portal.list.title')}
-      </h1>
+      </PageHeading>
 
       <div className="portal-list-actions">
         <Link to="/new" className="portal-button">

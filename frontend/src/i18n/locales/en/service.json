@@ -80,6 +80,7 @@
       "emptyAction": "Open a new ticket",
       "loadError": "Could not load your tickets.",
       "retry": "Try again",
+      "pageFallback": "That page is not available. Showing page {{page}}.",
       "pagination": {
         "label": "List pages",
         "previous": "Previous",
@@ -105,12 +106,16 @@
       "submit": "Send ticket",
       "submitting": "Sending…",
       "cancel": "Cancel and return to the list",
-      "submitFailed": "We could not confirm that the ticket was sent. Check your ticket list before you send it again."
+      "submitFailed": "We could not confirm that the ticket was sent. Check your ticket list before you send it again.",
+      "loadError": "Could not load the form right now.",
+      "retry": "Try again"
     },
     "confirmation": {
       "title": "Ticket sent",
       "message": "Ticket number {{number}} has been received.",
-      "toList": "Go to my tickets"
+      "toList": "Go to my tickets",
+      "neutralTitle": "My tickets",
+      "neutralMessage": "There is no new ticket to confirm here. Go to the ticket list to see your tickets."
     },
     "detail": {
       "back": "Back to the list",

@@ -60,16 +60,18 @@ export interface FlagGateViewProps {
   state: FlagGateState;
   onRetry: () => void;
   busy?: boolean;
+  /** What the not-available view shows. Default: the shared bilingual page; the customer portal passes its own. */
+  notAvailable?: ReactNode;
   children: ReactNode;
 }
 
 /** The gate without the query, so each view can be rendered for a given state. */
-export function FlagGateContent({ state, onRetry, busy = false, children }: FlagGateViewProps) {
+export function FlagGateContent({ state, onRetry, busy = false, notAvailable, children }: FlagGateViewProps) {
   switch (flagGateView(state)) {
     case 'content':
       return <>{children}</>;
     case 'not-available':
-      return <NotAvailable />;
+      return notAvailable ?? <NotAvailable />;
     case 'retry':
       return <RetryPanel onRetry={onRetry} busy={busy} />;
     case 'loading':
@@ -78,13 +80,15 @@ export function FlagGateContent({ state, onRetry, busy = false, children }: Flag
 }
 
 export interface FlagGateProps {
+  /** See FlagGateViewProps.notAvailable. */
+  notAvailable?: ReactNode;
   children: ReactNode;
 }
 
-export function FlagGate({ children }: FlagGateProps) {
+export function FlagGate({ notAvailable, children }: FlagGateProps) {
   const { state, refetch, isFetching } = useFeatures();
   return (
-    <FlagGateContent state={state} onRetry={refetch} busy={isFetching}>
+    <FlagGateContent state={state} onRetry={refetch} busy={isFetching} notAvailable={notAvailable}>
       {children}
     </FlagGateContent>
   );

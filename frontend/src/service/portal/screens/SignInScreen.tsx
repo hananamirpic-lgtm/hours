@@ -16,6 +16,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { portalFetch } from '../../api/portalFetch';
 import { useAnnouncer } from '../Announcer';
 import { customerTokenStore, useSessionExpired } from '../customerToken';
+import { PageHeading } from '../PageHeading';
 import { directionOf, resolveLanguage, usePortalTranslation } from '../portalI18n';
 import { AuthField } from './AuthField';
 import {
@@ -67,7 +68,7 @@ export function SignInForm({ values, feedback, pending, sessionExpired, onChange
 
   return (
     <section lang={language} dir={directionOf(language)}>
-      <h1>{t('portal.signIn.title')}</h1>
+      <PageHeading pageKey="signIn">{t('portal.signIn.title')}</PageHeading>
       <p>{t('portal.signIn.intro')}</p>
       {sessionExpired && (
         <p id={SIGN_IN_IDS.sessionExpired} className="portal-notice portal-notice--warning">

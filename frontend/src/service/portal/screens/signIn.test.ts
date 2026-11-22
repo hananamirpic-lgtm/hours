@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
+import { StaticRouter } from 'react-router-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PortalApiError } from '@/service/api/portalFetch';
 import { PortalAnnouncerProvider } from '@/service/portal/Announcer';
@@ -53,7 +54,10 @@ function text(language: PortalLanguage, key: string, count?: number): string {
 }
 
 function render(language: PortalLanguage, element: ReturnType<typeof createElement>): string {
-  return renderToStaticMarkup(createElement(I18nextProvider, { i18n: createPortalI18n(language) }, element));
+  // The page heading reads the location, so every render sits in a router.
+  return renderToStaticMarkup(
+    createElement(I18nextProvider, { i18n: createPortalI18n(language) }, createElement(StaticRouter, { location: '/' }, element)),
+  );
 }
 
 /** The `<input ...>` tag with this id. */
@@ -342,7 +346,7 @@ describe.each(LANGUAGES)('SignInForm markup in %s', (language) => {
 
   it('follows the language: lang and dir on the screen, the heading and the labels in that language', () => {
     expect(markup).toContain(`<section lang="${language}" dir="${dir}">`);
-    expect(markup).toContain(`<h1>${text(language, 'portal.signIn.title')}</h1>`);
+    expect(markup).toContain(`<h1 tabindex="-1" class="portal-page-heading">${text(language, 'portal.signIn.title')}</h1>`);
     expect(markup).toContain(text(language, 'portal.signIn.phone'));
     expect(markup).toContain(text(language, 'portal.signIn.password'));
     expect(markup).toContain(text(language, 'portal.signIn.submit'));
@@ -472,7 +476,7 @@ describe('SignInScreen container markup', () => {
         createElement(PortalAnnouncerProvider, null, createElement(SignInScreen)),
       ),
     );
-    expect(markup).toContain(`<h1>${text(language, 'portal.signIn.title')}</h1>`);
+    expect(markup).toContain(`<h1 tabindex="-1" class="portal-page-heading">${text(language, 'portal.signIn.title')}</h1>`);
     expect(inputTag(markup, SIGN_IN_IDS.phone)).toContain('value=""');
     expect(markup).toMatch(/<button[^>]*type="submit"(?![^>]*disabled)[^>]*>/);
     expect(markup.match(/role="alert"/g)).toHaveLength(1);

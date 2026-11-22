@@ -23,6 +23,7 @@ import {
 import { PortalAnnouncerProvider } from '@/service/portal/Announcer';
 import { LanguageSwitch } from '@/service/portal/LanguageSwitch';
 import { PortalApp } from '@/service/portal/PortalApp';
+import { ltrIsolate } from '@/service/portal/screens/ticketDetailModel';
 import { isolateLtr } from '@/service/portal/PortalShell';
 import {
   CUSTOMER_TOKEN_KEY,
@@ -710,7 +711,7 @@ describe('portal shell', () => {
     expect(html).toContain(`<a href="/service/accessibility">${heService.portal.footer.accessibilityLink}</a>`);
     expect(html).toMatch(/<div role="status" aria-live="polite" aria-atomic="true"[^>]*><\/div>/);
     expect(html).toMatch(/<div role="alert" aria-live="assertive" aria-atomic="true"[^>]*><\/div>/);
-    expect(html).toContain(`<h1>${heService.a11y.statement.title}</h1>`);
+    expect(html).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heService.a11y.statement.title}</h1>`);
   });
 
   it('renders in English too, with the contact from the feature answer isolated left-to-right', () => {
@@ -740,7 +741,7 @@ describe('portal shell', () => {
   it('renders the sign-in screen in place of every gated path while there is no token', () => {
     for (const path of ['/', '/new', '/new/done', '/tickets/10001', '/nowhere']) {
       const html = renderApp({ path });
-      expect(html).toContain(`<h1>${heService.portal.signIn.title}</h1>`);
+      expect(html).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heService.portal.signIn.title}</h1>`);
       expect(html).not.toContain(heService.portal.list.title);
       expect(html).not.toContain(heService.portal.account.signOut);
     }
@@ -750,19 +751,20 @@ describe('portal shell', () => {
     const cases: [string, string][] = [
       ['/', heService.portal.list.title],
       ['/new', heService.portal.form.title],
-      ['/new/done', heService.portal.confirmation.title],
-      ['/tickets/10001', heService.portal.pageTitle.detail.replace('{{number}}', '10001')],
+      // No router state: the neutral page, never a ticket number the customer did not just receive.
+      ['/new/done', heService.portal.confirmation.neutralTitle],
+      ['/tickets/10001', heService.portal.pageTitle.detail.replace('{{number}}', ltrIsolate('10001'))],
     ];
     for (const [path, heading] of cases) {
       const html = renderWithToken({ path, profile: PROFILE });
-      expect(html).toContain(`<h1>${heading}</h1>`);
+      expect(html).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heading}</h1>`);
       expect(html).toContain(heService.portal.account.signOut);
     }
   });
 
   it('renders the not-found screen, with no ticket data, for an unknown path', () => {
     const html = renderWithToken({ path: '/nowhere/at/all', profile: PROFILE });
-    expect(html).toContain(`<h1>${heService.portal.notFound.title}</h1>`);
+    expect(html).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heService.portal.notFound.title}</h1>`);
     expect(html).not.toContain(heService.portal.list.title);
     expect(html).not.toContain('10001');
   });
@@ -770,15 +772,15 @@ describe('portal shell', () => {
   it('renders the change-password screen in place of every gated path while must_change_password is set', () => {
     for (const path of ['/', '/new', '/tickets/10001', '/nowhere']) {
       const html = renderWithToken({ path, profile: { ...PROFILE, must_change_password: true } });
-      expect(html).toContain(`<h1>${heService.portal.changePassword.title}</h1>`);
+      expect(html).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heService.portal.changePassword.title}</h1>`);
       expect(html).not.toContain(heService.portal.list.title);
     }
   });
 
   it('keeps the accessibility statement reachable during a forced password change and without a token', () => {
     const html = renderWithToken({ path: '/accessibility', profile: { ...PROFILE, must_change_password: true } });
-    expect(html).toContain(`<h1>${heService.a11y.statement.title}</h1>`);
-    expect(renderApp({ path: '/accessibility' })).toContain(`<h1>${heService.a11y.statement.title}</h1>`);
+    expect(html).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heService.a11y.statement.title}</h1>`);
+    expect(renderApp({ path: '/accessibility' })).toContain(`<h1 tabindex="-1" class="portal-page-heading">${heService.a11y.statement.title}</h1>`);
   });
 
   it('shows a loading line, not the sign-in screen, while the profile of a stored token is outstanding', () => {
@@ -791,6 +793,9 @@ describe('portal shell', () => {
     for (const path of ['/', '/accessibility', '/tickets/10001']) {
       const html = renderWithToken({ path, flag: 'off', profile: PROFILE });
       expect(html).toContain('Service tickets are not available right now.');
+      // The one <h1> is the portal's focusable heading, so the page gets a title and focus like the others.
+      expect(html.match(/<h1[ >]/g)).toHaveLength(1);
+      expect(html).toContain('<h1 tabindex="-1" class="portal-page-heading">');
       expect(html).not.toContain('portal-skip-link');
       expect(html).not.toContain('<footer');
       expect(html).not.toContain('<form');

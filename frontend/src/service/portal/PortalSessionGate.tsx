@@ -7,7 +7,8 @@ import { useEffect, type ReactNode } from 'react';
 import { useAnnouncer } from './Announcer';
 import { useSessionExpired } from './customerToken';
 import { usePortalTranslation } from './portalI18n';
-import { ChangePasswordScreen, SignInScreen } from './screens/placeholders';
+import { ChangePasswordScreen } from './screens/ChangePasswordScreen';
+import { SignInScreen } from './screens/SignInScreen';
 import { usePortalSession, type SessionView } from './session';
 
 export interface SessionViewContentProps {

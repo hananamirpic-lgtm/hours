@@ -17,7 +17,6 @@ import { createPortalI18n, type PortalLanguage } from '../portalI18n';
 import { portalKeys, type CustomerProfile } from '../session';
 import { ConfirmationView } from './ConfirmationScreen';
 import { TicketForm, TicketFormFrame, TicketFormScreen, type TicketFormProps } from './TicketFormScreen';
-import keys233 from './keys-23-3.json';
 import {
   FORM_FIELD_ORDER,
   MAX_PHOTO_BYTES,
@@ -54,7 +53,6 @@ const EMPTY: FormValues = initialValues({ city: null, apartment: null, phone: '0
 
 function i18nFor(language: PortalLanguage) {
   const instance = createPortalI18n(language);
-  for (const lng of ['he', 'en'] as const) instance.addResourceBundle(lng, 'service', keys233[lng], true, true);
   return instance;
 }
 
@@ -91,7 +89,6 @@ function renderForm(language: PortalLanguage, overrides: Partial<TicketFormProps
         StaticRouter,
         { location: '/new' },
         createElement(TicketFormFrame, {
-          headingRef: null,
           children: createElement(TicketForm, formProps(language, overrides)),
         }),
       ),
@@ -381,16 +378,8 @@ describe('confirmation state', () => {
 
 // --- locale keys -----------------------------------------------------------------------------------
 
-describe('keys-23-3.json', () => {
-  function paths(value: unknown, prefix = ''): string[] {
-    if (typeof value === 'string') return [prefix];
-    return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => paths(child, prefix === '' ? key : `${prefix}.${key}`));
-  }
-  it('has the same keys in Hebrew and English, all under portal.', () => {
-    expect(paths(keys233.he).sort()).toEqual(paths(keys233.en).sort());
-    expect(paths(keys233.he).every((path) => path.startsWith('portal.'))).toBe(true);
-  });
-  it('covers every text the form and the confirmation use that is not in the shipped locale', () => {
+describe('service locale keys of the form and the confirmation', () => {
+  it('covers every text the form and the confirmation use', () => {
     const merged = i18nFor('en');
     const used = [
       'portal.form.title', 'portal.form.intro', 'portal.form.requiredNote', 'portal.form.categoryPlaceholder', 'portal.form.photoHint',
@@ -404,7 +393,7 @@ describe('keys-23-3.json', () => {
       const instance = i18nFor(language);
       for (const key of used) expect(instance.exists(key), `${language} ${key}`).toBe(true);
     }
-    expect(merged.t('portal.form.loadError')).toBe(keys233.en.portal.form.loadError);
+    expect(merged.t('portal.form.loadError')).toBe(enService.portal.form.loadError);
   });
 });
 
@@ -740,7 +729,7 @@ describe('ConfirmationView markup', () => {
       createElement(
         I18nextProvider,
         { i18n: i18nFor(language) },
-        createElement(StaticRouter, { location: '/new/done' }, createElement(ConfirmationView, { ticketNumber, headingRef: null })),
+        createElement(StaticRouter, { location: '/new/done' }, createElement(ConfirmationView, { ticketNumber })),
       ),
     );
   }

@@ -19,20 +19,20 @@
 // confirmation survives a reload without a second submit.
 //
 // `FlagGate` wraps everything, outside the session gate, so with the flag off or unknown no sign-in
-// screen can render (R8.2, R21.5). The two live regions are above `FlagGate`.
+// screen can render (R8.2, R21.5). The two live regions are above `FlagGate`. With the flag off, the gate
+// shows `PortalNotAvailable` (same text as the shared page, but with the portal `PageHeading`).
 import { Outlet, Route, Routes } from 'react-router-dom';
 import { FlagGate } from '../gates/FlagGate';
 import { PortalAnnouncerProvider } from './Announcer';
+import { PortalNotAvailable } from './PortalNotAvailable';
 import { PortalSessionGate } from './PortalSessionGate';
 import { PortalShell } from './PortalShell';
+import { AccessibilityStatementScreen } from './screens/AccessibilityStatementScreen';
+import { ConfirmationScreen } from './screens/ConfirmationScreen';
 import { NotFoundScreen } from './screens/NotFoundScreen';
-import {
-  AccessibilityStatement,
-  ConfirmationScreen,
-  NewTicketScreen,
-  TicketDetailScreen,
-  TicketListScreen,
-} from './screens/placeholders';
+import { TicketDetailScreen } from './screens/TicketDetailScreen';
+import { TicketFormScreen } from './screens/TicketFormScreen';
+import { TicketListScreen } from './screens/TicketListScreen';
 
 /** Layout route: every child renders behind the session gate. */
 function GatedLayout() {
@@ -47,10 +47,10 @@ export function PortalRoutes() {
   return (
     <Routes>
       <Route element={<PortalShell />}>
-        <Route path="accessibility" element={<AccessibilityStatement />} />
+        <Route path="accessibility" element={<AccessibilityStatementScreen />} />
         <Route element={<GatedLayout />}>
           <Route index element={<TicketListScreen />} />
-          <Route path="new" element={<NewTicketScreen />} />
+          <Route path="new" element={<TicketFormScreen />} />
           <Route path="new/done" element={<ConfirmationScreen />} />
           <Route path="tickets/:ticketNumber" element={<TicketDetailScreen />} />
           <Route path="*" element={<NotFoundScreen />} />
@@ -64,7 +64,7 @@ export function PortalRoutes() {
 export function PortalApp() {
   return (
     <PortalAnnouncerProvider>
-      <FlagGate>
+      <FlagGate notAvailable={<PortalNotAvailable />}>
         <PortalRoutes />
       </FlagGate>
     </PortalAnnouncerProvider>

@@ -6,6 +6,7 @@
 import type { Ref } from 'react';
 import { Link } from 'react-router-dom';
 import type { CustomerTicketDetail, FormLabels } from '../../api/ticketDetail';
+import { PageHeading } from '../PageHeading';
 import { directionOf, usePortalTranslation, type PortalLanguage } from '../portalI18n';
 import {
   URGENT_ICON,
@@ -91,9 +92,9 @@ export function TicketDetailView({
 
   return (
     <section className="ticket-detail" lang={language} dir={directionOf(language)}>
-      <h1 ref={headingRef} tabIndex={-1}>
+      <PageHeading pageKey="detail" params={{ number: String(ticket.ticket_number) }} headingRef={headingRef}>
         {t('portal.pageTitle.detail', { number: ltrIsolate(String(ticket.ticket_number)) })}
-      </h1>
+      </PageHeading>
 
       <div className="ticket-detail-toolbar">
         <Link to="/" className="portal-button portal-button--quiet">
@@ -190,9 +191,9 @@ export function TicketDetailMessage({ ticketNumber, language, state, headingRef,
   const { t } = usePortalTranslation();
   return (
     <section className="ticket-detail" lang={language} dir={directionOf(language)} aria-busy={state.kind === 'loading'}>
-      <h1 ref={headingRef} tabIndex={-1}>
+      <PageHeading pageKey="detail" params={{ number: String(ticketNumber) }} headingRef={headingRef}>
         {t('portal.pageTitle.detail', { number: ltrIsolate(String(ticketNumber)) })}
-      </h1>
+      </PageHeading>
       <div className="ticket-detail-toolbar">
         <Link to="/" className="portal-button portal-button--quiet">
           {t('portal.detail.back')}
@@ -222,9 +223,9 @@ export function TicketNotFoundPanel({ language, headingRef }: TicketNotFoundPane
   const { t } = usePortalTranslation();
   return (
     <section className="ticket-detail" lang={language} dir={directionOf(language)}>
-      <h1 ref={headingRef} tabIndex={-1}>
+      <PageHeading pageKey="notFound" headingRef={headingRef}>
         {t('portal.detail.notFound.title')}
-      </h1>
+      </PageHeading>
       <p>{t('portal.detail.notFound.body')}</p>
       <p>
         <Link to="/" className="portal-button">

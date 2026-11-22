@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
+import { StaticRouter } from 'react-router-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PortalApiError, handleUnauthorized } from '@/service/api/portalFetch';
 import { PortalAnnouncerProvider } from '@/service/portal/Announcer';
@@ -39,7 +40,10 @@ function text(language: PortalLanguage, key: string, count?: number): string {
 }
 
 function render(language: PortalLanguage, element: ReturnType<typeof createElement>): string {
-  return renderToStaticMarkup(createElement(I18nextProvider, { i18n: createPortalI18n(language) }, element));
+  // The page heading reads the location, so every render sits in a router.
+  return renderToStaticMarkup(
+    createElement(I18nextProvider, { i18n: createPortalI18n(language) }, createElement(StaticRouter, { location: '/' }, element)),
+  );
 }
 
 function inputTag(markup: string, id: string): string {
@@ -225,7 +229,7 @@ describe.each(LANGUAGES)('ChangePasswordForm markup in %s', (language) => {
 
   it('follows the language: lang and dir on the screen, heading, intro and labels in that language', () => {
     expect(markup).toContain(`<section lang="${language}" dir="${dir}">`);
-    expect(markup).toContain(`<h1>${text(language, 'portal.changePassword.title')}</h1>`);
+    expect(markup).toContain(`<h1 tabindex="-1" class="portal-page-heading">${text(language, 'portal.changePassword.title')}</h1>`);
     expect(markup).toContain(text(language, 'portal.changePassword.intro'));
     expect(markup).toContain(text(language, 'portal.changePassword.submit'));
   });
@@ -321,7 +325,7 @@ describe('ChangePasswordScreen container markup', () => {
         createElement(PortalAnnouncerProvider, null, createElement(ChangePasswordScreen)),
       ),
     );
-    expect(markup).toContain(`<h1>${text(language, 'portal.changePassword.title')}</h1>`);
+    expect(markup).toContain(`<h1 tabindex="-1" class="portal-page-heading">${text(language, 'portal.changePassword.title')}</h1>`);
     expect(inputTag(markup, CHANGE_PASSWORD_IDS.current_password)).toContain('value=""');
     expect(markup.match(/role="alert"/g)).toHaveLength(1);
   });

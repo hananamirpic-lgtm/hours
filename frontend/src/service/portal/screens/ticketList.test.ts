@@ -13,7 +13,6 @@ import { isTicketPage, ticketKeys } from '../../api/tickets';
 import type { TicketPage, TicketRow } from '../../api/ticketTypes';
 import type { TicketStatus } from '../../types';
 import { createPortalI18n, type PortalLanguage } from '../portalI18n';
-import keys232 from './keys-23-2.json';
 import { TicketListScreen, TicketListView, type TicketListViewProps } from './TicketListScreen';
 import {
   ANNOUNCEMENT_GAP_MS,
@@ -364,8 +363,6 @@ describe('announcementTexts and scheduleAnnouncements', () => {
 
 function i18nFor(language: PortalLanguage) {
   const instance = createPortalI18n(language);
-  // The key of task 23.2 is merged into service.json by task 23.6; add it here so the test reads it.
-  instance.addResourceBundle(language, 'service', keys232[language], true, true);
   return instance;
 }
 
@@ -530,7 +527,7 @@ describe('TicketListView markup', () => {
     expect(en).toContain('That page is not available. Showing page 1.');
     expect(en).toContain('role="status"');
     const he = renderView('he', viewProps({ data: SAMPLE, fallbackPage: 1 }));
-    expect(he).toContain(keys232.he.portal.list.pageFallback.replace('{{page}}', '1'));
+    expect(he).toContain(heService.portal.list.pageFallback.replace('{{page}}', '1'));
     expect(renderView('en', viewProps({ data: SAMPLE }))).not.toContain('That page is not available');
   });
 });

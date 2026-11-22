@@ -15,6 +15,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { portalFetch } from '../../api/portalFetch';
 import { useAnnouncer } from '../Announcer';
 import { customerTokenStore } from '../customerToken';
+import { PageHeading } from '../PageHeading';
 import { directionOf, resolveLanguage, usePortalTranslation } from '../portalI18n';
 import { AuthField } from './AuthField';
 import {
@@ -66,7 +67,7 @@ export function ChangePasswordForm({ values, feedback, pending, onChange, onSubm
 
   return (
     <section lang={language} dir={directionOf(language)}>
-      <h1>{t('portal.changePassword.title')}</h1>
+      <PageHeading pageKey="changePassword">{t('portal.changePassword.title')}</PageHeading>
       <p>{t('portal.changePassword.intro')}</p>
       <form noValidate aria-busy={pending} onSubmit={handleSubmit}>
         {formError !== null && (

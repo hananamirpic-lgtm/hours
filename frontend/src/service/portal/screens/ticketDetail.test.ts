@@ -513,7 +513,7 @@ describe('TicketDetailView markup', () => {
   });
 
   it('isolates the number in the heading', () => {
-    expect(viewOf('en')).toContain(`<h1 tabindex="-1">Ticket ${ltrIsolate('12345')}</h1>`);
+    expect(viewOf('en')).toContain(`<h1 tabindex="-1" class="portal-page-heading">Ticket ${ltrIsolate('12345')}</h1>`);
     expect(viewOf('he')).toContain(ltrIsolate('12345'));
   });
 

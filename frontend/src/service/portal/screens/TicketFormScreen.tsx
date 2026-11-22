@@ -14,16 +14,16 @@
 // and the gallery in one chooser (R11.1). The preview is an object URL, revoked when the photo changes
 // and on unmount.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FORM_LABEL_KEYS, type FormConfig, type FormSettings } from '../../api/formTypes';
 import { createTicket, formConfigKey, getFormConfig, getMe } from '../../api/ticketCreate';
 import { ticketKeys } from '../../api/tickets';
 import { useAnnouncer } from '../Announcer';
 import type { FieldErrors } from '../formErrors';
+import { PageHeading } from '../PageHeading';
 import { directionOf, getLanguage, usePortalTranslation } from '../portalI18n';
 import { portalKeys } from '../session';
-import { usePageChrome } from '../usePageChrome';
 import {
   CONFIRMATION_PATH,
   NOTICE_ID,
@@ -112,14 +112,12 @@ function FieldError({ field, text }: { field: string; text: string | null }) {
 }
 
 /** The one `<h1>` of the screen and its language and direction. Stays mounted while the form loads. */
-export function TicketFormFrame({ headingRef, children }: { headingRef: Ref<HTMLHeadingElement> | null; children: ReactNode }) {
+export function TicketFormFrame({ children }: { children: ReactNode }) {
   const { t, i18n } = usePortalTranslation();
   const language = getLanguage(i18n);
   return (
     <section className="portal-ticket-form" lang={language} dir={directionOf(language)}>
-      <h1 ref={headingRef} tabIndex={-1}>
-        {t('portal.form.title')}
-      </h1>
+      <PageHeading pageKey="newTicket">{t('portal.form.title')}</PageHeading>
       {children}
     </section>
   );
@@ -535,9 +533,8 @@ function TicketFormLoader() {
 
 /** Route `/new`. */
 export function TicketFormScreen() {
-  const headingRef = usePageChrome('newTicket');
   return (
-    <TicketFormFrame headingRef={headingRef}>
+    <TicketFormFrame>
       <TicketFormLoader />
     </TicketFormFrame>
   );
