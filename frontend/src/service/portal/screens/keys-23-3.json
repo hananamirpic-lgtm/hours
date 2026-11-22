@@ -1,0 +1,26 @@
+{
+  "he": {
+    "portal": {
+      "form": {
+        "loadError": "לא ניתן לטעון את הטופס כרגע.",
+        "retry": "נסו שוב"
+      },
+      "confirmation": {
+        "neutralTitle": "הקריאות שלי",
+        "neutralMessage": "אין כאן קריאה חדשה לאישור. אפשר לעבור לרשימת הקריאות ולראות את הקריאות שלכם."
+      }
+    }
+  },
+  "en": {
+    "portal": {
+      "form": {
+        "loadError": "Could not load the form right now.",
+        "retry": "Try again"
+      },
+      "confirmation": {
+        "neutralTitle": "My tickets",
+        "neutralMessage": "There is no new ticket to confirm here. Go to the ticket list to see your tickets."
+      }
+    }
+  }
+}
