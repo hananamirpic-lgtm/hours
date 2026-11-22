@@ -1,0 +1,28 @@
+{
+  "en": {
+    "management": {
+      "customers": {
+        "rowAction": "{{action}}: {{name}}",
+        "working": "Working…",
+        "form": {
+          "fullNameHint": "1 to 100 characters",
+          "cityHint": "Up to 100 characters",
+          "apartmentHint": "Up to 20 characters"
+        }
+      }
+    }
+  },
+  "he": {
+    "management": {
+      "customers": {
+        "rowAction": "{{action}}: {{name}}",
+        "working": "מבצע…",
+        "form": {
+          "fullNameHint": "1 עד 100 תווים",
+          "cityHint": "עד 100 תווים",
+          "apartmentHint": "עד 20 תווים"
+        }
+      }
+    }
+  }
+}
