@@ -1,0 +1,18 @@
+{
+  "en": {
+    "management": {
+      "notAuthorized": {
+        "home": "Go to your home page",
+        "portal": "Go to the customer portal"
+      }
+    }
+  },
+  "he": {
+    "management": {
+      "notAuthorized": {
+        "home": "מעבר לדף הבית שלך",
+        "portal": "מעבר לפורטל הלקוחות"
+      }
+    }
+  }
+}

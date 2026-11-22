@@ -40,7 +40,17 @@ import { RedirectIfAuthenticated, RequireAuth } from '@/app/guards';
 import { LoginScreen } from '@/auth/LoginScreen';
 import { FlagGate } from '@/service/gates/FlagGate';
 import { TechnicianGate } from '@/service/gates/TechnicianGate';
-import { TicketsRoutePlaceholder } from '@/service/gates/TicketsRoutePlaceholder';
+import { ManagementLayout } from '@/service/management/ManagementLayout';
+import { CategoriesPage } from '@/service/management/pages/CategoriesPage';
+import { CustomersPage as TicketCustomersPage } from '@/service/management/pages/CustomersPage';
+import { DashboardPage as TicketDashboardPage } from '@/service/management/pages/DashboardPage';
+import { LabelsPage } from '@/service/management/pages/LabelsPage';
+import { OptionsPage } from '@/service/management/pages/OptionsPage';
+import { ReportsPage as TicketReportsPage } from '@/service/management/pages/ReportsPage';
+import { TicketDetailPage } from '@/service/management/pages/TicketDetailPage';
+import { TicketListPage } from '@/service/management/pages/TicketListPage';
+import { RequireConfigStaff } from '@/service/management/RequireConfigStaff';
+import { RequireTicketStaff } from '@/service/management/RequireTicketStaff';
 
 export default function App() {
   return (
@@ -74,21 +84,57 @@ export default function App() {
       </Route>
 
       {/*
-        Service-ticket management interface. A placeholder until task 24.1 adds the real route tree;
-        it exists so the technician redirect to /tickets has somewhere to land.
+        Service-ticket management interface (design "Routes"). The flag gate is outermost, so with the flag
+        off or unknown no sign-in or ticket screen renders at any /tickets path. Inside it, RequireTicketStaff
+        sends a visitor with no staff session to /login and shows a not-authorized page to any other role or
+        to a customer token. The forced password change and the 2FA enrolment come before any screen, as in
+        the console. The three configuration screens add RequireConfigStaff (a technician sees "not available").
       */}
       <Route
-        path="/tickets/*"
+        path="/tickets"
         element={
-          <RequireAuth tree="console">
-            <ChangePasswordGate>
-              <FlagGate>
-                <TicketsRoutePlaceholder />
-              </FlagGate>
-            </ChangePasswordGate>
-          </RequireAuth>
+          <FlagGate>
+            <RequireTicketStaff>
+              <ChangePasswordGate>
+                <TwoFactorGate>
+                  <ManagementLayout />
+                </TwoFactorGate>
+              </ChangePasswordGate>
+            </RequireTicketStaff>
+          </FlagGate>
         }
-      />
+      >
+        <Route index element={<TicketDashboardPage />} />
+        <Route path="list" element={<TicketListPage />} />
+        <Route path="list/:ticketNumber" element={<TicketDetailPage />} />
+        <Route path="customers" element={<TicketCustomersPage />} />
+        <Route path="reports" element={<TicketReportsPage />} />
+        <Route
+          path="settings/categories"
+          element={
+            <RequireConfigStaff>
+              <CategoriesPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/labels"
+          element={
+            <RequireConfigStaff>
+              <LabelsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/options"
+          element={
+            <RequireConfigStaff>
+              <OptionsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
 
       {/* Management console tree */}
       <Route
