@@ -45,6 +45,21 @@ Resources:
           # AWS managed "CachingOptimized"
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
         CacheBehaviors:
+          # Service-ticket API: same as /api/* (never cached, same methods) but with an
+          # origin request policy that also forwards CloudFront-Viewer-Address, so the
+          # API can rate-limit by the real browser address. Must stay BEFORE /api/*
+          # (CloudFront matches behaviors in list order).
+          - PathPattern: /api/service/*
+            TargetOriginId: ec2-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            Compress: true
+            # AWS managed "CachingDisabled"
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # AWS managed "AllViewerAndCloudFrontHeaders-2022-06" - all viewer headers
+            # (incl. Authorization), cookies and query strings, plus CloudFront headers
+            # such as CloudFront-Viewer-Address.
+            OriginRequestPolicyId: 33f36d7e-f396-46d9-90e0-52428a34d9dc
           # The API: dynamic and authenticated. Never cache; forward auth/cookies/query.
           - PathPattern: /api/*
             TargetOriginId: ec2-origin
