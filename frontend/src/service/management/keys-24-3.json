@@ -1,0 +1,16 @@
+{
+  "en": {
+    "management": {
+      "tickets": {
+        "actionLabel": "{{action}}, ticket {{number}}"
+      }
+    }
+  },
+  "he": {
+    "management": {
+      "tickets": {
+        "actionLabel": "{{action}}, קריאה {{number}}"
+      }
+    }
+  }
+}
