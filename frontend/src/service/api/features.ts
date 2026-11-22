@@ -31,7 +31,7 @@
  * would be unsafe, so it is 'unknown' and the user may retry.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { skipToken, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 /** The state of the flag as the front end sees it, once discovery has finished. */
 export type FeatureFlagState = 'on' | 'off' | 'unknown';
@@ -59,6 +59,14 @@ export const FEATURES_STALE_TIME_MS = 5 * 60 * 1000;
 export const featuresKeys = {
   all: ['features'] as const,
 };
+
+/**
+ * Where the accessibility contact of the last `on` answer is kept (R23.10, design "Feature discovery").
+ * It is a separate cache entry written by the same request, so the flag's own entry above keeps its
+ * plain `'on' | 'off'` data and one request serves both. The root differs from `featuresKeys.all` so
+ * that invalidating the flag never touches it.
+ */
+export const featuresContactKey = ['features-contact'] as const;
 
 /** Ask the API whether the service-ticket system is on. Never rejects. */
 export async function fetchFeatures(timeoutMs: number = FEATURES_TIMEOUT_MS): Promise<FeaturesFetchResult> {
@@ -117,6 +125,19 @@ export function interpretFeatures(result: FeaturesFetchResult): FeatureFlagState
 }
 
 /**
+ * The accessibility contact (a phone number or e-mail address) of an `on` answer, trimmed, or null when
+ * the flag is not on, the key is missing or not a string, or the text is empty. Pure.
+ */
+export function accessibilityContactOf(result: FeaturesFetchResult): string | null {
+  if (interpretFeatures(result) !== 'on' || result.kind !== 'response' || !result.body.ok) {
+    return null;
+  }
+  const value = result.body.value as { accessibility_contact?: unknown };
+  const contact = value.accessibility_contact;
+  return typeof contact === 'string' && contact.trim() !== '' ? contact.trim() : null;
+}
+
+/**
  * Thrown by the query function when the answer is 'unknown', so that TanStack Query holds an error
  * rather than caching "unknown" as data for five minutes. A later mount or a manual retry then asks
  * again.
@@ -128,11 +149,13 @@ export class FeaturesUnknownError extends Error {
   }
 }
 
-async function loadFeatureFlag(): Promise<'on' | 'off'> {
-  const state = interpretFeatures(await fetchFeatures());
+async function loadFeatureFlag(client: QueryClient): Promise<'on' | 'off'> {
+  const result = await fetchFeatures();
+  const state = interpretFeatures(result);
   if (state === 'unknown') {
     throw new FeaturesUnknownError();
   }
+  client.setQueryData(featuresContactKey, accessibilityContactOf(result));
   return state;
 }
 
@@ -152,11 +175,21 @@ export interface UseFeaturesResult {
   isFetching: boolean;
 }
 
+export interface UseFeaturesOptions {
+  /**
+   * False skips the request (the state then stays 'loading'). For callers that only need the flag
+   * for some roles, such as the console navigation. Default true.
+   */
+  enabled?: boolean;
+}
+
 /** The flag state for the current screen. One shared query, key `['features']`. */
-export function useFeatures(): UseFeaturesResult {
+export function useFeatures(options: UseFeaturesOptions = {}): UseFeaturesResult {
+  const client = useQueryClient();
   const query = useQuery({
     queryKey: featuresKeys.all,
-    queryFn: loadFeatureFlag,
+    queryFn: () => loadFeatureFlag(client),
+    enabled: options.enabled ?? true,
     staleTime: FEATURES_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     // The retry panel offers a manual retry, so no automatic retries here.
@@ -170,4 +203,16 @@ export function useFeatures(): UseFeaturesResult {
     },
     isFetching: query.isFetching,
   };
+}
+
+/** The accessibility contact from the feature-discovery answer, or null while unknown, off or empty. */
+export function useAccessibilityContact(): string | null {
+  const query = useQuery<string | null>({
+    queryKey: featuresContactKey,
+    // Never fetches: the value is written by the feature-flag request above.
+    queryFn: skipToken,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  return query.data ?? null;
 }

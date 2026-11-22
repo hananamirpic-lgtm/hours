@@ -19,7 +19,7 @@ import { BILINGUAL_SEPARATOR, LOADING_TEXT, RETRY_BUTTON_TEXT, RETRY_TEXT, type 
 import { NotAvailable, pageStyle } from './NotAvailable';
 import { flagGateView } from './flagGateView';
 
-function Bilingual({ text }: { text: BilingualText }) {
+export function Bilingual({ text }: { text: BilingualText }) {
   return (
     <>
       <span lang="he" dir="rtl">

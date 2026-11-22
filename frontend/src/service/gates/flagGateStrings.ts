@@ -40,3 +40,19 @@ export const LOADING_TEXT: BilingualText = {
   he: 'טוען…',
   en: 'Loading…',
 };
+
+/**
+ * The technician notice (Requirement 21.7) reuses NOT_AVAILABLE_TEXT as its message. Its one control
+ * is the sign-out button. The same Hebrew and English words as the staff catalogue's `auth.signOut`,
+ * written here because the staff i18n instance is not used by these gates.
+ */
+export const SIGN_OUT_TEXT: BilingualText = {
+  he: 'התנתקות',
+  en: 'Sign out',
+};
+
+/** The heading of the temporary `/tickets` placeholder that the management interface replaces. */
+export const TICKETS_HEADING_TEXT: BilingualText = {
+  he: 'קריאות שירות',
+  en: 'Service tickets',
+};

@@ -19,14 +19,19 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/auth/AuthProvider';
-import { navFor } from '@/app/navigation';
+import { isOperationalAdmin } from '@/app/navigation';
 import { GlobalSearch } from '@/app/search/GlobalSearch';
 import { LanguageToggle } from '@/components/LanguageToggle';
+import { useFeatures } from '@/service/api/features';
+import { consoleNavItems } from '@/service/gates/technicianRouting';
 
 export function ConsoleShell() {
   const { t } = useTranslation();
   const { user, signOut } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
+  // Only administrators and operations administrators can get the tickets entry, so only they ask for
+  // the flag. It never blocks the shell: until the answer arrives the entry is simply absent.
+  const { state: flagState } = useFeatures({ enabled: isOperationalAdmin(user?.role) });
 
   // Escape closes the off-canvas menu, the ordinary dismissal for an overlay panel.
   useEffect(() => {
@@ -46,7 +51,7 @@ export function ConsoleShell() {
     return null;
   }
 
-  const items = navFor(user.role);
+  const items = consoleNavItems(user.role, flagState);
 
   return (
     <div className="shell">

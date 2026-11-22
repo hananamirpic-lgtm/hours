@@ -38,6 +38,9 @@ import { NotFoundPage } from '@/app/NotFoundPage';
 import { PlaceholderPage } from '@/app/PlaceholderPage';
 import { RedirectIfAuthenticated, RequireAuth } from '@/app/guards';
 import { LoginScreen } from '@/auth/LoginScreen';
+import { FlagGate } from '@/service/gates/FlagGate';
+import { TechnicianGate } from '@/service/gates/TechnicianGate';
+import { TicketsRoutePlaceholder } from '@/service/gates/TicketsRoutePlaceholder';
 
 export default function App() {
   return (
@@ -70,15 +73,34 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
 
+      {/*
+        Service-ticket management interface. A placeholder until task 24.1 adds the real route tree;
+        it exists so the technician redirect to /tickets has somewhere to land.
+      */}
+      <Route
+        path="/tickets/*"
+        element={
+          <RequireAuth tree="console">
+            <ChangePasswordGate>
+              <FlagGate>
+                <TicketsRoutePlaceholder />
+              </FlagGate>
+            </ChangePasswordGate>
+          </RequireAuth>
+        }
+      />
+
       {/* Management console tree */}
       <Route
         path="/"
         element={
           <RequireAuth tree="console">
             <ChangePasswordGate>
-              <TwoFactorGate>
-                <ConsoleShell />
-              </TwoFactorGate>
+              <TechnicianGate>
+                <TwoFactorGate>
+                  <ConsoleShell />
+                </TwoFactorGate>
+              </TechnicianGate>
             </ChangePasswordGate>
           </RequireAuth>
         }
