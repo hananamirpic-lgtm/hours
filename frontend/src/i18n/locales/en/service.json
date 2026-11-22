@@ -1,0 +1,510 @@
+{
+  "portal": {
+    "appName": "Service tickets",
+    "pageTitle": {
+      "template": "{{page}} — Service tickets",
+      "signIn": "Sign in",
+      "changePassword": "Choose a new password",
+      "list": "My tickets",
+      "newTicket": "New ticket",
+      "confirmation": "Ticket sent",
+      "detail": "Ticket {{number}}",
+      "notFound": "Ticket not found",
+      "accessibility": "Accessibility statement",
+      "unavailable": "Service unavailable"
+    },
+    "nav": {
+      "label": "Main navigation",
+      "tickets": "My tickets",
+      "newTicket": "New ticket"
+    },
+    "language": {
+      "label": "Language",
+      "switchTo": "עברית"
+    },
+    "account": {
+      "signedInAs": "Signed in as {{name}}",
+      "signOut": "Sign out"
+    },
+    "loading": "Loading…",
+    "notAvailable": {
+      "title": "השירות אינו זמין כרגע / The service is currently unavailable",
+      "body": "מערכת קריאות השירות אינה זמינה כרגע. / The service ticket system is not available at the moment."
+    },
+    "featuresError": {
+      "message": "Could not check whether the service is available. Try again.",
+      "retry": "Try again"
+    },
+    "signIn": {
+      "title": "Sign in to service tickets",
+      "intro": "Sign in with your phone number and password.",
+      "phone": "Phone number",
+      "phoneHint": "10 digits, for example 0501234567",
+      "password": "Password",
+      "passwordHint": "4 digits",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "error": "The phone number or password is incorrect.",
+      "sessionExpired": "Your session has expired. Sign in again."
+    },
+    "changePassword": {
+      "title": "Choose a new password",
+      "intro": "Before you continue, choose your own password to replace the initial one.",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "passwordHint": "Exactly 4 digits",
+      "submit": "Change password",
+      "submitting": "Changing…",
+      "currentPasswordWrong": "The current password is incorrect."
+    },
+    "waitTime": {
+      "seconds_one": "Try again in 1 second.",
+      "seconds_two": "Try again in 2 seconds.",
+      "seconds_other": "Try again in {{count}} seconds.",
+      "minutes_one": "Try again in 1 minute.",
+      "minutes_two": "Try again in 2 minutes.",
+      "minutes_other": "Try again in {{count}} minutes.",
+      "none": "Try again later."
+    },
+    "list": {
+      "title": "My tickets",
+      "tableLabel": "List of my tickets",
+      "newTicket": "New ticket",
+      "refresh": "Refresh",
+      "number": "Ticket number",
+      "category": "Category",
+      "created": "Date opened",
+      "status": "Status",
+      "open": "Open ticket {{number}}",
+      "empty": "You have no service tickets yet.",
+      "emptyAction": "Open a new ticket",
+      "loadError": "Could not load your tickets.",
+      "retry": "Try again",
+      "pagination": {
+        "label": "List pages",
+        "previous": "Previous",
+        "next": "Next",
+        "page": "Page {{page}} of {{pages}}"
+      }
+    },
+    "urgent": {
+      "marker": "Urgent"
+    },
+    "form": {
+      "title": "New service ticket",
+      "intro": "Fill in the details and send the ticket to the service team.",
+      "requiredNote": "Fields marked (required) must be filled in.",
+      "categoryPlaceholder": "Choose a category",
+      "photoChoose": "Choose a photo",
+      "photoHint": "You can take a photo or pick one from your gallery. JPEG, PNG or WebP, up to 10 MB.",
+      "photoSelected": "Photo selected: {{file}}",
+      "photoRemove": "Remove the photo",
+      "photoPreviewAlt": "The photo to attach to the ticket",
+      "urgentHelp": "Select if the problem is urgent.",
+      "errorSummary": "Correct the fields marked in the form.",
+      "submit": "Send ticket",
+      "submitting": "Sending…",
+      "cancel": "Cancel and return to the list",
+      "submitFailed": "We could not confirm that the ticket was sent. Check your ticket list before you send it again."
+    },
+    "confirmation": {
+      "title": "Ticket sent",
+      "message": "Ticket number {{number}} has been received.",
+      "toList": "Go to my tickets"
+    },
+    "detail": {
+      "back": "Back to the list",
+      "refresh": "Refresh",
+      "number": "Ticket number",
+      "status": "Status",
+      "created": "Date opened",
+      "noDescription": "No description was entered.",
+      "photoAlt": "Photo for ticket {{number}}, {{category}}",
+      "photoLoading": "Loading the photo…",
+      "photoError": "Could not load the photo.",
+      "retry": "Try again",
+      "loadError": "Could not load the ticket.",
+      "cancelTicket": "Cancel ticket",
+      "cancelDialog": {
+        "title": "Cancel ticket",
+        "message": "Cancel ticket number {{number}}? A cancelled ticket cannot be reopened. You can open a new ticket instead.",
+        "confirm": "Yes, cancel the ticket",
+        "dismiss": "No, keep the ticket",
+        "pending": "Cancelling…"
+      },
+      "cancelFailed": "Could not cancel the ticket.",
+      "notFound": {
+        "title": "Ticket not found",
+        "body": "The ticket you asked for does not exist or does not belong to your account.",
+        "back": "Back to my tickets"
+      }
+    },
+    "footer": {
+      "accessibilityLink": "Accessibility statement",
+      "accessibilityContact": "Accessibility requests: {{contact}}"
+    }
+  },
+  "management": {
+    "title": "Service ticket management",
+    "nav": {
+      "label": "Service ticket navigation",
+      "dashboard": "Dashboard",
+      "tickets": "Tickets",
+      "customers": "Customers",
+      "reports": "Reports",
+      "configuration": "System settings",
+      "categories": "Issue categories",
+      "labels": "Field labels",
+      "options": "Form options",
+      "signOut": "Sign out"
+    },
+    "common": {
+      "loading": "Loading…",
+      "retry": "Try again",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "edit": "Edit",
+      "delete": "Delete",
+      "confirm": "Confirm",
+      "search": "Search",
+      "clearFilters": "Clear filters",
+      "all": "All",
+      "actions": "Actions",
+      "previous": "Previous",
+      "next": "Next",
+      "range": "{{first}}–{{last}} of {{total}}",
+      "paginationLabel": "List pages"
+    },
+    "notAuthorized": {
+      "title": "Not authorized",
+      "body": "You are not authorized to view this screen."
+    },
+    "configUnavailable": {
+      "title": "Screen not available",
+      "body": "This screen is not available for your role."
+    },
+    "ticketsUnavailable": {
+      "title": "The service ticket system is unavailable",
+      "body": "The service ticket system is not available at the moment. Contact the system administrator."
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "The state of open tickets right now.",
+      "open": "Open tickets",
+      "openHint": "Received or in progress",
+      "inProgress": "In progress tickets",
+      "urgent": "Urgent (SOS) tickets",
+      "showTickets": "Show tickets",
+      "stale": "These figures are not current",
+      "loadError": "Could not load the figures.",
+      "numberWarning": "Only {{remaining}} ticket numbers are left. When they run out, new tickets cannot be accepted."
+    },
+    "tickets": {
+      "title": "Service tickets",
+      "total": "Total: {{count}}",
+      "searchLabel": "Search by ticket number",
+      "searchHint": "A 5-digit number",
+      "filters": {
+        "title": "Filters",
+        "status": "Status",
+        "category": "Category",
+        "allCategories": "All categories",
+        "inactiveCategory": "{{name}} (inactive)",
+        "city": "City",
+        "urgentOnly": "Urgent only",
+        "dateFrom": "From date",
+        "dateTo": "To date"
+      },
+      "urgentFirst": "Urgent open tickets first",
+      "columns": {
+        "number": "Ticket number",
+        "created": "Opened",
+        "customer": "Customer",
+        "city": "City",
+        "apartment": "Apartment",
+        "category": "Category",
+        "status": "Status",
+        "technician": "Assigned technician",
+        "sos": "Urgency"
+      },
+      "sos": "SOS",
+      "openTicket": "Open ticket {{number}}",
+      "empty": "No tickets match the search and filters.",
+      "loadError": "Could not load the ticket list.",
+      "actions": {
+        "toInProgress": "Move to in progress",
+        "close": "Close ticket",
+        "reopen": "Reopen",
+        "none": "No actions"
+      },
+      "statusChangeFailed": "The action \"{{action}}\" on ticket {{number}} failed."
+    },
+    "ticket": {
+      "title": "Ticket {{number}}",
+      "back": "Back to the ticket list",
+      "loadError": "Could not load the ticket.",
+      "notFound": {
+        "title": "Ticket not found",
+        "body": "The ticket you asked for does not exist."
+      },
+      "details": "Ticket details",
+      "number": "Ticket number",
+      "status": "Status",
+      "customer": "Customer",
+      "phone": "Phone number",
+      "city": "City",
+      "apartment": "Apartment number",
+      "category": "Issue category",
+      "description": "Issue description",
+      "noDescription": "No description was entered.",
+      "created": "Opened",
+      "photo": {
+        "heading": "Photo",
+        "open": "Open the photo at full size",
+        "alt": "Photo for ticket {{number}}, {{category}}",
+        "loading": "Loading the photo…",
+        "error": "Could not load the photo."
+      },
+      "statusSection": {
+        "title": "Change status",
+        "technicianOnApproval": "Assigned technician name (optional)",
+        "technicianOnApprovalHint": "If no name is entered, your username is used."
+      },
+      "assigned": {
+        "label": "Assigned technician",
+        "none": "No technician entered",
+        "hint": "Up to 100 characters",
+        "save": "Save technician name",
+        "saved": "The technician name was saved."
+      },
+      "history": {
+        "title": "Treatment history",
+        "internalNote": "The history is an internal working log and is not shown to the customer.",
+        "empty": "There are no treatment entries yet.",
+        "add": "Add entry",
+        "text": "Treatment description",
+        "technicianName": "Technician name",
+        "save": "Save entry",
+        "edit": "Edit entry",
+        "created": "Created {{when}}",
+        "edited": "Edited {{when}}",
+        "by": "Technician: {{name}}"
+      }
+    },
+    "customers": {
+      "title": "Customers",
+      "subtitle": "Registered residents who can sign in to the service ticket portal.",
+      "new": "New customer",
+      "total": "Total: {{count}}",
+      "searchLabel": "Search by name or phone",
+      "filterLabel": "Show",
+      "filterAll": "All customers",
+      "filterActive": "Active only",
+      "filterInactive": "Inactive only",
+      "columns": {
+        "fullName": "Full name",
+        "phone": "Phone number",
+        "city": "City",
+        "apartment": "Apartment",
+        "state": "State"
+      },
+      "active": "Active",
+      "inactive": "Inactive",
+      "empty": "No matching customers.",
+      "loadError": "Could not load the customer list.",
+      "form": {
+        "createTitle": "New customer",
+        "editTitle": "Edit customer",
+        "fullName": "Full name",
+        "phone": "Phone number",
+        "phoneHint": "10 digits starting with 0, for example 0501234567",
+        "city": "City",
+        "apartment": "Apartment number",
+        "initialPasswordNote": "A new customer gets the initial password 1234 and must choose a new password at the first sign-in.",
+        "created": "The customer was added.",
+        "updated": "The customer details were saved."
+      },
+      "deactivate": "Deactivate",
+      "deactivateTitle": "Deactivate customer",
+      "deactivatePrompt": "Deactivate {{name}}? The customer will not be able to sign in to the portal, and their tickets stay as they are.",
+      "deactivated": "The customer was deactivated.",
+      "reactivate": "Reactivate",
+      "reactivateTitle": "Reactivate customer",
+      "reactivatePrompt": "Reactivate {{name}}? The customer signs in with the password they had before the deactivation.",
+      "reactivated": "The customer was reactivated.",
+      "resetPassword": "Reset password",
+      "resetTitle": "Reset password",
+      "resetPrompt": "Reset the password of {{name}} to 1234? The customer must choose a new password at the next sign-in, and their active sessions end.",
+      "resetDone": "The password was reset to 1234. The customer must choose a new password at the next sign-in."
+    },
+    "reports": {
+      "title": "Service ticket reports",
+      "subtitle": "With no filters, the report covers all tickets in every status.",
+      "dateFrom": "From date",
+      "dateTo": "To date",
+      "city": "City",
+      "category": "Category",
+      "allCategories": "All categories",
+      "inactiveCategory": "{{name}} (inactive)",
+      "show": "Show report",
+      "total": "Total tickets",
+      "open": "Open tickets",
+      "byStatus": "By status",
+      "byCategory": "By category",
+      "tickets": "Tickets in the report",
+      "empty": "No tickets match the filters.",
+      "loadError": "Could not load the report."
+    },
+    "settings": {
+      "categories": {
+        "title": "Issue categories",
+        "subtitle": "The categories that customers choose from in the ticket form.",
+        "add": "Add category",
+        "nameHe": "Name in Hebrew",
+        "nameEn": "Name in English",
+        "nameHint": "1 to 60 characters",
+        "state": "State",
+        "active": "Active",
+        "inactive": "Inactive",
+        "created": "The category was added.",
+        "updated": "The category was saved.",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate",
+        "delete": "Delete",
+        "deleteTitle": "Delete category",
+        "deletePrompt": "Delete the category \"{{name}}\"? If tickets use it, it is deactivated instead of deleted.",
+        "removed": "The category was deleted.",
+        "deactivated": "The category was deactivated, not deleted, because tickets use it.",
+        "empty": "There are no categories.",
+        "loadError": "Could not load the categories."
+      },
+      "labels": {
+        "title": "Field labels",
+        "subtitle": "The text customers see in the ticket form and the ticket details.",
+        "field": "Field",
+        "labelHe": "Label in Hebrew",
+        "labelEn": "Label in English",
+        "hint": "1 to 60 characters",
+        "saved": "The labels were saved.",
+        "loadError": "Could not load the labels."
+      },
+      "options": {
+        "title": "Form options",
+        "subtitle": "A change applies to tickets sent after it. Existing tickets do not change.",
+        "descriptionRequired": "The issue description is required",
+        "photoUploadEnabled": "Allow a photo on a ticket",
+        "photoUploadHelp": "When this is off, photos already attached stay visible.",
+        "saved": "The settings were saved.",
+        "loadError": "Could not load the settings."
+      }
+    }
+  },
+  "status": {
+    "received": "Received",
+    "in_progress": "In Progress",
+    "closed": "Closed",
+    "cancelled": "Cancelled",
+    "group": {
+      "open": "Open",
+      "all": "All statuses"
+    }
+  },
+  "fields": {
+    "city": "City",
+    "apartment": "Apartment number",
+    "phone": "Phone number",
+    "category": "Issue category",
+    "description": "Issue description",
+    "photo": "Photo",
+    "urgent": "Urgent"
+  },
+  "errors": {
+    "generic": "Something went wrong. Try again.",
+    "not_authenticated": "Sign in to continue.",
+    "invalid_token": "Your session has expired. Sign in again.",
+    "customer_token_not_accepted": "You are not authorized to do this.",
+    "staff_token_not_accepted": "You are not authorized to do this.",
+    "insufficient_role": "You are not authorized to do this.",
+    "password_change_required": "Choose a new password before you continue.",
+    "totp_enrolment_required": "You must enroll in two-factor authentication before you can continue.",
+    "invalid_credentials": "The phone number or password is incorrect.",
+    "invalid_phone": "The phone number is not valid. Enter 10 digits starting with 0, for example 0501234567.",
+    "too_many_attempts": "There were too many failed attempts, and sign-in is blocked for a while.",
+    "rate_limited": "Too many requests were sent.",
+    "invalid_password_format": "The password must be exactly 4 digits.",
+    "password_not_changed": "The new password must differ from the current password and from the initial password.",
+    "phone_already_registered": "This phone number is already registered to another customer.",
+    "customer_not_found": "The customer was not found.",
+    "invalid_full_name": "The full name is not valid. Enter 1 to 100 characters.",
+    "invalid_city": "The city is not valid. Enter up to 100 characters.",
+    "invalid_apartment": "The apartment number is not valid. Enter up to 20 characters.",
+    "invalid_category": "Choose an issue category from the list.",
+    "invalid_description": "The description is not valid. Enter a description of up to 2000 characters.",
+    "invalid_urgent": "The Urgent selection is not valid.",
+    "unknown_field": "The request contains a field that is not recognized. Reload the page and try again.",
+    "ticket_not_found": "The ticket was not found.",
+    "invalid_transition": "This status change is not allowed for the ticket.",
+    "ticket_status_changed": "The ticket status changed in the meantime. The current status is shown.",
+    "invalid_expected_status": "The current status of the ticket could not be verified. Reload and try again.",
+    "invalid_target_status": "The selected status is not valid.",
+    "invalid_assigned_technician_name": "The technician name is not valid. Enter up to 100 characters.",
+    "ticket_numbers_exhausted": "New tickets cannot be accepted at this time.",
+    "invalid_photo_type": "The file is not a valid image. Choose a JPEG, PNG or WebP image.",
+    "photo_dimensions_too_large": "The photo dimensions are too large. Choose a smaller photo.",
+    "photo_upload_disabled": "Attaching photos is not available at the moment. Remove the photo and try again.",
+    "too_many_photos": "You can attach only one photo.",
+    "photo_too_large": "The photo is too large. Choose a photo of up to 10 MB.",
+    "request_too_large": "The photo is too large. Choose a photo of up to 10 MB.",
+    "invalid_history_text": "The treatment description is not valid. Enter 1 to 2000 characters.",
+    "invalid_technician_name": "The technician name is not valid. Enter 1 to 100 characters.",
+    "history_entry_not_found": "The treatment entry was not found.",
+    "invalid_page": "The page number is not valid.",
+    "invalid_ticket_number": "A ticket number must have 5 digits, from 10000 to 99999.",
+    "invalid_date_range": "The date range is not valid. Check that both dates are real dates and that the start date is not after the end date.",
+    "invalid_filter": "One of the selected filters is not valid.",
+    "invalid_name_he": "The Hebrew name is not valid. Enter 1 to 60 characters.",
+    "invalid_name_en": "The English name is not valid. Enter 1 to 60 characters.",
+    "invalid_label_he": "The Hebrew label is not valid. Enter 1 to 60 characters.",
+    "invalid_label_en": "The English label is not valid. Enter 1 to 60 characters.",
+    "duplicate_category": "A category with this name already exists.",
+    "last_active_category": "The last active category cannot be deactivated or deleted. At least one category must stay active.",
+    "category_not_found": "The category was not found.",
+    "service_unavailable": "The service is not available at the moment. Try again in a few moments.",
+    "photo_storage_unavailable": "The photo could not be saved right now. Try again later."
+  },
+  "a11y": {
+    "skipToContent": "Skip to main content",
+    "required": "(required)",
+    "optional": "(optional)",
+    "errorPrefix": "Error:",
+    "loading": "Loading",
+    "statement": {
+      "title": "Accessibility statement",
+      "intro": "We aim for every customer to be able to use the service ticket portal, including people with disabilities.",
+      "targetTitle": "Standard and conformance level",
+      "target": "The portal is built to meet the Israeli standard IS 5568 (based on WCAG 2.0) at level AA. This statement describes the target and is not an official confirmation of conformance.",
+      "featuresTitle": "What the portal provides",
+      "feature1": "Every function can be used with the keyboard alone.",
+      "feature2": "Every field has a visible label, and error messages are linked to the field they belong to.",
+      "feature3": "Ticket status and the urgent marker are shown as text, not by color alone.",
+      "feature4": "The portal is available in Hebrew and English, with the matching text direction for each.",
+      "limitationsTitle": "Known limitations",
+      "limitation1": "A full formal accessibility audit of the portal has not been done yet, so there may be issues that have not been found.",
+      "limitation2": "A photo attached to a ticket is described in text only by the ticket number and the category, not by what the photo shows.",
+      "contactTitle": "Accessibility requests",
+      "contact": "For accessibility requests and comments, contact: {{contact}}",
+      "contactMissing": "The contact details for accessibility requests have not been set yet.",
+      "lastUpdated": "Last updated: {{date}}",
+      "lastUpdatedDate": "22/11/2026"
+    },
+    "live": {
+      "languageChanged": "Language changed to English.",
+      "ticketSubmitted": "Ticket number {{number}} has been received.",
+      "ticketCancelled": "Ticket number {{number}} was cancelled.",
+      "statusChanged": "The status of ticket {{number}} changed: {{status}}",
+      "sessionExpired": "Your session has expired. Sign in again."
+    }
+  }
+}
