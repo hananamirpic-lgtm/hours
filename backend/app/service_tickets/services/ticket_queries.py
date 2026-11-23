@@ -91,21 +91,27 @@ class TicketCategory:
 
 @dataclass(frozen=True, slots=True)
 class CustomerTicketRowView:
-    """A row of the customer list (R12.1): exactly these five values."""
+    """A row of the customer list (R12.1): exactly these six values.
+
+    `apartment` is the value stored on the ticket, not the one on the customer record.
+    """
 
     ticket_number: int
     category: TicketCategory
     created_date: date
+    apartment: str
     status: str
     urgent: bool
 
 
 @dataclass(frozen=True, slots=True)
 class CustomerTicketDetailView(CustomerTicketRowView):
-    """An own ticket in full (R12.2): the values stored on the ticket, not the customer record."""
+    """An own ticket in full (R12.2): the values stored on the ticket, not the customer record.
+
+    The row already carries `apartment`; the detail adds the city, phone, description and photo flag.
+    """
 
     city: str
-    apartment: str
     phone: str
     description: str
     has_photo: bool
@@ -201,6 +207,7 @@ def list_customer_tickets(
         select(
             Ticket.ticket_number,
             Ticket.created_date,
+            Ticket.apartment,
             Ticket.status,
             Ticket.urgent,
             Category.id.label("category_id"),
@@ -228,6 +235,7 @@ def list_customer_tickets(
                 ticket_number=row.ticket_number,
                 category=_category(row.category_id, row.name_he, row.name_en),
                 created_date=row.created_date,
+                apartment=row.apartment,
                 status=row.status,
                 urgent=row.urgent,
             )
@@ -268,10 +276,10 @@ def get_customer_ticket(
         ticket_number=row.ticket_number,
         category=_category(row.category_id, row.name_he, row.name_en),
         created_date=row.created_date,
+        apartment=row.apartment,
         status=row.status,
         urgent=row.urgent,
         city=row.city,
-        apartment=row.apartment,
         phone=row.phone,
         description=row.description,
         has_photo=bool(row.has_photo),

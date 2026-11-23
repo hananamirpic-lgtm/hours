@@ -651,13 +651,16 @@ def test_submission_needs_a_customer_token(
 # --------------------------------------------------------------------------- GET /tickets
 
 
-def test_the_list_holds_only_own_tickets_newest_first_with_five_fields(
+def test_the_list_holds_only_own_tickets_newest_first_with_six_fields(
     client: TestClient, make_customer, make_ticket, category: Category
 ) -> None:
     mine = make_customer()
     other = make_customer()
     old = make_ticket(mine, category, created_at=datetime(2025, 3, 1, 8, 0, tzinfo=UTC))
-    new = make_ticket(mine, category, created_at=datetime(2025, 3, 2, 8, 0, tzinfo=UTC), urgent=True)
+    # The apartment typed on this ticket differs from the customer record's "12" (R12.1).
+    new = make_ticket(
+        mine, category, created_at=datetime(2025, 3, 2, 8, 0, tzinfo=UTC), urgent=True, apartment="7B"
+    )
     tie = make_ticket(mine, category, created_at=datetime(2025, 3, 2, 8, 0, tzinfo=UTC), status="cancelled")
     make_ticket(other, category)
 
@@ -671,9 +674,17 @@ def test_the_list_holds_only_own_tickets_newest_first_with_five_fields(
         new.ticket_number,
         old.ticket_number,
     ]
-    assert set(body["items"][0]) == {"ticket_number", "category", "created_date", "status", "urgent"}
+    assert set(body["items"][0]) == {
+        "ticket_number",
+        "category",
+        "created_date",
+        "apartment",
+        "status",
+        "urgent",
+    }
     assert body["items"][0]["status"] == "cancelled"
     assert body["items"][1]["urgent"] is True
+    assert [item["apartment"] for item in body["items"]] == ["12", "7B", "12"]
     assert body["items"][0]["category"] == {
         "id": str(category.id),
         "name_he": category.name_he,

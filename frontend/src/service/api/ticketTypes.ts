@@ -19,6 +19,8 @@ export interface TicketRow {
   readonly category: TicketCategory;
   /** `YYYY-MM-DD`, computed by the server. Never converted through a time zone. */
   readonly created_date: string;
+  /** The apartment number stored on the ticket (not the customer record). May be empty. */
+  readonly apartment: string;
   readonly status: TicketStatus;
   readonly urgent: boolean;
 }

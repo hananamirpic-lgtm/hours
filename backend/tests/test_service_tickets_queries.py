@@ -151,7 +151,7 @@ def test_customer_list_orders_newest_first_with_number_descending_on_equal_times
     ]
 
 
-def test_customer_list_includes_every_status_and_the_row_has_exactly_five_values(
+def test_customer_list_includes_every_status_and_the_row_has_exactly_six_values(
     session, customer, category, make_ticket
 ) -> None:
     for status in ("received", "in_progress", "closed", "cancelled"):
@@ -164,10 +164,12 @@ def test_customer_list_includes_every_status_and_the_row_has_exactly_five_values
         "ticket_number",
         "category",
         "created_date",
+        "apartment",
         "status",
         "urgent",
     }
     assert page.items[0].category.id == category.id
+    assert page.items[0].apartment == "12"
 
 
 def test_customer_list_pages_of_fifty_and_a_page_past_the_end(session, customer, make_ticket) -> None:

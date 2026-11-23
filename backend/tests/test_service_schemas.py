@@ -202,7 +202,7 @@ def _staff_detail_values() -> dict[str, Any]:
 
 # --- the two customer serializers
 
-ROW_FIELDS = {"ticket_number", "category", "created_date", "status", "urgent"}
+ROW_FIELDS = {"ticket_number", "category", "created_date", "apartment", "status", "urgent"}
 DETAIL_FIELDS = ROW_FIELDS | {"city", "apartment", "phone", "description", "has_photo"}
 
 
@@ -210,11 +210,11 @@ def test_customer_ticket_row_has_exactly_the_listed_fields() -> None:
     assert _fields(schemas.CustomerTicketRow) == ROW_FIELDS
 
 
-def test_customer_ticket_detail_has_exactly_the_row_fields_plus_five() -> None:
+def test_customer_ticket_detail_has_exactly_the_row_fields_plus_four() -> None:
+    # The row already carries the apartment (R12.1 as amended), so the detail adds four fields to it.
     assert _fields(schemas.CustomerTicketDetail) == DETAIL_FIELDS
     assert _fields(schemas.CustomerTicketDetail) - _fields(schemas.CustomerTicketRow) == {
         "city",
-        "apartment",
         "phone",
         "description",
         "has_photo",
@@ -274,9 +274,10 @@ def test_customer_detail_from_a_fully_populated_ticket_holds_no_staff_data() -> 
     assert payload["has_photo"] is True
 
 
-def test_customer_row_from_a_fully_populated_ticket_holds_only_five_fields() -> None:
+def test_customer_row_from_a_fully_populated_ticket_holds_only_six_fields() -> None:
     payload = schemas.customer_ticket_row(_ticket(), _category()).model_dump(mode="json")
     assert set(payload) == ROW_FIELDS
+    assert payload["apartment"] == "12"
     assert payload["category"] == {
         "id": str(CATEGORY_ID),
         "name_he": "אינסטלציה",
@@ -691,6 +692,7 @@ def test_an_unknown_status_is_refused_by_a_response() -> None:
             ticket_number=10042,
             category=schemas.CategoryRef(**_category_ref_dict()),
             created_date=date(2025, 3, 4),
+            apartment="12",
             status="deleted",  # type: ignore[arg-type]
             urgent=False,
         )

@@ -15,8 +15,10 @@ import { useAnnouncer } from '../Announcer';
 import { PageHeading } from '../PageHeading';
 import { directionOf, getLanguage, usePortalTranslation } from '../portalI18n';
 import {
+  APARTMENT_LABEL_KEY,
   TICKET_LIST_QUERY_OPTIONS,
   announcementTexts,
+  apartmentText,
   categoryName,
   formatCreatedDate,
   listViewState,
@@ -122,6 +124,9 @@ export function TicketListView({ state, pagination, fallbackPage, onRetry, onRef
                 {t('portal.list.created')}
               </th>
               <th scope="col" role="columnheader">
+                {t(APARTMENT_LABEL_KEY)}
+              </th>
+              <th scope="col" role="columnheader">
                 {t('portal.list.status')}
               </th>
             </tr>
@@ -145,6 +150,9 @@ export function TicketListView({ state, pagination, fallbackPage, onRetry, onRef
                   </td>
                   <td role="cell" data-label={t('portal.list.created')}>
                     <bdi dir="ltr">{formatCreatedDate(row.created_date)}</bdi>
+                  </td>
+                  <td role="cell" data-label={t(APARTMENT_LABEL_KEY)}>
+                    <bdi>{apartmentText(row)}</bdi>
                   </td>
                   <td role="cell" data-label={t('portal.list.status')}>
                     <span className={`portal-status portal-status--${row.status}`}>{t(statusTextKey(row.status))}</span>

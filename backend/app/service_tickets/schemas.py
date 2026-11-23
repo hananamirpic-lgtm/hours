@@ -229,21 +229,25 @@ class TicketCreated(_Response):
 class CustomerTicketRow(_Response):
     """A row of the customer's ticket list (R12.1).
 
-    Not built from attributes and not a base class of any staff model; see `customer_ticket_row`.
+    `apartment` is the value stored on the ticket, not the customer record. Not built from attributes
+    and not a base class of any staff model; see `customer_ticket_row`.
     """
 
     ticket_number: int
     category: CategoryRef
     created_date: date
+    apartment: str
     status: TicketStatus
     urgent: bool
 
 
 class CustomerTicketDetail(CustomerTicketRow):
-    """An own ticket in full (R12.2). The values are those stored on the ticket, not the customer record."""
+    """An own ticket in full (R12.2). The values are those stored on the ticket, not the customer record.
+
+    The row already carries `apartment`; the detail adds the city, phone, description and photo flag.
+    """
 
     city: str
-    apartment: str
     phone: str
     description: str
     has_photo: bool
@@ -263,11 +267,12 @@ def category_ref(category: Category) -> CategoryRef:
 
 
 def customer_ticket_row(ticket: Ticket, category: Category) -> CustomerTicketRow:
-    """The customer row of a stored ticket. Copies exactly the five listed fields."""
+    """The customer row of a stored ticket. Copies exactly the six listed fields."""
     return CustomerTicketRow(
         ticket_number=ticket.ticket_number,
         category=category_ref(category),
         created_date=ticket.created_date,
+        apartment=ticket.apartment,
         status=ticket.status,  # type: ignore[arg-type]  # the column check constraint holds the four values
         urgent=ticket.urgent,
     )
@@ -279,10 +284,10 @@ def customer_ticket_detail(ticket: Ticket, category: Category) -> CustomerTicket
         ticket_number=ticket.ticket_number,
         category=category_ref(category),
         created_date=ticket.created_date,
+        apartment=ticket.apartment,
         status=ticket.status,  # type: ignore[arg-type]
         urgent=ticket.urgent,
         city=ticket.city,
-        apartment=ticket.apartment,
         phone=ticket.phone,
         description=ticket.description,
         has_photo=ticket.photo_key is not None,

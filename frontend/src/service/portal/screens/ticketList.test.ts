@@ -16,10 +16,13 @@ import { createPortalI18n, type PortalLanguage } from '../portalI18n';
 import { TicketListScreen, TicketListView, type TicketListViewProps } from './TicketListScreen';
 import {
   ANNOUNCEMENT_GAP_MS,
+  APARTMENT_LABEL_KEY,
+  EMPTY_VALUE,
   PAGE_SIZE,
   POLL_INTERVAL_MS,
   TICKET_LIST_QUERY_OPTIONS,
   announcementTexts,
+  apartmentText,
   categoryName,
   formatCreatedDate,
   listViewState,
@@ -44,6 +47,7 @@ function row(number: number, status: TicketStatus = 'received', extra: Partial<T
     ticket_number: number,
     category: { id: `c-${number}`, name_he: 'אינסטלציה', name_en: 'Plumbing' },
     created_date: '2024-03-05',
+    apartment: '12',
     status,
     urgent: false,
     ...extra,
@@ -129,6 +133,25 @@ describe('categoryName', () => {
   it('falls back to the other language when the name is empty', () => {
     expect(categoryName({ name_he: '', name_en: 'Electric' }, 'he')).toBe('Electric');
     expect(categoryName({ name_he: 'חשמל', name_en: '' }, 'en')).toBe('חשמל');
+  });
+});
+
+describe('apartmentText', () => {
+  it('shows the apartment stored on the ticket as text, trimmed', () => {
+    expect(apartmentText({ apartment: '12' })).toBe('12');
+    expect(apartmentText({ apartment: ' 4ב ' })).toBe('4ב');
+  });
+
+  it('shows a dash for an empty apartment', () => {
+    expect(EMPTY_VALUE).toBe('—');
+    expect(apartmentText({ apartment: '' })).toBe(EMPTY_VALUE);
+    expect(apartmentText({ apartment: '   ' })).toBe(EMPTY_VALUE);
+  });
+
+  it('labels the column with the locale field name, present in both languages', () => {
+    expect(APARTMENT_LABEL_KEY).toBe('fields.apartment');
+    expect(enService.fields.apartment).not.toBe('');
+    expect(heService.fields.apartment).not.toBe('');
   });
 });
 
@@ -258,6 +281,15 @@ describe('isTicketPage', () => {
     expect(isTicketPage({ items: [{ ticket_number: 1 }], page: 1, page_size: 50, total: 1 })).toBe(false);
     expect(isTicketPage({ ...page([row(10000, 'received')]), total: '1' })).toBe(false);
     expect(isTicketPage(page([{ ...row(10000), status: 'open' as TicketStatus }]))).toBe(false);
+  });
+
+  it('requires the apartment as a string on every row (an empty string is a value)', () => {
+    expect(isTicketPage(page([row(10000, 'received', { apartment: '' })]))).toBe(true);
+    const withoutApartment: Record<string, unknown> = { ...row(10000) };
+    delete withoutApartment.apartment;
+    expect(isTicketPage({ ...page([]), items: [withoutApartment] })).toBe(false);
+    expect(isTicketPage({ ...page([]), items: [{ ...row(10000), apartment: 12 }] })).toBe(false);
+    expect(isTicketPage({ ...page([]), items: [{ ...row(10000), apartment: null }] })).toBe(false);
   });
 
   it('keeps its query keys under the portal root', () => {
@@ -446,6 +478,29 @@ describe('TicketListView markup', () => {
     expect(html.match(/<svg[^>]*aria-hidden="true"/g)).toHaveLength(2);
     expect(html.match(/<svg/g)).toHaveLength(2);
   });
+
+  it.each<[PortalLanguage]>([['he'], ['en']])(
+    'shows the apartment column after the date and before the status in %s, a dash when empty',
+    (language) => {
+      const service = language === 'he' ? heService : enService;
+      const rows = [row(10002, 'received', { apartment: '7ב' }), row(10001, 'received', { apartment: '' })];
+      const html = renderView(language, viewProps({ data: page(rows) }));
+      const header = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+      const headers = [...header.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((match) => match[1]);
+      expect(headers).toEqual([
+        service.portal.list.number,
+        service.portal.list.category,
+        service.portal.list.created,
+        service.fields.apartment,
+        service.portal.list.status,
+      ]);
+      expect(html).toContain(`data-label="${service.fields.apartment}"><bdi>7ב</bdi></td>`);
+      expect(html).toContain(`data-label="${service.fields.apartment}"><bdi>${EMPTY_VALUE}</bdi></td>`);
+      const firstRow = html.slice(html.indexOf('10002'), html.indexOf('10001'));
+      expect(firstRow.indexOf('05/03/2024')).toBeLessThan(firstRow.indexOf('7ב'));
+      expect(firstRow.indexOf('7ב')).toBeLessThan(firstRow.indexOf('portal-status'));
+    },
+  );
 
   it('puts an aria-label with the ticket number on each detail link', () => {
     const html = renderView('en', viewProps({ data: page([row(12345)]) }));

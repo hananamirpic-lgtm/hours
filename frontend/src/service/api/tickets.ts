@@ -29,6 +29,7 @@ function isTicketRow(value: unknown): value is TicketRow {
   return (
     typeof value.ticket_number === 'number' &&
     typeof value.created_date === 'string' &&
+    typeof value.apartment === 'string' &&
     typeof value.status === 'string' &&
     STATUSES.has(value.status) &&
     typeof value.urgent === 'boolean' &&

@@ -107,6 +107,21 @@ export function categoryName(category: Pick<TicketCategory, 'name_he' | 'name_en
   return first !== '' ? first : second;
 }
 
+/**
+ * The header of the apartment column: the locale's own field name. The list does not load the
+ * Field_Labels of `GET /form-config`, so it does not send that request only for one column header.
+ */
+export const APARTMENT_LABEL_KEY = 'fields.apartment';
+
+/** Shown in place of a value that is empty, so an empty cell is never mistaken for a missing column. */
+export const EMPTY_VALUE = '—';
+
+/** The apartment number stored on the ticket as text; a dash when it is empty or only spaces (R12.1). */
+export function apartmentText(row: Pick<TicketRow, 'apartment'>): string {
+  const text = row.apartment.trim();
+  return text !== '' ? text : EMPTY_VALUE;
+}
+
 export type StatusTextKey = `status.${TicketStatus}`;
 
 /** The locale key of a status's text (R12.6). The status is always printed, never shown by colour alone. */

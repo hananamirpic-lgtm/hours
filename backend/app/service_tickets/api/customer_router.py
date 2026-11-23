@@ -354,6 +354,7 @@ def _ticket_row(view: ticket_queries.CustomerTicketRowView) -> CustomerTicketRow
             id=view.category.id, name_he=view.category.name_he, name_en=view.category.name_en
         ),
         created_date=view.created_date,
+        apartment=view.apartment,
         status=view.status,  # type: ignore[arg-type]  # the column check constraint holds the four values
         urgent=view.urgent,
     )
@@ -363,7 +364,6 @@ def _ticket_detail(view: ticket_queries.CustomerTicketDetailView) -> CustomerTic
     return CustomerTicketDetail(
         **_ticket_row(view).model_dump(),
         city=view.city,
-        apartment=view.apartment,
         phone=view.phone,
         description=view.description,
         has_photo=view.has_photo,
