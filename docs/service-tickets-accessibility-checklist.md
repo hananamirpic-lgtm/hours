@@ -266,12 +266,12 @@ Common: A, B, C, E, F, G, H.
 Common: A, B, C, D4, E, F, G, H, I.
 
 - [ ] `h1` "New service ticket" / "קריאת שירות חדשה". The note "Fields marked (required) must be filled in." is read.
-- [ ] Every field has a visible label read on focus: City, Apartment number, Issue category, Issue description, Photo, Urgent (עיר, מספר דירה, קטגוריית תקלה, תיאור התקלה, תמונה, דחוף). The labels may have been changed by the business in Management, M6; then they must match the configured text.
+- [ ] Every field has a visible label read on focus: Settlement, Apartment number, Issue category, Issue description, Photo, Urgent (ישוב, מספר דירה, קטגוריית תקלה, תיאור התקלה, תמונה, דחוף). The labels may have been changed by the business in Management, M6; then they must match the configured text.
 - [ ] Required fields say "(required)" / "(חובה)" in the label text, and the screen reader says "required" on focus. The Description field says "(required)" only when the Description is set to be required in the form options (M6), and "(optional)" / "(אופציונלי)" otherwise. Test both settings.
 - [ ] The category select opens with the keyboard and lists the active categories in the current language. The first option "Choose a category" / "בחרו קטגוריה" is not a valid choice.
 - [ ] Photo control: with the keyboard, Tab to "Choose a photo", press Enter or Space, the file picker opens. On the phone, the picker offers camera and gallery. After choosing, "Photo selected: <file name>" is read, a preview appears with the alternative text "The photo to attach to the ticket" / "התמונה שתצורף לקריאה", and "Remove the photo" removes it and returns focus to a sensible control.
 - [ ] The Urgent checkbox can be ticked with Space. Its help text "Select if the problem is urgent." is read.
-- [ ] Tab order is City, Apartment, Category, Description, Photo, Urgent, "Send ticket", "Cancel and return to the list" (reading order).
+- [ ] Tab order is Settlement, Apartment, Category, Description, Photo, Urgent, "Send ticket", "Cancel and return to the list" (reading order).
 - [ ] Sending: the button reads "Sending…" / "שולח…" and a second activation is not possible while sending.
 - [ ] Language switch keeps every typed value, the chosen category, the Urgent tick and the chosen photo, and keeps focus on the switch.
 - [ ] Phone keypad and the on-screen keyboard do not hide the focused field (B6).
@@ -300,7 +300,7 @@ Common: A, B, C, D2, E, F, G, H.
 Common: A, B, C, D3, D6, D7, E, F, G, H, I.
 
 - [ ] `h1` "Ticket <n>" / "קריאה <n>". The back link "Back to the list" / "חזרה לרשימה" and "Refresh" are reachable.
-- [ ] The field names and values (Ticket number, Status, Date opened, City, Apartment, Category, Description) are read as pairs. The date is shown as DD/MM/YYYY. If there is no description, "No description was entered." is shown and read.
+- [ ] The field names and values (Ticket number, Status, Date opened, Settlement, Apartment, Category, Description) are read as pairs. The date is shown as DD/MM/YYYY. If there is no description, "No description was entered." is shown and read.
 - [ ] **With photo:** the photo has the text alternative "Photo for ticket <n>, <category name>" / "תמונה לקריאה <n>, <קטגוריה>" (read by the screen reader). While loading, "Loading the photo…" is shown. A failed load shows "Could not load the photo." with a retry button.
 - [ ] **Without photo:** no empty image, no broken image icon, and no stray "image" announcement.
 - [ ] The status is text, and the urgent marker is text.
@@ -356,8 +356,8 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 
 ### M2. Ticket list (`/tickets/list`)
 
-- [ ] `h1` "Service tickets" / "קריאות שירות". The filter area is a search landmark named "Filters" / "סינון". Every filter control has a label: search by ticket number, Status, Category, City, Urgent only, From date, To date, "Urgent open tickets first".
-- [ ] The result table has headers (Ticket number, Opened, Customer, City, Apartment, Category, Status, Assigned technician, Urgency). The ticket number links read "Open ticket <n>".
+- [ ] `h1` "Service tickets" / "קריאות שירות". The filter area is a search landmark named "Filters" / "סינון". Every filter control has a label: search by ticket number, Status, Category, Settlement, Urgent only, From date, To date, "Urgent open tickets first".
+- [ ] The result table has headers (Ticket number, Opened, Customer, Settlement, Apartment, Category, Status, Assigned technician, Urgency). The ticket number links read "Open ticket <n>".
 - [ ] The total count "Total: N" is read as a status message after search and after filtering.
 - [ ] Status is text, and urgent tickets say "SOS" as text, not only a red row (I2).
 - [ ] The row action buttons read the action and the ticket, for example "Move to in progress, ticket 10042". Activating one changes the status, and the new status is shown as text. A failed action reads "The action … on ticket … failed." at once.
@@ -368,7 +368,7 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 ### M3. Ticket detail (`/tickets/list/<number>`)
 
 - [ ] `h1` "Ticket <n>" / "קריאה <n>". Section headings (Ticket details, Photo, Change status, Assigned technician, Treatment history) are `h2` and in order.
-- [ ] Customer, phone, city, apartment, category, description, opened date are read as label and value. The phone and ticket number read left to right.
+- [ ] Customer, phone, settlement, apartment, category, description, opened date are read as label and value. The phone and ticket number read left to right.
 - [ ] Photo (when present): alternative text "Photo for ticket <n>, <category>", and the "Open the photo at full size" link works with the keyboard.
 - [ ] Change status: the allowed status choices are buttons or a select with labels. On moving to "in progress" the optional "Assigned technician name (optional)" field has a label and the hint "If no name is entered, your username is used." A failed change reads the error at once, and a status that changed meanwhile shows the current status.
 - [ ] Assigned technician: the field has a label and the hint "Up to 100 characters". Saving reads "The technician name was saved.".
@@ -385,7 +385,7 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 
 ### M5. Reports (`/tickets/reports`)
 
-- [ ] `h1` "Service ticket reports" / "דוחות קריאות שירות". The filter form (From date, To date, City, Category, "Show report") has labels on every field.
+- [ ] `h1` "Service ticket reports" / "דוחות קריאות שירות". The filter form (From date, To date, Settlement, Category, "Show report") has labels on every field.
 - [ ] Results (Total tickets, Open tickets, By status, By category, the ticket table) are read in a logical order. The table has headers. Ticket links read "Open ticket <n>".
 - [ ] A report error reads "Could not load the report." at once and **the filters stay filled in**.
 - [ ] An empty result reads "No tickets match the filters.".

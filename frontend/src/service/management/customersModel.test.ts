@@ -413,7 +413,7 @@ describe('CustomerFormView', () => {
   it('shows the required and optional markers in the label text', () => {
     const html = view('en', 'create', NO_FORM_ERRORS);
     expect(html).toMatch(/Phone number<span class="customers-marker"> \(required\)<\/span>/);
-    expect(html).toMatch(/City<span class="customers-marker"> \(optional\)<\/span>/);
+    expect(html).toMatch(/Settlement<span class="customers-marker"> \(optional\)<\/span>/);
   });
 
   it('shows no error attributes before a refusal', () => {

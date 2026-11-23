@@ -156,7 +156,7 @@ describe('fieldLabel', () => {
   });
 
   it('falls back to fields.* when the labels are missing, the key is missing or the text is blank', () => {
-    expect(fieldLabel('city', undefined, 'en', translateIn('en'))).toBe('City');
+    expect(fieldLabel('city', undefined, 'en', translateIn('en'))).toBe('Settlement');
     expect(fieldLabel('apartment', labels, 'en', translateIn('en'))).toBe('Apartment number');
     expect(fieldLabel('phone', labels, 'he', translateIn('he'))).toBe('מספר טלפון');
     expect(fieldLabel('phone', labels, 'en', translateIn('en'))).toBe('Phone number');

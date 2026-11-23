@@ -97,7 +97,7 @@ _SEED_CATEGORIES = (
 
 # The seven configurable field labels (Requirement 19.15): (field_key, label_he, label_en).
 _SEED_FIELD_LABELS = (
-    ("city", "עיר", "City"),
+    ("city", "ישוב", "Settlement"),
     ("apartment", "מספר דירה", "Apartment number"),
     ("phone", "מספר טלפון", "Phone number"),
     ("category", "קטגוריית תקלה", "Issue category"),

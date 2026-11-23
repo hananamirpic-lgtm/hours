@@ -76,7 +76,7 @@ SEED_CATEGORIES = [
 
 # Requirement 19.15: field_key -> (label_he, label_en).
 SEED_FIELD_LABELS = {
-    "city": ("עיר", "City"),
+    "city": ("ישוב", "Settlement"),
     "apartment": ("מספר דירה", "Apartment number"),
     "phone": ("מספר טלפון", "Phone number"),
     "category": ("קטגוריית תקלה", "Issue category"),

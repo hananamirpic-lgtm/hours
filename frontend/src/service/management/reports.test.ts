@@ -234,7 +234,7 @@ describe('ReportsView', () => {
   const html = render('en', view({ report: loaded }));
 
   it('labels every filter and offers inactive categories (R18.1, R18.6, R23.12)', () => {
-    for (const label of ['From date', 'To date', 'City', 'Category', 'All categories', 'Show report', 'Clear filters']) {
+    for (const label of ['From date', 'To date', 'Settlement', 'Category', 'All categories', 'Show report', 'Clear filters']) {
       expect(html).toContain(label);
     }
     expect(html).toContain('Plumbing');
