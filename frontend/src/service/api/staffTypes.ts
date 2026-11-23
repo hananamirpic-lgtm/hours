@@ -51,6 +51,8 @@ export interface StaffTicketDetail extends StaffTicketRow {
   readonly has_photo: boolean;
   readonly history: readonly StaffHistoryEntry[];
   readonly updated_at: string;
+  /** The staff username that opened the ticket for the customer; null or absent when the customer opened it. */
+  readonly opened_by_username?: string | null;
 }
 
 /** `StaffTicketPage`: 25 per page. */

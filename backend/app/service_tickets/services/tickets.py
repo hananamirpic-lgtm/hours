@@ -258,6 +258,7 @@ def create_ticket(
     allocator: Allocator | None = None,
     *,
     timezone: str | None = None,
+    opened_by_username: str | None = None,
 ) -> Ticket:
     """Insert a `received` ticket for `customer` and return it, flushed and not committed.
 
@@ -266,6 +267,10 @@ def create_ticket(
     calendar date in `timezone` (default: the application time zone, `Asia/Jerusalem`). The assigned
     technician name is empty, `updated_at` equals `created_at`, and the customer row is neither read
     beyond its id nor changed. Raises `TicketNumbersExhausted` when the sequence is used up.
+
+    `opened_by_username` is the username of the staff member who opens the ticket on the customer's
+    behalf (R26.4). The staff router passes the acting principal's username, never a request value; the
+    customer path leaves it `None`, which stores NULL.
     """
     number = allocate_ticket_number(session, allocator)
     created_at = (now or _utc_now)()
@@ -286,6 +291,7 @@ def create_ticket(
         created_at=created_at,
         created_date=created_date_for(created_at, zone),
         updated_at=created_at,
+        opened_by_username=opened_by_username,
     )
     session.add(ticket)
     session.flush()

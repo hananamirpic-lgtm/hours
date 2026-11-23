@@ -120,7 +120,7 @@ def test_headers_absent_by_default() -> None:
 
 
 def test_catalogue_is_not_empty_and_has_unique_codes() -> None:
-    assert len(ERROR_CODES) == 51
+    assert len(ERROR_CODES) == 52
     assert len(set(ERROR_CODES)) == len(ERROR_CODES)
 
 

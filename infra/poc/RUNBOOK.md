@@ -412,8 +412,9 @@ Two edge changes ship with this feature. Neither is applied by `deploy.sh`; you 
   `CachingDisabled`, origin request policy `AllViewerAndCloudFrontHeaders-2022-06` (this one forwards
   `CloudFront-Viewer-Address`), compress on, redirect HTTP to HTTPS. `/api/*` is unchanged and still never caches.
   The SPA deep links `/service/*` and `/tickets/*` use the default behavior and need no change.
-- **Caddy:** an exact-path block for `/api/service/tickets` with a 13 MiB request-body cap (above the
-  app's own 12 MiB limit), placed before `handle /api/*`. It is in `infra/poc/caddy/Caddyfile`.
+- **Caddy:** an exact-path block for `/api/service/tickets` and another for `/api/service/staff/tickets`,
+  each with a 13 MiB request-body cap (above the app's own 12 MiB limit), placed before `handle /api/*`.
+  They are in `infra/poc/caddy/Caddyfile`.
 
 Order:
 

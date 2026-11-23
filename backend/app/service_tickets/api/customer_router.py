@@ -381,6 +381,11 @@ def _ticket_number_or_not_found(raw: str) -> int:
 @router.get("/form-config", response_model=FormConfig)
 def form_config(principal: CustomerPrincipalDep, session: ServiceSession) -> FormConfig:
     """The ticket form: active categories oldest first, the seven labels and the two options (R9.3)."""
+    return form_config_body(session)
+
+
+def form_config_body(session: Session) -> FormConfig:
+    """The `FormConfig` response. Shared with `GET /staff/form-config`, which answers the same body."""
     config = config_admin.get_form_config(session)
     return FormConfig(
         categories=[CategoryRef(id=c.id, name_he=c.name_he, name_en=c.name_en) for c in config.categories],
@@ -484,8 +489,11 @@ def _insert_ticket(
     photo: ProcessedPhoto | None,
     allocator: Allocator | None,
     store: PhotoStore,
+    opened_by_username: str | None = None,
 ) -> int:
     """Allocate the number, store the photo, insert and commit. Returns the ticket number.
+
+    `opened_by_username` is set only by the staff router (R26.4); the customer path leaves it `None`.
 
     The order is the design's: number, then `put`, then insert and commit. `created_at` is read right
     after the allocation and handed to `create_ticket`, so a slow `put` cannot make a later number
@@ -509,6 +517,7 @@ def _insert_ticket(
             key,
             now=lambda: created_at,
             allocator=lambda _session: allocated,
+            opened_by_username=opened_by_username,
         )
         number = ticket.ticket_number
         session.commit()
@@ -532,6 +541,7 @@ def _store_ticket(
     files: FileParts,
     allocator: Allocator | None,
     store: PhotoStore,
+    opened_by_username: str | None = None,
 ) -> int:
     """Validate, decode the photo, then allocate, store, insert and commit.
 
@@ -552,7 +562,7 @@ def _store_ticket(
     if problems or clean is None:
         session.rollback()
         raise service_error(HTTPStatus.UNPROCESSABLE_ENTITY, fields=problems)
-    return _insert_ticket(session, customer_id, clean, photo, allocator, store)
+    return _insert_ticket(session, customer_id, clean, photo, allocator, store, opened_by_username)
 
 
 @router.post("/tickets", response_model=TicketCreated, status_code=HTTPStatus.CREATED)

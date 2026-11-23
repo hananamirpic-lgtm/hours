@@ -32,10 +32,23 @@ from contextlib import contextmanager
 from http import HTTPStatus
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
+from python_multipart.exceptions import FormParserError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.service_tickets.api.customer_router import (
+    FileParts,
+    PhotoStoreDep,
+    TicketAllocatorDep,
+    _read_file_parts,
+    _store_ticket,
+    _submission_values,
+    form_config_body,
+)
 from app.service_tickets.api.deps import (
     CONFIG_STAFF_ROLES,
     ServiceSession,
@@ -44,9 +57,10 @@ from app.service_tickets.api.deps import (
     staff_principal,
 )
 from app.service_tickets.api.errors import service_error
-from app.service_tickets.api.route import ServiceRoute
+from app.service_tickets.api.route import CODE_INVALID_REQUEST, ServiceRoute
 from app.service_tickets.error_codes import (
     CODE_CATEGORY_NOT_FOUND,
+    CODE_CUSTOMER_INACTIVE,
     CODE_CUSTOMER_NOT_FOUND,
     CODE_DUPLICATE_CATEGORY,
     CODE_HISTORY_ENTRY_NOT_FOUND,
@@ -84,7 +98,8 @@ from app.service_tickets.grammars import (
     parse_ticket_search,
     parse_uuid_path,
 )
-from app.service_tickets.models import Category, FieldLabel, HistoryEntry, ServiceSettings
+from app.service_tickets.models import Category, Customer, FieldLabel, HistoryEntry, ServiceSettings
+from app.service_tickets.photo_store import PhotoStore
 from app.service_tickets.schemas import (
     AssignedTechnicianRequest,
     CategoryCount,
@@ -98,6 +113,7 @@ from app.service_tickets.schemas import (
     CustomerRecord,
     CustomerRecordPage,
     CustomerUpdateRequest,
+    FormConfig,
     FormSettings,
     HistoryEntryOut,
     LabelsResponse,
@@ -131,6 +147,7 @@ from app.service_tickets.services.customers import (
 )
 from app.service_tickets.services.history import HistoryValidationError
 from app.service_tickets.services.lifecycle import LifecycleError
+from app.service_tickets.services.numbering import Allocator
 from app.service_tickets.services.reports import ReportTicketRow
 from app.service_tickets.services.ticket_queries import (
     StaffTicketDetailView,
@@ -304,6 +321,7 @@ def _staff_detail_out(view: StaffTicketDetailView) -> StaffTicketDetail:
         has_photo=view.has_photo,
         history=[_history_entry_out(entry) for entry in view.history],
         updated_at=view.updated_at,
+        opened_by_username=view.opened_by_username,
     )
 
 
@@ -386,6 +404,93 @@ def list_tickets(
             page=page_number,
         )
     return _staff_page_out(result)
+
+
+#: The one form part of a staff submission that the customer form does not have (R26.4).
+FIELD_CUSTOMER_ID = "customer_id"
+
+
+@router.get("/form-config", response_model=FormConfig)
+def staff_form_config(session: ServiceSession) -> FormConfig:
+    """The ticket form for staff: the same body as the customer `GET /form-config` (R26.2)."""
+    return form_config_body(session)
+
+
+def _require_active_customer(session: Session, customer_id: uuid.UUID) -> None:
+    """404 `customer_not_found` for an id with no row, 409 `customer_inactive` for an inactive customer.
+
+    One primary-key read of the state column only: no hash is selected and the row is not changed (R26.4).
+    """
+    is_active = session.execute(
+        select(Customer.is_active).where(Customer.id == customer_id)
+    ).scalar_one_or_none()
+    if is_active is None:
+        raise service_error(HTTPStatus.NOT_FOUND, CODE_CUSTOMER_NOT_FOUND)
+    if not is_active:
+        raise service_error(HTTPStatus.CONFLICT, CODE_CUSTOMER_INACTIVE)
+
+
+def _open_ticket(
+    session: Session,
+    customer_id: uuid.UUID,
+    values: dict[str, object],
+    files: FileParts,
+    allocator: Allocator | None,
+    store: PhotoStore,
+    opened_by_username: str,
+) -> StaffTicketDetail:
+    """Validate, store and commit in one transaction, then read the new ticket's staff detail."""
+    number = _store_ticket(session, customer_id, values, files, allocator, store, opened_by_username)
+    return _ticket_detail(session, number)
+
+
+@router.post("/tickets", response_model=StaffTicketDetail, status_code=HTTPStatus.CREATED)
+async def open_ticket_for_customer(
+    request: Request,
+    principal: StaffPrincipalDep,
+    session: ServiceSession,
+    allocator: TicketAllocatorDep,
+    store: PhotoStoreDep,
+) -> StaffTicketDetail:
+    """Open a ticket on behalf of a customer, from a `multipart/form-data` form (R26.3 to R26.5, R26.8).
+
+    The form is the customer's submission plus `customer_id`. The handler reads the form itself, like
+    the customer handler, and checks in this order (design.md, "Staff-opened tickets"):
+
+    1. `customer_id` missing, repeated or not a UUID: 422 `customer_not_found` with
+       `fields.customer_id`; a well-formed id with no row: 404 `customer_not_found`; an inactive
+       customer: 409 `customer_inactive`. Nothing is stored in any of these cases.
+    2. A file part over 10 MiB is 413 `photo_too_large`; then the same validation and photo pipeline as
+       the customer path (422 with `fields`, `unknown_field` for any other part).
+    3. Ticket number, photo store and insert in one transaction, with `opened_by_username` set to the
+       acting staff username. That value comes from the staff principal and never from the request.
+
+    The customer submission window is neither read nor taken: the request limits of Requirement 22 apply
+    to customer tokens only. The body guard (`BodyLimitMiddleware`) covers this path as well.
+    """
+    try:
+        form = await request.form()
+    except (StarletteHTTPException, FormParserError) as error:  # a malformed or oversized body
+        raise service_error(
+            HTTPStatus.UNPROCESSABLE_ENTITY, fields={"body": CODE_INVALID_REQUEST}
+        ) from error
+    try:
+        values = _submission_values(form)
+        raw_customer_id = values.pop(FIELD_CUSTOMER_ID, None)
+        customer_id = parse_uuid_path(raw_customer_id) if isinstance(raw_customer_id, str) else None
+        if customer_id is None:
+            raise service_error(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                CODE_CUSTOMER_NOT_FOUND,
+                fields={FIELD_CUSTOMER_ID: CODE_CUSTOMER_NOT_FOUND},
+            )
+        await run_in_threadpool(_require_active_customer, session, customer_id)
+        files = await _read_file_parts(form)
+        return await run_in_threadpool(
+            _open_ticket, session, customer_id, values, files, allocator, store, principal.username
+        )
+    finally:
+        await form.close()
 
 
 @router.get("/tickets/{ticket_number}", response_model=StaffTicketDetail)

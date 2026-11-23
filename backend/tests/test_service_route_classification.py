@@ -107,6 +107,8 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     # --- staff: dashboard, tickets, history
     E("GET", "/staff/dashboard", TICKET_STAFF),
     E("GET", "/staff/tickets", TICKET_STAFF),
+    E("POST", "/staff/tickets", TICKET_STAFF),  # a ticket opened on a customer's behalf (R26)
+    E("GET", "/staff/form-config", TICKET_STAFF),  # the form for that screen (R26.2)
     E("GET", "/staff/tickets/{ticket_number}", TICKET_STAFF),
     E("POST", "/staff/tickets/{ticket_number}/status", TICKET_STAFF),
     E("PUT", "/staff/tickets/{ticket_number}/assigned-technician", TICKET_STAFF),

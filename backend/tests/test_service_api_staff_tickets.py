@@ -525,7 +525,9 @@ def test_detail_shape_and_history_order(client: TestClient, admin, make_ticket, 
         "has_photo",
         "history",
         "updated_at",
+        "opened_by_username",
     }
+    assert body["opened_by_username"] is None  # opened by the customer, not by staff
     assert body["customer_name"] == "Dana Levi"
     assert (body["assigned_technician_name"], body["has_photo"]) == ("Dana", False)
     assert [entry["entry_text"] for entry in body["history"]] == ["first", "second", "third"]

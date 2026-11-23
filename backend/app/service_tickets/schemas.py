@@ -331,6 +331,9 @@ class StaffTicketDetail(StaffTicketRow):
     has_photo: bool
     history: list[HistoryEntryOut]
     updated_at: datetime
+    #: Username of the staff member who opened the ticket for the customer (R26.4); null when the
+    #: customer opened it. Staff responses only: no customer model carries it (R26.6).
+    opened_by_username: str | None = None
 
 
 class StaffTicketPage(_Response):

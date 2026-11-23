@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   // Customers
   'phone_already_registered',
   'customer_not_found',
+  'customer_inactive',
   'invalid_full_name',
   'invalid_city',
   'invalid_apartment',

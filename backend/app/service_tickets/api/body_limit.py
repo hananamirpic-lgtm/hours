@@ -1,8 +1,10 @@
 """Request body guard for the ticket submission route (Requirements 22.6 and 25.6; design "Abuse protection").
 
-No layer in front of the API limits a request body today, so the 12 MB rule is enforced here, on one
-path only: `POST {api_prefix}/service/tickets`, an exact match. Every other path, another method on the
-same path and any subpath (`/tickets/10000/cancel`) pass through untouched.
+No layer in front of the API limits a request body today, so the 12 MB rule is enforced here, on two
+paths only: `POST {api_prefix}/service/tickets` (the customer submission) and
+`POST {api_prefix}/service/staff/tickets` (staff opening a ticket for a customer, R26.8), each an exact
+match. Every other path, another method on the same paths and any subpath (`/tickets/10000/cancel`)
+pass through untouched.
 
 * **Declared length.** A `Content-Length` over `MAX_BODY_BYTES` is answered 413 `request_too_large`
   before the application is called, so the body is never read. The check needs no token: the guard
@@ -63,15 +65,17 @@ def _declared_over_limit(headers: list[tuple[bytes, bytes]], limit: int) -> bool
 
 
 class BodyLimitMiddleware:
-    """Answer 413 `request_too_large` for an oversized `POST {api_prefix}/service/tickets` body."""
+    """Answer 413 `request_too_large` for an oversized ticket submission body (customer or staff path)."""
 
     def __init__(self, app: ASGIApp, *, api_prefix: str, limit: int = MAX_BODY_BYTES) -> None:
         self._app = app
-        self._path = f"{api_prefix.rstrip('/')}/service/tickets"
+        base = f"{api_prefix.rstrip('/')}/service"
+        # The customer submission and the staff submission on a customer's behalf (R22.6, R26.8).
+        self._paths = frozenset((f"{base}/tickets", f"{base}/staff/tickets"))
         self._limit = limit
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"] != self._path:
+        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"] not in self._paths:
             await self._app(scope, receive, send)
             return
 

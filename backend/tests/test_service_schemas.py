@@ -369,6 +369,7 @@ STAFF_EXTRAS = [
     "password_hash",
     "customer_name",
     "photo_key",
+    "opened_by_username",  # R26.6
 ]
 
 
@@ -416,8 +417,10 @@ def test_staff_detail_adds_contact_data_history_and_last_modified_time() -> None
         "has_photo",
         "history",
         "updated_at",
+        "opened_by_username",  # R26.4: staff only; no customer model has it (R26.6)
     }
     detail = schemas.StaffTicketDetail(**_staff_detail_values()).model_dump(mode="json")
+    assert detail["opened_by_username"] is None  # a ticket the customer opened
     assert detail["history"][0]["entry_text"] == "Replaced the seal"
     assert detail["history"][0]["edited_at"] is None
     assert detail["assigned_technician_name"] == SECRET_TECHNICIAN

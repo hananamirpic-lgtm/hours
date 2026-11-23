@@ -152,6 +152,7 @@ class StaffTicketDetailView(StaffTicketRowView):
     has_photo: bool
     history: tuple[HistoryEntry, ...]
     updated_at: datetime
+    opened_by_username: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,6 +437,7 @@ def get_staff_ticket(session: Session, ticket_number: object) -> StaffTicketDeta
             Ticket.description,
             Ticket.photo_key.is_not(None).label("has_photo"),
             Ticket.updated_at,
+            Ticket.opened_by_username,
             Category.id.label("category_id"),
             Category.name_he,
             Category.name_en,
@@ -469,4 +471,5 @@ def get_staff_ticket(session: Session, ticket_number: object) -> StaffTicketDeta
         has_photo=bool(row.has_photo),
         history=tuple(history),
         updated_at=row.updated_at,
+        opened_by_username=row.opened_by_username,
     )

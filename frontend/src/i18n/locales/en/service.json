@@ -470,6 +470,7 @@
     "password_not_changed": "The new password must differ from the current password and from the initial password.",
     "phone_already_registered": "This phone number is already registered to another customer.",
     "customer_not_found": "The customer was not found.",
+    "customer_inactive": "This resident is inactive. Reactivate the resident before opening a ticket.",
     "invalid_full_name": "The full name is not valid. Enter 1 to 100 characters.",
     "invalid_city": "The settlement is not valid. Enter up to 100 characters.",
     "invalid_apartment": "The apartment number is not valid. Enter up to 20 characters.",

@@ -424,6 +424,9 @@ PROBES: tuple[Probe, ...] = (
     # --- ticket staff
     Probe("GET", "/staff/dashboard", TICKET_STAFF, 200),
     Probe("GET", "/staff/tickets", TICKET_STAFF, 200),
+    # Staff open a ticket for the (active) owner customer (R26): the customer form plus `customer_id`.
+    Probe("POST", "/staff/tickets", TICKET_STAFF, 201, form={**GOOD_FORM, "customer_id": str(OWNER.id)}),
+    Probe("GET", "/staff/form-config", TICKET_STAFF, 200),
     Probe("GET", "/staff/tickets/{ticket_number}", TICKET_STAFF, 200),
     Probe(
         "POST",
@@ -1116,11 +1119,17 @@ def test_an_unparseable_body_is_422_invalid_request_before_authentication(
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32}")
 _TIME = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?")
 _BCRYPT = re.compile(r"\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}")
+#: The username of the acting staff member, stored on a ticket opened for a customer (R26.4), is the one
+#: value that differs between an administrator and an operations administrator by design: the response
+#: field `opened_by_username`, and the last column of a `svc_tickets` row in the snapshot.
+_OPENED_BY_JSON = re.compile(r'("opened_by_username"\s*:\s*)"(?:admin|operations_admin)"')
+_OPENED_BY_ROW = re.compile(r"(, )'(?:admin|operations_admin)'(\)$)")
 
 
 def _masked(text_value: str) -> str:
     """Generated ids, clock times and salted hashes differ between two runs by nature; the rest must not."""
-    return _BCRYPT.sub("<hash>", _TIME.sub("<time>", _UUID.sub("<id>", text_value)))
+    text_value = _BCRYPT.sub("<hash>", _TIME.sub("<time>", _UUID.sub("<id>", text_value)))
+    return _OPENED_BY_ROW.sub(r"\1'<staff>'\2", _OPENED_BY_JSON.sub(r'\1"<staff>"', text_value))
 
 
 def _masked_snapshot(world: World) -> dict[str, list[str]]:

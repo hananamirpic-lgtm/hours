@@ -32,6 +32,7 @@ CODE_PASSWORD_NOT_CHANGED = "password_not_changed"
 # --- Customers
 CODE_PHONE_ALREADY_REGISTERED = "phone_already_registered"
 CODE_CUSTOMER_NOT_FOUND = "customer_not_found"
+CODE_CUSTOMER_INACTIVE = "customer_inactive"
 CODE_INVALID_FULL_NAME = "invalid_full_name"
 CODE_INVALID_CITY = "invalid_city"
 CODE_INVALID_APARTMENT = "invalid_apartment"
@@ -101,6 +102,7 @@ ERROR_CODES: tuple[str, ...] = (
     # Customers
     CODE_PHONE_ALREADY_REGISTERED,
     CODE_CUSTOMER_NOT_FOUND,
+    CODE_CUSTOMER_INACTIVE,
     CODE_INVALID_FULL_NAME,
     CODE_INVALID_CITY,
     CODE_INVALID_APARTMENT,

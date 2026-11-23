@@ -38,6 +38,8 @@ LIMIT = 12_582_912
 MIB = 1_048_576
 PREFIX = "/api"
 PATH = f"{PREFIX}/service/tickets"
+#: Staff opening a ticket for a customer carries the same photo, so it is guarded the same way (R26.8).
+STAFF_PATH = f"{PREFIX}/service/staff/tickets"
 ORIGIN = "http://localhost:5173"
 CHUNK = 262_144
 
@@ -341,6 +343,20 @@ def test_the_guard_stops_reading_once_the_limit_is_passed():
     assert outcome.delivered_bytes <= LIMIT + CHUNK  # 10 x the limit was on offer
 
 
+def test_the_staff_submission_path_has_the_same_limit_with_and_without_content_length():
+    """R26.8: exactly the limit passes, one byte over is the coded 413, declared or streamed."""
+    for declared_for in (lambda total: str(total).encode(), lambda _total: None):
+        counted = _Counting(_reader)
+        passed = _call(_guard(counted), "POST", STAFF_PATH, total=LIMIT, declared=declared_for(LIMIT))
+        assert passed.status == 200
+        assert counted.calls == 1
+
+        refused = _Counting(_reader)
+        over = _call(_guard(refused), "POST", STAFF_PATH, total=LIMIT + 1, declared=declared_for(LIMIT + 1))
+        assert over.status == 413
+        assert over.json() == TOO_LARGE_BODY
+
+
 def test_a_custom_prefix_moves_the_guarded_path():
     guard = BodyLimitMiddleware(_reader, api_prefix="/v2/")
 
@@ -376,6 +392,11 @@ OTHER_ROUTES = [
     ("POST", f"{PREFIX}/employees"),
     ("POST", "/api/services/tickets"),
     ("POST", "/other/api/service/tickets"),
+    ("POST", f"{STAFF_PATH}/"),  # the staff path is an exact match too
+    ("POST", f"{STAFF_PATH}/10000/status"),
+    ("POST", f"{PREFIX}/service/staff/customers"),
+    ("GET", STAFF_PATH),
+    ("PUT", STAFF_PATH),
     ("GET", PATH),  # the same path, another method
     ("PUT", PATH),
     ("PATCH", PATH),
@@ -444,6 +465,24 @@ def test_a_body_between_12_and_13_mebibytes_gets_the_coded_413(on_client, size):
     assert response.json() == TOO_LARGE_BODY
 
 
+@pytest.mark.parametrize("size", [LIMIT + 1, 13 * MIB])
+def test_a_staff_submission_body_over_12_mebibytes_gets_the_coded_413_without_a_token(on_client, size):
+    response = on_client.post(
+        STAFF_PATH, content=b"x" * size, headers={"Content-Type": "application/octet-stream"}
+    )
+
+    assert response.status_code == 413
+    assert response.json() == TOO_LARGE_BODY
+
+
+def test_a_staff_submission_of_exactly_the_limit_reaches_authentication(on_client):
+    headers = {"Content-Type": "application/octet-stream"}
+    response = on_client.post(STAFF_PATH, content=b"x" * LIMIT, headers=headers)
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error"]["code"] == "not_authenticated"
+
+
 def test_the_413_carries_the_security_headers_and_the_cors_headers(on_client):
     response = on_client.post(
         PATH,
@@ -481,8 +520,11 @@ def test_exactly_the_limit_is_not_refused_by_the_guard(on_client):
         ("POST", f"{PREFIX}/service/auth/sign-in"),
         ("POST", f"{PREFIX}/service/tickets/10000/cancel"),
         ("POST", f"{PATH}/"),
+        ("POST", f"{STAFF_PATH}/"),
+        ("POST", f"{STAFF_PATH}/10000/status"),
         ("POST", f"{PREFIX}/auth/login"),
         ("GET", PATH),
+        ("GET", STAFF_PATH),
         ("PUT", PATH),
         ("DELETE", PATH),
     ],

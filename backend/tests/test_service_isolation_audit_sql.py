@@ -91,8 +91,8 @@ API = "/api/service"
 PASSWORD = "4321"
 PHOTO_PREFIX = "service-tickets/"
 
-#: The only response fields in which a staff username may appear (R14.6, R16.4, R20.12).
-COPY_KEYS = frozenset({"assigned_technician_name", "technician_name"})
+#: The only response fields in which a staff username may appear (R14.6, R16.4, R20.12, R26.4).
+COPY_KEYS = frozenset({"assigned_technician_name", "technician_name", "opened_by_username"})
 
 Key = tuple[str, str]  # (METHOD, path template relative to API with every parameter written `{}`)
 
@@ -1004,6 +1004,65 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
     )
     add(
         "GET",
+        "/staff/form-config",
+        Call("the form, as a technician", 200, lambda w: as_staff(w, w.tech, "/staff/form-config")),
+        Call("the form, as an administrator", 200, lambda w: as_staff(w, w.admin, "/staff/form-config")),
+    )
+
+    def staff_open(
+        who: str, customer: str = "cust", *parts: Any, **overrides: str
+    ) -> Callable[[World], Req]:
+        """Staff `who` opens a ticket for customer `customer`; extra `parts` are appended to the form."""
+
+        def build(w: World) -> Req:
+            fields = _form({"customer_id": str(getattr(w, customer).id)})
+            return as_staff(
+                w, getattr(w, who), "/staff/tickets", files=[*_good_form(w, **overrides), *fields, *parts]
+            )
+
+        return build
+
+    def staff_open_without_customer(w: World) -> Req:
+        return as_staff(w, w.tech, "/staff/tickets", files=_good_form(w))
+
+    def staff_open_unknown(w: World) -> Req:
+        fields = _form({"customer_id": _missing_id()})
+        return as_staff(w, w.tech, "/staff/tickets", files=[*_good_form(w), *fields])
+
+    def staff_store_down(w: World) -> Req:
+        w.photos.fail_put_once = True
+        return staff_open("tech", "cust", _photo_part(jpeg_bytes()))(w)
+
+    def staff_exhausted(w: World) -> Req:
+        w.numbers.exhausted_once = True
+        return staff_open("tech")(w)
+
+    add(
+        "POST",
+        "/staff/tickets",
+        Call("a technician opens a ticket", 201, staff_open("tech")),
+        Call(
+            "an administrator opens a ticket with a photo",
+            201,
+            staff_open("admin", "cust2", _photo_part(jpeg_bytes())),
+        ),
+        Call("an operations administrator opens a ticket", 201, staff_open("ops", "owing")),
+        Call("no customer id", 422, staff_open_without_customer, "customer_not_found"),
+        Call("no such customer", 404, staff_open_unknown, "customer_not_found"),
+        Call("an inactive customer", 409, staff_open("tech", "inactive"), "customer_inactive"),
+        Call("invalid city", 422, staff_open("tech", city="")),
+        Call("unknown form field", 422, staff_open("tech", surprise="1"), "unknown_field"),
+        Call(
+            "the photo is not an image",
+            422,
+            staff_open("tech", "cust", _photo_part(b"not an image")),
+            "invalid_photo_type",
+        ),
+        Call("the object store is down", 503, staff_store_down, "photo_storage_unavailable"),
+        Call("ticket numbers are used up", 503, staff_exhausted, "ticket_numbers_exhausted"),
+    )
+    add(
+        "GET",
         "/staff/tickets/{ticket_number}",
         Call("a ticket", 200, lambda w: on_ticket(w, w.admin)),
         Call("a ticket, as a technician", 200, lambda w: on_ticket(w, w.tech, name="Moshe Tech")),
@@ -1599,6 +1658,7 @@ def test_ticket_api_sql_isolation(
         session.rollback()
         names = set(session.execute(select(Ticket.assigned_technician_name)).scalars())
         names |= set(session.execute(select(HistoryEntry.technician_name)).scalars())
+        names |= set(session.execute(select(Ticket.opened_by_username)).scalars())  # R26.4: a stored copy
         session.rollback()
         return {name for name in names if name}
 
