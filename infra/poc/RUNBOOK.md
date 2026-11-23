@@ -321,8 +321,8 @@ throwaway DB run `pg_restore` from the dump and confirm the data is there.
 The service-ticket system (customer portal at `/service`, management screens at `/tickets`,
 API under `/api/service/`) ships inside the normal release (Phase 9) but stays **off** until
 you turn it on. One flag, `SERVICE_TICKETS_ENABLED`, controls it. The migration
-`0011_service_tickets` runs on every deploy whatever the flag says, so turning the flag on
-later needs **no migration**. This phase covers only what is extra for this feature.
+`0011_service_tickets` and `0012_staff_opened_tickets` run on every deploy whatever the flag says, so
+turning the flag on later needs **no migration**. This phase covers only what is extra for this feature.
 
 ### 12.1 Settings
 
@@ -607,7 +607,7 @@ Environment for paths 2 and 3: the same as "Rolling back manually" in Phase 9.
 
 **Path 4, schema removal.** Take a backup first (`./infra/poc/scripts/backup.sh pre-downgrade`), then turn the
 flag **off** and recreate the API (12.8) so nothing is querying the tables when they disappear. Run the
-downgrade with the **new** image, the one that contains revision `0011_service_tickets` (an older image
+downgrade with the **new** image, the one that contains revision `0012_staff_opened_tickets` (an older image
 cannot find the revision):
 
 ```bash
@@ -616,7 +616,7 @@ docker compose -f docker-compose.yml -f infra/poc/docker-compose.prod.yml \
   --env-file infra/poc/.env.prod run --rm api alembic downgrade 0010_operations_admin_role
 ```
 
-What the downgrade (revision `0011_service_tickets`, going back to `0010_operations_admin_role`) does and does not do:
+What the downgrade (revisions `0012_staff_opened_tickets` then `0011_service_tickets`, going back to `0010_operations_admin_role`) does and does not do:
 
 - It **drops the `svc_` tables only**: `svc_customers`, `svc_categories`, `svc_tickets`,
   `svc_history_entries`, `svc_settings`, `svc_field_labels`, `svc_signin_failures`, and the ticket-number
@@ -636,9 +636,9 @@ decision is made with the same facts:
 > Use the flag as the normal back-out (R21). If code must go back, use `rollback.sh --restore-db`.
 
 > **F12. `rollback.sh --restore-db` leaves `svc_` tables behind** (`pg_restore --clean` only drops
-> objects present in the dump) and does not restore object storage. Next deploy re-runs `0011` against
+> objects present in the dump) and does not restore object storage. Next deploy re-runs `0011` and `0012` against
 > existing tables.
-> The migration is idempotent per table and seeds only tables it creates (R19.17). Orphan photos stay in
+> `0011` is idempotent per table and seeds only tables it creates (R19.17); `0012` adds its column only when it is missing. Orphan photos stay in
 > the bucket under the prefix and are harmless.
 
 To see whether path 2 is safe (F11), count technician users before rolling code back. A result above 0

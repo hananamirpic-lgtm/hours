@@ -232,6 +232,10 @@ class Ticket(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
+    #: Username of the staff member who opened the ticket on the customer's behalf (Requirement 26.4);
+    #: NULL when the customer opened it. Added by migration 0012. Never serialized to a customer.
+    opened_by_username: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     def __repr__(self) -> str:
         return f"Ticket(#{self.ticket_number} status={self.status})"
 

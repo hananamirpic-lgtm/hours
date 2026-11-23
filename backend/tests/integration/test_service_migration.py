@@ -1,5 +1,8 @@
 """Migration `0011_service_tickets` leaves the Hours data alone, seeds only what it creates, and reverses.
 
+Migration `0012_staff_opened_tickets` (Requirement 26.4) adds one nullable column,
+`svc_tickets.opened_by_username`; a downgrade to `0011` removes only that column.
+
 This file is the permanent proof of the product owner's overriding constraint for the service-tickets
 release: applying the migration to a live Hours database changes nothing the Hours system holds.
 
@@ -44,11 +47,14 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from app.core.security import hash_password
 from app.db.base import Base
 
 HOURS_REVISION = "0010_operations_admin_role"
 SERVICE_REVISION = "0011_service_tickets"
+STAFF_OPENED_REVISION = "0012_staff_opened_tickets"
+OPENED_BY_COLUMN = "opened_by_username"
 SVC_PREFIX = "svc_"
 
 SVC_TABLES = {
@@ -783,16 +789,22 @@ def test_a_rerun_against_existing_tables_changes_nothing(scratch: Scratch) -> No
     assert settings == [(1, False, False)]
 
 
-def test_downgrade_removes_only_the_service_objects(hours_database: Scratch) -> None:
-    """R25.9: tables and sequence gone, `technician` kept, every existing table as it was at 0010."""
+@pytest.mark.parametrize("start", [SERVICE_REVISION, STAFF_OPENED_REVISION])
+def test_downgrade_removes_only_the_service_objects(hours_database: Scratch, start: str) -> None:
+    """R25.9: tables and sequence gone, `technician` kept, every existing table as it was at 0010.
+
+    Taken from 0011 and from 0012: the back-out target that removes the whole feature stays 0010.
+    """
     with hours_database.engine.connect() as connection:
         tables = _existing_tables(connection)
         hours_before = _hours_snapshot(connection, tables)
         inventory_before = _inventory(connection)
 
-    command.upgrade(hours_database.config, SERVICE_REVISION)
+    command.upgrade(hours_database.config, start)
     with hours_database.engine.begin() as connection:
         _insert_customer_and_ticket(connection)  # the downgrade must also work with data in place
+        if start == STAFF_OPENED_REVISION:
+            connection.execute(sa.text(f"UPDATE svc_tickets SET {OPENED_BY_COLUMN} = 'tech.one'"))
     command.downgrade(hours_database.config, HOURS_REVISION)
 
     with hours_database.engine.connect() as connection:
@@ -813,7 +825,7 @@ def test_downgrade_removes_only_the_service_objects(hours_database: Scratch) -> 
 
 
 def test_downgrade_to_base_leaves_no_tables_and_no_enum_types(scratch: Scratch) -> None:
-    command.upgrade(scratch.config, SERVICE_REVISION)
+    command.upgrade(scratch.config, "head")
     command.downgrade(scratch.config, "base")
 
     with scratch.engine.connect() as connection:
@@ -937,3 +949,123 @@ def test_upgrade_succeeds_when_the_service_tables_already_exist(hours_database: 
 
     assert service_after == service_before
     _assert_hours_unchanged(hours_before, hours_after, "re-upgrade over existing svc_ tables")
+
+
+# --------------------------------------------------------------- 0012: staff-opened tickets
+
+
+def _ticket_columns(connection: sa.Connection) -> list[tuple[Any, ...]]:
+    """Every `svc_tickets` column as (name, type, nullable, default), in table order."""
+    return _rows(
+        connection,
+        "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'svc_tickets' ORDER BY ordinal_position",
+    )
+
+
+def test_the_migration_chain_ends_at_the_staff_opened_revision(scratch: Scratch) -> None:
+    """The head is 0012, it follows 0011, and a fresh upgrade to head lands on it."""
+    script = ScriptDirectory.from_config(scratch.config)
+    assert script.get_heads() == [STAFF_OPENED_REVISION]
+    revision = script.get_revision(STAFF_OPENED_REVISION)
+    assert revision is not None
+    assert revision.down_revision == SERVICE_REVISION
+
+    command.upgrade(scratch.config, "head")
+    with scratch.engine.connect() as connection:
+        assert _version(connection) == STAFF_OPENED_REVISION
+
+
+def test_upgrade_adds_only_a_nullable_text_column_and_keeps_the_tickets(hours_database: Scratch) -> None:
+    """R26.4: `opened_by_username` is nullable text without a default, and every stored ticket reads NULL."""
+    command.upgrade(hours_database.config, SERVICE_REVISION)
+    with hours_database.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+    with hours_database.engine.connect() as connection:
+        tables = _existing_tables(connection)
+        columns_before = _ticket_columns(connection)
+        inventory_before = _inventory(connection)
+        ticket_before = _rows(connection, "SELECT id, ticket_number, description FROM svc_tickets")
+    assert OPENED_BY_COLUMN not in [row[0] for row in columns_before]
+
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == STAFF_OPENED_REVISION
+        columns_after = _ticket_columns(connection)
+        inventory_after = _inventory(connection)
+        ticket_after = _rows(connection, "SELECT id, ticket_number, description FROM svc_tickets")
+        opened_by = _rows(connection, f"SELECT {OPENED_BY_COLUMN} FROM svc_tickets")
+        assert _existing_tables(connection) == tables
+
+    assert columns_after == [*columns_before, (OPENED_BY_COLUMN, "text", "YES", None)]
+    assert ticket_after == ticket_before
+    assert opened_by == [(None,)]
+    # No new relation, type, function or extension: the migration adds a column and nothing else.
+    assert inventory_after == inventory_before
+
+
+def test_upgrade_to_0012_leaves_every_existing_hours_table_unchanged(hours_database: Scratch) -> None:
+    """No Hours table changes between 0011 and 0012."""
+    command.upgrade(hours_database.config, SERVICE_REVISION)
+    with hours_database.engine.connect() as connection:
+        tables = [name for name in _existing_tables(connection) if not name.startswith(SVC_PREFIX)]
+        before = _hours_snapshot(connection, tables)
+
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        after = _hours_snapshot(connection, tables)
+    _assert_hours_unchanged(before, after, "upgrade 0011 to 0012")
+
+
+def test_downgrade_to_0011_removes_only_the_column(hours_database: Scratch) -> None:
+    """R26.4: the column and its values go; every ticket, customer, column and Hours table stays."""
+    command.upgrade(hours_database.config, SERVICE_REVISION)
+    with hours_database.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+    with hours_database.engine.connect() as connection:
+        tables = _existing_tables(connection)
+        hours_tables = [name for name in tables if not name.startswith(SVC_PREFIX)]
+        columns_at_0011 = _ticket_columns(connection)
+        service_at_0011 = _service_state(connection)
+        hours_before = _hours_snapshot(connection, hours_tables)
+        inventory_before = _inventory(connection)
+
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+    with hours_database.engine.begin() as connection:
+        connection.execute(sa.text(f"UPDATE svc_tickets SET {OPENED_BY_COLUMN} = 'tech.one'"))
+
+    command.downgrade(hours_database.config, SERVICE_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == SERVICE_REVISION
+        assert _existing_tables(connection) == tables
+        assert _ticket_columns(connection) == columns_at_0011
+        # Every svc_ row checksum and every sequence equals what it was before 0012 ran, so the ticket
+        # and the customer are exactly as they were and no ticket number was consumed.
+        assert _service_state(connection) == service_at_0011
+        assert _scalar(connection, "SELECT count(*) FROM svc_tickets") == 1
+        hours_after = _hours_snapshot(connection, hours_tables)
+        inventory_after = _inventory(connection)
+
+    _assert_hours_unchanged(hours_before, hours_after, "downgrade 0012 to 0011")
+    assert inventory_after == inventory_before
+
+
+def test_upgrade_to_0012_succeeds_when_the_column_already_exists(hours_database: Scratch) -> None:
+    """Deploy-order safety: a database restored from a 0012-era dump with an older version upgrades."""
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+    with hours_database.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+        connection.execute(sa.text(f"UPDATE svc_tickets SET {OPENED_BY_COLUMN} = 'tech.one'"))
+    with hours_database.engine.connect() as connection:
+        service_before = _service_state(connection)
+
+    command.stamp(hours_database.config, SERVICE_REVISION)
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == STAFF_OPENED_REVISION
+        assert _rows(connection, f"SELECT {OPENED_BY_COLUMN} FROM svc_tickets") == [("tech.one",)]
+        assert _service_state(connection) == service_before
