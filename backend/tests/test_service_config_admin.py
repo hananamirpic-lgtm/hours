@@ -10,7 +10,7 @@ Unit tests on SQLite through the shared `session` fixture. Two things SQLite can
   foreign key.
 
 What only PostgreSQL can show (identity numbering, `SELECT ... FOR UPDATE` serialising the last-active
-rule, the unique-violation race) is in `tests/integration/test_service_config_admin.py`.
+rule, the unique-violation race) is in `tests/integration/test_service_config_admin_pg.py`.
 """
 
 from __future__ import annotations
