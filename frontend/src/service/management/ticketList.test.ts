@@ -415,8 +415,8 @@ describe('TicketListView', () => {
 
   it('offers only the allowed targets per row, and nothing for a cancelled ticket (R15.9, R15.11)', () => {
     expect(rowHtml(html, 10001)).toContain('Move to in progress');
-    expect(rowHtml(html, 10001)).not.toContain('Close ticket');
-    expect(rowHtml(html, 10002)).toContain('Close ticket');
+    expect(rowHtml(html, 10001)).not.toContain('Mark as resolved');
+    expect(rowHtml(html, 10002)).toContain('Mark as resolved');
     expect(rowHtml(html, 10002)).not.toContain('Move to in progress');
     expect(rowHtml(html, 10003)).toContain('Reopen');
     const cancelled = rowHtml(html, 10004);
@@ -426,7 +426,7 @@ describe('TicketListView', () => {
   });
 
   it('gives each action button an accessible name with the ticket number and disables a pending ticket', () => {
-    expect(html).toContain('aria-label="Close ticket, ticket 10002"');
+    expect(html).toContain('aria-label="Mark as resolved, ticket 10002"');
     const pending = render('en', createElement(TicketListView, view({ page: page(items), pendingTickets: new Set([10002]) })));
     expect(rowHtml(pending, 10002)).toMatch(/<button[^>]*disabled/);
     expect(rowHtml(pending, 10001)).not.toMatch(/<button[^>]*disabled/);
@@ -440,7 +440,7 @@ describe('TicketListView', () => {
     expect(html).toContain('To date');
     expect(html).toContain('Urgent only');
     expect(html).toContain('Urgent open tickets first');
-    for (const status of ['Received', 'In Progress', 'Closed', 'Cancelled']) {
+    for (const status of ['Received', 'In Progress', 'Resolved', 'Cancelled']) {
       expect(html).toContain(`<span>${status}</span>`);
     }
     const inputs = html.match(/<(input|select)\b[^>]*>/g) ?? [];
@@ -485,7 +485,7 @@ describe('TicketListView', () => {
         }),
       ),
     );
-    expect(failed).toContain('The action &quot;Close ticket&quot; on ticket 10002 failed.');
+    expect(failed).toContain('The action &quot;Mark as resolved&quot; on ticket 10002 failed.');
     expect(failed).toContain(text.en.errors.ticket_status_changed);
   });
 

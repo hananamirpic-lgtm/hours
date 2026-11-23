@@ -252,7 +252,7 @@ describe('ReportsView', () => {
     expect(figure(html, 'Open tickets')).toBe('2');
     expect(figure(html, 'Received')).toBe('1');
     expect(figure(html, 'In Progress')).toBe('1');
-    expect(figure(html, 'Closed')).toBe('1');
+    expect(figure(html, 'Resolved')).toBe('1');
     expect(figure(html, 'Cancelled')).toBe('1');
   });
 

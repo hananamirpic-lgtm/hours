@@ -251,7 +251,7 @@
       "loadError": "Could not load the ticket list.",
       "actions": {
         "toInProgress": "Move to in progress",
-        "close": "Close ticket",
+        "close": "Mark as resolved",
         "reopen": "Reopen",
         "none": "No actions"
       },
@@ -437,7 +437,7 @@
   "status": {
     "received": "Received",
     "in_progress": "In Progress",
-    "closed": "Closed",
+    "closed": "Resolved",
     "cancelled": "Cancelled",
     "group": {
       "open": "Open",

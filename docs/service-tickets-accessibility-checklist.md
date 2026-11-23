@@ -18,7 +18,7 @@ Requirements covered: R23.1 to R23.15, R8.9 (layout from 320 px), R12.5 and R17.
 |---|---|---|
 | Resident A, state **initial password** (1234) | Forced change-password screen | Create in Management, Customers, "New customer". New customers must change the password at first sign-in. |
 | Resident B, password already changed, with **no tickets** | Empty ticket list | |
-| Resident C, password already changed, with **at least 3 tickets** in different statuses (received, in progress, closed, cancelled), at least one marked **urgent**, and one with a **photo** and one without | List, detail, cancel dialog | Use a JPEG under 10 MB for the photo. |
+| Resident C, password already changed, with **at least 3 tickets** in different statuses (received, in progress, resolved, cancelled), at least one marked **urgent**, and one with a **photo** and one without | List, detail, cancel dialog | Use a JPEG under 10 MB for the photo. |
 | Staff: role `admin` or `operations_admin` | All Management screens | |
 | Staff: role `technician` | Not-authorized and "not available" checks | A technician sees no configuration screens. |
 | Staff: a role outside admin, operations_admin and technician (for example accounting) | "Not authorized" screen | Optional but required for the not-authorized row. |
@@ -195,7 +195,7 @@ Required ratios:
 - [ ] **H1** Body text, headings, labels and hints (for example "10 digits, for example 0501234567") meet 4.5:1.
 - [ ] **H2** Placeholder text and hint text, link text in the footer, pagination text meet 4.5:1.
 - [ ] **H3** Error messages (red notices and field errors) meet 4.5:1 on their background.
-- [ ] **H4** Status labels (Received, In Progress, Closed, Cancelled), the "Urgent" marker and the management "SOS" marker meet 4.5:1 on their badge background.
+- [ ] **H4** Status labels (Received, In Progress, Resolved, Cancelled), the "Urgent" marker and the management "SOS" marker meet 4.5:1 on their badge background.
 - [ ] **H5** Buttons: label text on the button colour meets 4.5:1, in the normal, hover, pressed and **disabled-while-sending** state ("Sending…", "Signing in…"). Disabled controls are allowed to be below ratio only if the page still states the state in text.
 - [ ] **H6** Borders of inputs, selects, checkboxes, the photo control and button outlines meet 3:1.
 - [ ] **H7** The focus outline meets 3:1 against both the element and the page background, on a light surface and on any coloured badge or banner.
@@ -204,7 +204,7 @@ Required ratios:
 
 ### I. No information by colour alone (R23.5, R23.12)
 
-- [ ] **I1** Ticket status is always written as text (Received / In Progress / Closed / Cancelled, נקלטה במערכת / בטיפול / נסגרה / בוטלה), with or without an icon. Switch the screen to greyscale (Windows: Settings, Accessibility, Colour filters, Greyscale; iPhone: Display & Text Size, Colour Filters; Android: Colour correction, Grayscale) and confirm every status can still be told apart.
+- [ ] **I1** Ticket status is always written as text (Received / In Progress / Resolved / Cancelled, נקלטה במערכת / בטיפול / טופלה / בוטלה), with or without an icon. Switch the screen to greyscale (Windows: Settings, Accessibility, Colour filters, Greyscale; iPhone: Display & Text Size, Colour Filters; Android: Colour correction, Grayscale) and confirm every status can still be told apart.
 - [ ] **I2** An urgent ticket is marked with the text "Urgent" / "דחוף" on the portal and "SOS" in Management, not only a colour or a red row.
 - [ ] **I3** Required fields are marked with the visible text "(required)" / "(חובה)", not only an asterisk or colour.
 - [ ] **I4** A field with an error shows an error message in text next to it (starting with "Error:" / "שגיאה:" for screen readers), not only a red border.
@@ -304,7 +304,7 @@ Common: A, B, C, D3, D6, D7, E, F, G, H, I.
 - [ ] **With photo:** the photo has the text alternative "Photo for ticket <n>, <category name>" / "תמונה לקריאה <n>, <קטגוריה>" (read by the screen reader). While loading, "Loading the photo…" is shown. A failed load shows "Could not load the photo." with a retry button.
 - [ ] **Without photo:** no empty image, no broken image icon, and no stray "image" announcement.
 - [ ] The status is text, and the urgent marker is text.
-- [ ] "Cancel ticket" / "ביטול הקריאה" appears only for a ticket that can still be cancelled. It does not appear for closed or cancelled tickets.
+- [ ] "Cancel ticket" / "ביטול הקריאה" appears only for a ticket that can still be cancelled. It does not appear for resolved or cancelled tickets.
 
 ### P6c. Cancel dialog (ticket detail)
 
