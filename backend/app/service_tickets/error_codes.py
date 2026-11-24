@@ -77,6 +77,27 @@ CODE_INVALID_LABEL_EN = "invalid_label_en"
 CODE_DUPLICATE_CATEGORY = "duplicate_category"
 CODE_LAST_ACTIVE_CATEGORY = "last_active_category"
 CODE_CATEGORY_NOT_FOUND = "category_not_found"
+CODE_INVALID_SETTLEMENT_NAME_HE = "invalid_settlement_name_he"
+CODE_INVALID_SETTLEMENT_NAME_EN = "invalid_settlement_name_en"
+CODE_DUPLICATE_SETTLEMENT = "duplicate_settlement"
+CODE_SETTLEMENT_NOT_FOUND = "settlement_not_found"
+CODE_INVALID_PART_NAME_HE = "invalid_part_name_he"
+CODE_INVALID_PART_NAME_EN = "invalid_part_name_en"
+CODE_DUPLICATE_PART = "duplicate_part"
+CODE_PART_NOT_FOUND = "part_not_found"
+
+# --- Settlements, parts, resolution, branding and export, from the second round of change requests
+# Raised by tasks 30.3 to 30.6 and listed here now, so the locale files are edited once.
+# Keep parentheses out of comments here: errorCodes.test.ts of the front end finds the tuple by the first one.
+CODE_INVALID_SETTLEMENT = "invalid_settlement"
+CODE_INVALID_PART = "invalid_part"
+CODE_PART_REQUIRED = "part_required"
+CODE_RESOLUTION_REQUIRED = "resolution_required"
+CODE_INVALID_COMPANY_NAME = "invalid_company_name"
+CODE_INVALID_LOGO_TYPE = "invalid_logo_type"
+CODE_LOGO_DIMENSIONS_TOO_LARGE = "logo_dimensions_too_large"
+CODE_LOGO_TOO_LARGE = "logo_too_large"
+CODE_EXPORT_TOO_LARGE = "export_too_large"
 
 # --- Server
 CODE_SERVICE_UNAVAILABLE = "service_unavailable"
@@ -142,6 +163,24 @@ ERROR_CODES: tuple[str, ...] = (
     CODE_DUPLICATE_CATEGORY,
     CODE_LAST_ACTIVE_CATEGORY,
     CODE_CATEGORY_NOT_FOUND,
+    CODE_INVALID_SETTLEMENT_NAME_HE,
+    CODE_INVALID_SETTLEMENT_NAME_EN,
+    CODE_DUPLICATE_SETTLEMENT,
+    CODE_SETTLEMENT_NOT_FOUND,
+    CODE_INVALID_PART_NAME_HE,
+    CODE_INVALID_PART_NAME_EN,
+    CODE_DUPLICATE_PART,
+    CODE_PART_NOT_FOUND,
+    # Settlements, parts, resolution, branding and export
+    CODE_INVALID_SETTLEMENT,
+    CODE_INVALID_PART,
+    CODE_PART_REQUIRED,
+    CODE_RESOLUTION_REQUIRED,
+    CODE_INVALID_COMPANY_NAME,
+    CODE_INVALID_LOGO_TYPE,
+    CODE_LOGO_DIMENSIONS_TOO_LARGE,
+    CODE_LOGO_TOO_LARGE,
+    CODE_EXPORT_TOO_LARGE,
     # Server
     CODE_SERVICE_UNAVAILABLE,
     CODE_PHOTO_STORAGE_UNAVAILABLE,

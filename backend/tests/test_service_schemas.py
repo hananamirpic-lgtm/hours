@@ -61,6 +61,8 @@ CUSTOMER_AUDIENCE = (
     "CategoryRef",
     "LabelTexts",
     "FormSettings",
+    "LocalityRef",
+    "BrandingInfo",
 )
 
 #: Fields that only staff may see, or that nobody may see (R12.4, R3.12).
@@ -493,15 +495,38 @@ def test_category_models_and_delete_result() -> None:
         schemas.CategoryDeleteResult(result="gone")  # type: ignore[arg-type]
 
 
-def test_form_config_has_categories_labels_and_settings_only() -> None:
-    assert _fields(schemas.FormConfig) == {"categories", "labels", "settings"}
+def test_settlement_and_part_models_and_delete_results() -> None:
+    for record in (schemas.LocalityRecord, schemas.PartRecord):
+        assert _fields(record) == {"id", "name_he", "name_en", "is_active"}
+        assert record.model_validate(_category()).is_active is False
+    for result in (schemas.LocalityDeleteResult, schemas.PartDeleteResult):
+        assert result(result="deactivated").result == "deactivated"
+        with pytest.raises(ValidationError):
+            result(result="gone")  # type: ignore[arg-type]
+    assert _fields(schemas.LocalityList) == _fields(schemas.PartList) == {"items"}
+
+
+def test_form_config_has_its_six_fields_only() -> None:
+    assert _fields(schemas.FormConfig) == {
+        "categories",
+        "labels",
+        "settings",
+        "localities",
+        "settlements_required",
+        "branding",
+    }
     assert _fields(schemas.FormSettings) == {"description_required", "photo_upload_enabled"}
+    assert _fields(schemas.LocalityRef) == {"id", "name_he", "name_en"}  # nothing about the state
+    assert _fields(schemas.BrandingInfo) == {"company_name", "has_logo"}  # never the object-store key
     labels = {key: {"he": "ה", "en": "E"} for key in FIELD_LABEL_KEYS}
     config = schemas.FormConfig.model_validate(
         {
             "categories": [_category_ref_dict()],
             "labels": labels,
             "settings": {"description_required": True, "photo_upload_enabled": False},
+            "localities": [{"id": CATEGORY_ID, "name_he": "חיפה", "name_en": "Haifa"}],
+            "settlements_required": True,
+            "branding": {"company_name": None, "has_logo": False},
         }
     )
     assert set(config.labels) == set(FIELD_LABEL_KEYS)
@@ -511,6 +536,9 @@ def test_form_config_has_categories_labels_and_settings_only() -> None:
                 "categories": [],
                 "labels": {"nickname": {"he": "ה", "en": "E"}},
                 "settings": {"description_required": True, "photo_upload_enabled": True},
+                "localities": [],
+                "settlements_required": False,
+                "branding": {"company_name": None, "has_logo": False},
             }
         )
 
@@ -548,12 +576,20 @@ def test_the_module_defines_exactly_these_models() -> None:
         "CustomerTicketPage",
         "CustomerTicketRow",
         "ServiceDashboardResponse",
+        "BrandingInfo",
         "FormConfig",
         "FormSettings",
         "HistoryEntryOut",
         "LabelTexts",
         "LabelsResponse",
+        "LocalityDeleteResult",
+        "LocalityList",
+        "LocalityRecord",
+        "LocalityRef",
         "NumberWarning",
+        "PartDeleteResult",
+        "PartList",
+        "PartRecord",
         "ReportResponse",
         "SettingsResponse",
         "StaffTicketDetail",
@@ -593,6 +629,10 @@ VALID_REQUESTS: dict[str, dict[str, Any]] = {
     "CustomerUpdateRequest": {"phone": "0505556677", "full_name": "Dana Levi"},
     "CategoryCreateRequest": {"name_he": "שרברבות", "name_en": "Plumbing"},
     "CategoryUpdateRequest": {"name_he": "שרברבות", "name_en": "Plumbing"},
+    "LocalityCreateRequest": {"name_he": "חיפה", "name_en": "Haifa"},
+    "LocalityUpdateRequest": {"name_he": "חיפה", "name_en": "Haifa"},
+    "PartCreateRequest": {"name_he": "מסנן", "name_en": "Filter"},
+    "PartUpdateRequest": {"name_he": "מסנן", "name_en": "Filter"},
     "LabelTextsRequest": {"he": "עיר", "en": "City"},
     "LabelsUpdateRequest": {"labels": {"city": {"he": "עיר", "en": "City"}}},
     "SettingsUpdateRequest": {"description_required": True, "photo_upload_enabled": False},
@@ -670,6 +710,8 @@ def test_text_limits_are_not_enforced_by_the_request_models() -> None:
     schemas.CustomerCreateRequest(phone=long, full_name=long, city=long, apartment=long)
     schemas.HistoryEntryRequest(entry_text=long, technician_name=long)
     schemas.CategoryCreateRequest(name_he="", name_en=long)
+    schemas.LocalityCreateRequest(name_he="", name_en=long)
+    schemas.PartCreateRequest(name_he="", name_en=long)
     schemas.LabelTextsRequest(he="", en=long)
 
 

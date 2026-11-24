@@ -1001,7 +1001,17 @@ def test_the_staff_form_config_is_the_customer_form_config(
     assert as_staff.status_code == as_customer.status_code == 200
     assert as_staff.json() == as_customer.json()
     assert [c["name_en"] for c in as_staff.json()["categories"]] == ["Plumbing"]  # active ones only
-    assert set(as_staff.json()) == {"categories", "labels", "settings"}
+    assert set(as_staff.json()) == {
+        "categories",
+        "labels",
+        "settings",
+        "localities",
+        "settlements_required",
+        "branding",
+    }
+    assert as_staff.json()["localities"] == []
+    assert as_staff.json()["settlements_required"] is False
+    assert as_staff.json()["branding"] == {"company_name": None, "has_logo": False}
     assert set(as_staff.json()["settings"]) == {"description_required", "photo_upload_enabled"}
 
 

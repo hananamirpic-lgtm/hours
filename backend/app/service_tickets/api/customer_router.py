@@ -107,6 +107,7 @@ from app.service_tickets.photo_store import (
     process_photo_limited,
 )
 from app.service_tickets.schemas import (
+    BrandingInfo,
     CancelTicketRequest,
     CategoryRef,
     CustomerProfile,
@@ -116,6 +117,7 @@ from app.service_tickets.schemas import (
     FormConfig,
     FormSettings,
     LabelTexts,
+    LocalityRef,
     ServiceTokenResponse,
     TicketCreated,
     customer_ticket_detail,
@@ -380,7 +382,8 @@ def _ticket_number_or_not_found(raw: str) -> int:
 
 @router.get("/form-config", response_model=FormConfig)
 def form_config(principal: CustomerPrincipalDep, session: ServiceSession) -> FormConfig:
-    """The ticket form: active categories oldest first, the seven labels and the two options (R9.3)."""
+    """The ticket form: active categories oldest first, the seven labels, the two options, the active
+    settlements and the branding (R9.3, R28, R30.2)."""
     return form_config_body(session)
 
 
@@ -394,6 +397,11 @@ def form_config_body(session: Session) -> FormConfig:
             description_required=config.settings.description_required,
             photo_upload_enabled=config.settings.photo_upload_enabled,
         ),
+        localities=[
+            LocalityRef(id=row.id, name_he=row.name_he, name_en=row.name_en) for row in config.localities
+        ],
+        settlements_required=config.settlements_required,
+        branding=BrandingInfo(company_name=config.branding.company_name, has_logo=config.branding.has_logo),
     )
 
 

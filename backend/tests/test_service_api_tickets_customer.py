@@ -35,10 +35,12 @@ from app.service_tickets.api import customer_router
 from app.service_tickets.config import ServiceConfig
 from app.service_tickets.customer_token import mint_customer_token
 from app.service_tickets.models import (
+    Branding,
     Category,
     Customer,
     FieldLabel,
     HistoryEntry,
+    Locality,
     ServiceSettings,
     Ticket,
 )
@@ -298,11 +300,75 @@ def test_form_config_lists_active_categories_oldest_first_with_labels_and_option
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"categories", "labels", "settings"}
+    assert set(body) == {"categories", "labels", "settings", "localities", "settlements_required", "branding"}
     assert [c["id"] for c in body["categories"]] == [str(first.id), str(second.id), str(third.id)]
     assert set(body["categories"][0]) == {"id", "name_he", "name_en"}
     assert body["labels"] == {"city": {"he": "עיר", "en": "City"}}
     assert body["settings"] == {"description_required": False, "photo_upload_enabled": False}
+
+
+def _locality(seq: int, name: str, *, active: bool = True) -> Locality:
+    return Locality(
+        seq=seq,
+        name_he=f"{name}-he",
+        name_en=name,
+        name_he_key=f"{name}-he".casefold(),
+        name_en_key=name.casefold(),
+        is_active=active,
+    )
+
+
+def test_form_config_with_no_settlement_has_an_empty_list_and_an_empty_branding(
+    client: TestClient, customer: Customer, category: Category
+) -> None:
+    body = client.get(f"{URL}/form-config", headers=_bearer(customer)).json()
+
+    assert body["localities"] == []
+    assert body["settlements_required"] is False
+    assert body["branding"] == {"company_name": None, "has_logo": False}
+
+
+def test_form_config_lists_active_settlements_oldest_first_and_requires_one(
+    client: TestClient, session: Session, customer: Customer, category: Category
+) -> None:
+    older = _locality(1, "Haifa")
+    retired = _locality(2, "Retired", active=False)
+    newer = _locality(3, "Akko")  # sorts first by name, comes last by age
+    session.add_all([newer, retired, older])
+    session.commit()
+
+    body = client.get(f"{URL}/form-config", headers=_bearer(customer)).json()
+
+    assert [row["id"] for row in body["localities"]] == [str(older.id), str(newer.id)]
+    assert set(body["localities"][0]) == {"id", "name_he", "name_en"}
+    assert body["localities"][0]["name_en"] == "Haifa"
+    assert body["settlements_required"] is True
+
+
+def test_form_config_with_only_inactive_settlements_does_not_require_one(
+    client: TestClient, session: Session, customer: Customer, category: Category
+) -> None:
+    session.add(_locality(1, "Retired", active=False))
+    session.commit()
+
+    body = client.get(f"{URL}/form-config", headers=_bearer(customer)).json()
+
+    assert body["localities"] == []
+    assert body["settlements_required"] is False
+
+
+def test_form_config_branding_shows_the_name_and_whether_a_logo_exists_never_its_key(
+    client: TestClient, session: Session, customer: Customer, category: Category
+) -> None:
+    session.add(
+        Branding(id=1, company_name="Acme <b>Ltd</b>", logo_key="service-tickets/branding/secret.png")
+    )
+    session.commit()
+
+    response = client.get(f"{URL}/form-config", headers=_bearer(customer))
+
+    assert response.json()["branding"] == {"company_name": "Acme <b>Ltd</b>", "has_logo": True}
+    assert "secret.png" not in response.text
 
 
 def test_form_config_uses_the_migration_defaults_when_no_settings_row_exists(

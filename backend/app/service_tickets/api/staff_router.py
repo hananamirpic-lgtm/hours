@@ -63,6 +63,8 @@ from app.service_tickets.error_codes import (
     CODE_CUSTOMER_INACTIVE,
     CODE_CUSTOMER_NOT_FOUND,
     CODE_DUPLICATE_CATEGORY,
+    CODE_DUPLICATE_PART,
+    CODE_DUPLICATE_SETTLEMENT,
     CODE_HISTORY_ENTRY_NOT_FOUND,
     CODE_INVALID_APARTMENT,
     CODE_INVALID_ASSIGNED_TECHNICIAN_NAME,
@@ -77,13 +79,19 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_NAME_EN,
     CODE_INVALID_NAME_HE,
     CODE_INVALID_PAGE,
+    CODE_INVALID_PART_NAME_EN,
+    CODE_INVALID_PART_NAME_HE,
     CODE_INVALID_PHONE,
+    CODE_INVALID_SETTLEMENT_NAME_EN,
+    CODE_INVALID_SETTLEMENT_NAME_HE,
     CODE_INVALID_TARGET_STATUS,
     CODE_INVALID_TECHNICIAN_NAME,
     CODE_INVALID_TICKET_NUMBER,
     CODE_INVALID_TRANSITION,
     CODE_LAST_ACTIVE_CATEGORY,
+    CODE_PART_NOT_FOUND,
     CODE_PHONE_ALREADY_REGISTERED,
+    CODE_SETTLEMENT_NOT_FOUND,
     CODE_TICKET_NOT_FOUND,
     CODE_TICKET_STATUS_CHANGED,
     CODE_UNKNOWN_FIELD,
@@ -98,7 +106,15 @@ from app.service_tickets.grammars import (
     parse_ticket_search,
     parse_uuid_path,
 )
-from app.service_tickets.models import Category, Customer, FieldLabel, HistoryEntry, ServiceSettings
+from app.service_tickets.models import (
+    Category,
+    Customer,
+    FieldLabel,
+    HistoryEntry,
+    Locality,
+    Part,
+    ServiceSettings,
+)
 from app.service_tickets.photo_store import PhotoStore
 from app.service_tickets.schemas import (
     AssignedTechnicianRequest,
@@ -118,7 +134,17 @@ from app.service_tickets.schemas import (
     HistoryEntryOut,
     LabelsResponse,
     LabelTexts,
+    LocalityCreateRequest,
+    LocalityDeleteResult,
+    LocalityList,
+    LocalityRecord,
+    LocalityUpdateRequest,
     NumberWarning,
+    PartCreateRequest,
+    PartDeleteResult,
+    PartList,
+    PartRecord,
+    PartUpdateRequest,
     ReportResponse,
     ServiceDashboardResponse,
     SettingsResponse,
@@ -138,7 +164,7 @@ from app.service_tickets.services import reports as reports_service
 from app.service_tickets.services.config_admin import (
     ConfigError,
     ConfigValidationError,
-    DuplicateCategory,
+    DuplicateName,
 )
 from app.service_tickets.services.customers import (
     CustomerError,
@@ -203,6 +229,15 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_LAST_ACTIVE_CATEGORY: HTTPStatus.CONFLICT,
     CODE_INVALID_NAME_HE: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_NAME_EN: HTTPStatus.UNPROCESSABLE_ENTITY,
+    # settlements and replaceable parts (R30.1, R29.6)
+    CODE_SETTLEMENT_NOT_FOUND: HTTPStatus.NOT_FOUND,
+    CODE_DUPLICATE_SETTLEMENT: HTTPStatus.CONFLICT,
+    CODE_INVALID_SETTLEMENT_NAME_HE: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_SETTLEMENT_NAME_EN: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_PART_NOT_FOUND: HTTPStatus.NOT_FOUND,
+    CODE_DUPLICATE_PART: HTTPStatus.CONFLICT,
+    CODE_INVALID_PART_NAME_HE: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_PART_NAME_EN: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_LABEL_HE: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_LABEL_EN: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_UNKNOWN_FIELD: HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -221,7 +256,7 @@ def _http_error(error: Exception) -> Exception:
     fields: dict[str, str] | None = None
     if isinstance(error, HistoryValidationError | CustomerValidationError | ConfigValidationError):
         fields = error.fields
-    elif isinstance(error, DuplicateCategory):
+    elif isinstance(error, DuplicateName):
         fields = {name: code for name in error.fields}  # the clashing languages
     return service_error(status, code, fields=fields)
 
@@ -934,3 +969,193 @@ def update_labels(body: _LabelsBody, session: ServiceSession) -> LabelsResponse:
         out = _labels_out(rows)
     session.commit()
     return out
+
+
+# --------------------------------------------------------------------------------- settlements, parts
+# Task 30.2 (Requirements 30.1 and 29.6). The two lists work as the categories do and share the service
+# functions of `config_admin` (`create_named`, `rename_named`, ...), which take the list as an argument.
+# Differences from categories: every route here, `GET` included, is configuration staff only (the form
+# configuration is what exposes the active ones to all staff), and there is no "last active" rule.
+# A malformed id in the path is the nil UUID, which no row has, so it is answered as a missing item.
+
+#: An item id that no settlement or part has (the nil UUID), for a malformed id in the path.
+_NO_ITEM = uuid.UUID(int=0)
+
+
+def _item_id_in_path(raw: str) -> uuid.UUID:
+    item_id = parse_uuid_path(raw)
+    return _NO_ITEM if item_id is None else item_id
+
+
+def _locality_record(row: Locality) -> LocalityRecord:
+    return LocalityRecord.model_validate(row)
+
+
+def _part_record(row: Part) -> PartRecord:
+    return PartRecord.model_validate(row)
+
+
+@router.get("/localities", response_model=LocalityList, dependencies=[Depends(config_staff_principal)])
+def list_localities(session: ServiceSession) -> LocalityList:
+    """Every settlement, active and inactive, oldest first (R30.1)."""
+    with _domain_errors(session):
+        rows = config_service.list_names(session, config_service.LOCALITIES)
+    return LocalityList(items=[_locality_record(row) for row in rows])  # type: ignore[arg-type]
+
+
+@router.post(
+    "/localities",
+    response_model=LocalityRecord,
+    status_code=HTTPStatus.CREATED,
+    dependencies=[Depends(config_staff_principal)],
+)
+def create_locality(body: LocalityCreateRequest, session: ServiceSession) -> LocalityRecord:
+    """Add an active settlement (R30.1)."""
+    with _domain_errors(session):
+        row = config_service.create_named(session, config_service.LOCALITIES, body.name_he, body.name_en)
+        out = _locality_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.put(
+    "/localities/{locality_id}",
+    response_model=LocalityRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def rename_locality(locality_id: str, body: LocalityUpdateRequest, session: ServiceSession) -> LocalityRecord:
+    """Replace both names of a settlement (R30.1)."""
+    with _domain_errors(session):
+        row = config_service.rename_named(
+            session, config_service.LOCALITIES, _item_id_in_path(locality_id), body.name_he, body.name_en
+        )
+        out = _locality_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.post(
+    "/localities/{locality_id}/deactivate",
+    response_model=LocalityRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def deactivate_locality(locality_id: str, session: ServiceSession) -> LocalityRecord:
+    """Hide a settlement from the forms. Any settlement may be deactivated, the last one included."""
+    with _domain_errors(session):
+        row = config_service.deactivate_named(
+            session, config_service.LOCALITIES, _item_id_in_path(locality_id)
+        )
+        out = _locality_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.post(
+    "/localities/{locality_id}/reactivate",
+    response_model=LocalityRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def reactivate_locality(locality_id: str, session: ServiceSession) -> LocalityRecord:
+    """List a settlement in the forms again."""
+    with _domain_errors(session):
+        row = config_service.reactivate_named(
+            session, config_service.LOCALITIES, _item_id_in_path(locality_id)
+        )
+        out = _locality_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.delete(
+    "/localities/{locality_id}",
+    response_model=LocalityDeleteResult,
+    dependencies=[Depends(config_staff_principal)],
+)
+def delete_locality(locality_id: str, session: ServiceSession) -> LocalityDeleteResult:
+    """Remove a settlement no ticket or customer uses (`removed`), else deactivate it (`deactivated`)."""
+    with _domain_errors(session):
+        outcome = config_service.delete_named(
+            session, config_service.LOCALITIES, _item_id_in_path(locality_id)
+        )
+    session.commit()
+    return LocalityDeleteResult(result=outcome)  # type: ignore[arg-type]  # REMOVED or DEACTIVATED
+
+
+@router.get("/parts", response_model=PartList, dependencies=[Depends(config_staff_principal)])
+def list_parts(session: ServiceSession) -> PartList:
+    """Every replaceable part, active and inactive, oldest first (R29.6)."""
+    with _domain_errors(session):
+        rows = config_service.list_names(session, config_service.PARTS)
+    return PartList(items=[_part_record(row) for row in rows])  # type: ignore[arg-type]
+
+
+@router.post(
+    "/parts",
+    response_model=PartRecord,
+    status_code=HTTPStatus.CREATED,
+    dependencies=[Depends(config_staff_principal)],
+)
+def create_part(body: PartCreateRequest, session: ServiceSession) -> PartRecord:
+    """Add an active part (R29.6)."""
+    with _domain_errors(session):
+        row = config_service.create_named(session, config_service.PARTS, body.name_he, body.name_en)
+        out = _part_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.put(
+    "/parts/{part_id}",
+    response_model=PartRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def rename_part(part_id: str, body: PartUpdateRequest, session: ServiceSession) -> PartRecord:
+    """Replace both names of a part (R29.6)."""
+    with _domain_errors(session):
+        row = config_service.rename_named(
+            session, config_service.PARTS, _item_id_in_path(part_id), body.name_he, body.name_en
+        )
+        out = _part_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.post(
+    "/parts/{part_id}/deactivate",
+    response_model=PartRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def deactivate_part(part_id: str, session: ServiceSession) -> PartRecord:
+    """Hide a part from the Resolve form. Any part may be deactivated, the last one included."""
+    with _domain_errors(session):
+        row = config_service.deactivate_named(session, config_service.PARTS, _item_id_in_path(part_id))
+        out = _part_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.post(
+    "/parts/{part_id}/reactivate",
+    response_model=PartRecord,
+    dependencies=[Depends(config_staff_principal)],
+)
+def reactivate_part(part_id: str, session: ServiceSession) -> PartRecord:
+    """List a part in the Resolve form again."""
+    with _domain_errors(session):
+        row = config_service.reactivate_named(session, config_service.PARTS, _item_id_in_path(part_id))
+        out = _part_record(row)  # type: ignore[arg-type]
+    session.commit()
+    return out
+
+
+@router.delete(
+    "/parts/{part_id}",
+    response_model=PartDeleteResult,
+    dependencies=[Depends(config_staff_principal)],
+)
+def delete_part(part_id: str, session: ServiceSession) -> PartDeleteResult:
+    """Remove a part no ticket uses (`removed`), else deactivate it (`deactivated`)."""
+    with _domain_errors(session):
+        outcome = config_service.delete_named(session, config_service.PARTS, _item_id_in_path(part_id))
+    session.commit()
+    return PartDeleteResult(result=outcome)  # type: ignore[arg-type]  # REMOVED or DEACTIVATED

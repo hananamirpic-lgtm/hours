@@ -143,6 +143,41 @@ class CategoryUpdateRequest(_Request):
     name_en: str
 
 
+class LocalityCreateRequest(_Request):
+    """`POST /staff/localities` (R30.1): a settlement of the list.
+
+    The two names are lenient on purpose (`Any`, absent means `None`), unlike the category bodies: a
+    missing or non-string name then reaches the service and gets the list's own code
+    (`invalid_settlement_name_he`, `invalid_settlement_name_en`) together with every other failing name,
+    instead of the generic `invalid_name_he` of the field name, which is the category's code.
+    """
+
+    name_he: Any = None
+    name_en: Any = None
+
+
+class LocalityUpdateRequest(_Request):
+    """`PUT /staff/localities/{id}` (R30.1): rename. Lenient like `LocalityCreateRequest`."""
+
+    name_he: Any = None
+    name_en: Any = None
+
+
+class PartCreateRequest(_Request):
+    """`POST /staff/parts` (R29.6): a replaceable part. Lenient like `LocalityCreateRequest`
+    (`invalid_part_name_he`, `invalid_part_name_en`)."""
+
+    name_he: Any = None
+    name_en: Any = None
+
+
+class PartUpdateRequest(_Request):
+    """`PUT /staff/parts/{id}` (R29.6): rename. Lenient like `LocalityCreateRequest`."""
+
+    name_he: Any = None
+    name_en: Any = None
+
+
 class LabelTextsRequest(_Request):
     """The Hebrew and English text of one field label."""
 
@@ -172,6 +207,21 @@ class CategoryRef(_Response):
     id: uuid.UUID
     name_he: str
     name_en: str
+
+
+class LocalityRef(_Response):
+    """A settlement as the ticket form lists it: id and the two names, nothing about its state (R30.2)."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+
+
+class BrandingInfo(_Response):
+    """The branding the forms show: the company name and whether a logo is stored (R28). Never the key."""
+
+    company_name: str | None
+    has_logo: bool
 
 
 class LabelTexts(_Response):
@@ -213,11 +263,16 @@ class CustomerProfile(_Response):
 
 
 class FormConfig(_Response):
-    """`GET /form-config`: active categories oldest first, the seven labels and the two options."""
+    """`GET /form-config` and `GET /staff/form-config`: active categories oldest first, the seven labels,
+    the two options, the active settlements oldest first (`settlements_required` is true when there is at
+    least one, R30.2) and the branding (R28)."""
 
     categories: list[CategoryRef]
     labels: dict[FieldLabelKey, LabelTexts]
     settings: FormSettings
+    localities: list[LocalityRef]
+    settlements_required: bool
+    branding: BrandingInfo
 
 
 class TicketCreated(_Response):
@@ -386,6 +441,52 @@ class CategoryList(_Response):
 
 class CategoryDeleteResult(_Response):
     """`DELETE /staff/categories/{id}`: removed, or kept and deactivated because tickets use it (R19.12)."""
+
+    result: Literal["removed", "deactivated"]
+
+
+class LocalityRecord(_Response):
+    """A settlement for configuration staff: active and inactive (R30.1)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+    is_active: bool
+
+
+class LocalityList(_Response):
+    """`GET /staff/localities`, oldest first."""
+
+    items: list[LocalityRecord]
+
+
+class LocalityDeleteResult(_Response):
+    """`DELETE /staff/localities/{id}`: removed, or kept and deactivated because it is used (R30.1)."""
+
+    result: Literal["removed", "deactivated"]
+
+
+class PartRecord(_Response):
+    """A replaceable part for configuration staff: active and inactive (R29.6)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+    is_active: bool
+
+
+class PartList(_Response):
+    """`GET /staff/parts`, oldest first."""
+
+    items: list[PartRecord]
+
+
+class PartDeleteResult(_Response):
+    """`DELETE /staff/parts/{id}`: removed, or kept and deactivated because a ticket uses it (R29.6)."""
 
     result: Literal["removed", "deactivated"]
 

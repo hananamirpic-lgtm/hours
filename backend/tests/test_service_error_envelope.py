@@ -20,16 +20,22 @@ SNAKE_CASE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 # Re-derive it with: the regex  the codes?\s+`([a-z][a-z0-9_]*)`  over requirements.md.
 CODES_NAMED_IN_REQUIREMENTS = (
     "duplicate_category",
+    "duplicate_part",
+    "duplicate_settlement",
+    "export_too_large",
     "invalid_credentials",
     "invalid_date_range",
     "invalid_filter",
     "invalid_page",
+    "invalid_part",
     "invalid_password_format",
     "invalid_phone",
     "invalid_photo_type",
+    "invalid_settlement",
     "invalid_ticket_number",
     "invalid_transition",
     "last_active_category",
+    "part_required",
     "password_change_required",
     "password_not_changed",
     "phone_already_registered",
@@ -38,6 +44,7 @@ CODES_NAMED_IN_REQUIREMENTS = (
     "photo_upload_disabled",
     "rate_limited",
     "request_too_large",
+    "resolution_required",
     "ticket_not_found",
     "ticket_numbers_exhausted",
     "ticket_status_changed",
@@ -120,7 +127,7 @@ def test_headers_absent_by_default() -> None:
 
 
 def test_catalogue_is_not_empty_and_has_unique_codes() -> None:
-    assert len(ERROR_CODES) == 52
+    assert len(ERROR_CODES) == 69
     assert len(set(ERROR_CODES)) == len(ERROR_CODES)
 
 

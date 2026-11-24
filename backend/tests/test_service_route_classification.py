@@ -133,6 +133,20 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("GET", "/staff/settings", CONFIG_STAFF),
     E("PUT", "/staff/settings", CONFIG_STAFF),
     E("PUT", "/staff/labels", CONFIG_STAFF),
+    # --- staff: the settlement and replaceable-parts lists (R30.1, R29.6). Unlike the category list, the
+    # list reads are configuration staff only too: the form configuration exposes the active ones.
+    E("GET", "/staff/localities", CONFIG_STAFF),
+    E("POST", "/staff/localities", CONFIG_STAFF),
+    E("PUT", "/staff/localities/{locality_id}", CONFIG_STAFF),
+    E("POST", "/staff/localities/{locality_id}/deactivate", CONFIG_STAFF),
+    E("POST", "/staff/localities/{locality_id}/reactivate", CONFIG_STAFF),
+    E("DELETE", "/staff/localities/{locality_id}", CONFIG_STAFF),
+    E("GET", "/staff/parts", CONFIG_STAFF),
+    E("POST", "/staff/parts", CONFIG_STAFF),
+    E("PUT", "/staff/parts/{part_id}", CONFIG_STAFF),
+    E("POST", "/staff/parts/{part_id}/deactivate", CONFIG_STAFF),
+    E("POST", "/staff/parts/{part_id}/reactivate", CONFIG_STAFF),
+    E("DELETE", "/staff/parts/{part_id}", CONFIG_STAFF),
 )
 
 _PATH_PARAMETER = re.compile(r"\{[^}]*\}")

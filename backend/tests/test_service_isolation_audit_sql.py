@@ -81,8 +81,11 @@ from app.service_tickets.models import (
     Customer,
     FieldLabel,
     HistoryEntry,
+    Locality,
+    Part,
     ServiceSettings,
     Ticket,
+    TicketPart,
 )
 from app.service_tickets.photo_store import get_photo_store
 from app.service_tickets.services.numbering import TicketNumbersExhausted
@@ -108,18 +111,21 @@ def _key(method: str, template: str) -> Key:
 
 @pytest.fixture(autouse=True)
 def numbered() -> Iterator[None]:
-    """Number `Category.seq` on insert, as PostgreSQL's identity column does."""
+    """Number `seq` of categories, settlements and parts on insert, as PostgreSQL's identity does."""
     counter = itertools.count(1)
 
-    def assign(_mapper: Any, _connection: Any, target: Category) -> None:
+    def assign(_mapper: Any, _connection: Any, target: Any) -> None:
         if target.seq is None:
             target.seq = next(counter)
 
-    event.listen(Category, "before_insert", assign)
+    models = (Category, Locality, Part)
+    for model in models:
+        event.listen(model, "before_insert", assign)
     try:
         yield
     finally:
-        event.remove(Category, "before_insert", assign)
+        for model in models:
+            event.remove(model, "before_insert", assign)
 
 
 @pytest.fixture
@@ -264,6 +270,31 @@ class World:
             is_active=active,
         )
         self.session.add(row)
+        self.session.commit()
+        return row
+
+    def named(self, model: type[Locality] | type[Part], name: str, *, active: bool = True) -> Any:
+        """A settlement or a part. Created by the call that needs it, not seeded: while a settlement is
+        active the ticket form changes, and the other routes' fixtures must see the form as it is."""
+        row = model(
+            name_he=f"{name}-he",
+            name_en=name,
+            name_he_key=f"{name}-he".casefold(),
+            name_en_key=name.casefold(),
+            is_active=active,
+        )
+        self.session.add(row)
+        self.session.commit()
+        return row
+
+    def used_named(self, model: type[Locality] | type[Part], name: str) -> Any:
+        """A settlement a ticket uses, or a part a resolved ticket uses."""
+        row = self.named(model, name)
+        ticket = self.ticket("closed" if model is Part else "received")
+        if model is Part:
+            self.session.add(TicketPart(ticket_id=ticket.id, part_id=row.id))
+        else:
+            ticket.locality_id = row.id
         self.session.commit()
         return row
 
@@ -1481,6 +1512,125 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
             "unknown_field",
         ),
     )
+
+    # ------------------------------------------------------------------ staff: settlements and parts
+    def named_list(
+        path: str,
+        id_name: str,
+        model: type[Locality] | type[Part],
+        *,
+        invalid_he: str,
+        duplicate: str,
+        not_found: str,
+    ) -> None:
+        base = f"/staff/{path}"
+        item = f"{base}/{{{id_name}}}"
+        names = {"name_he": f"{path}-new-he", "name_en": f"{path}-new"}
+
+        def target(w: World, name: str, suffix: str = "") -> str:
+            return f"{base}/{w.named(model, name).id}{suffix}"
+
+        add("GET", base, Call("as configuration staff", 200, lambda w: as_staff(w, w.admin, base)))
+        add(
+            "POST",
+            base,
+            Call("adds", 201, lambda w: as_staff(w, w.ops, base, json=names)),
+            Call(
+                "duplicate name",
+                409,
+                lambda w: as_staff(
+                    w,
+                    w.ops,
+                    base,
+                    json={"name_he": w.named(model, f"{path}-dup").name_he, "name_en": "Other"},
+                ),
+                duplicate,
+            ),
+            Call(
+                "empty name",
+                422,
+                lambda w: as_staff(w, w.ops, base, json={"name_he": "", "name_en": "x"}),
+                invalid_he,
+            ),
+        )
+        add(
+            "PUT",
+            item,
+            Call(
+                "renames",
+                200,
+                lambda w: as_staff(
+                    w,
+                    w.admin,
+                    target(w, f"{path}-rename"),
+                    json={"name_he": f"{path}-renamed-he", "name_en": f"{path}-renamed"},
+                ),
+            ),
+            Call(
+                "no such item",
+                404,
+                lambda w: as_staff(w, w.admin, f"{base}/{_missing_id()}", json=names),
+                not_found,
+            ),
+        )
+        add(
+            "POST",
+            f"{item}/deactivate",
+            Call(
+                "deactivates", 200, lambda w: as_staff(w, w.admin, target(w, f"{path}-off", "/deactivate"))
+            ),
+            Call(
+                "no such item",
+                404,
+                lambda w: as_staff(w, w.admin, f"{base}/{_missing_id()}/deactivate"),
+                not_found,
+            ),
+        )
+        add(
+            "POST",
+            f"{item}/reactivate",
+            Call(
+                "reactivates",
+                200,
+                lambda w: as_staff(
+                    w, w.ops, f"{base}/{w.named(model, f'{path}-on', active=False).id}/reactivate"
+                ),
+            ),
+            Call(
+                "no such item",
+                404,
+                lambda w: as_staff(w, w.ops, f"{base}/{_missing_id()}/reactivate"),
+                not_found,
+            ),
+        )
+        add(
+            "DELETE",
+            item,
+            Call("removes an unused item", 200, lambda w: as_staff(w, w.admin, target(w, f"{path}-spare"))),
+            Call(
+                "deactivates a used item",
+                200,
+                lambda w: as_staff(w, w.admin, f"{base}/{w.used_named(model, f'{path}-used').id}"),
+            ),
+            Call("no such item", 404, lambda w: as_staff(w, w.admin, f"{base}/{_missing_id()}"), not_found),
+        )
+
+    named_list(
+        "localities",
+        "locality_id",
+        Locality,
+        invalid_he="invalid_settlement_name_he",
+        duplicate="duplicate_settlement",
+        not_found="settlement_not_found",
+    )
+    named_list(
+        "parts",
+        "part_id",
+        Part,
+        invalid_he="invalid_part_name_he",
+        duplicate="duplicate_part",
+        not_found="part_not_found",
+    )
     return table
 
 
@@ -1700,6 +1850,8 @@ def test_ticket_api_sql_isolation(
         "svc_settings",
         "svc_field_labels",
         "svc_signin_failures",
+        "svc_localities",
+        "svc_parts",
     } <= written
     # R20.11: every object key starts with the photo prefix, and the run really touched the store: a
     # submission put a photo and the delivery route read photos.

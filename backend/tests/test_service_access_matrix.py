@@ -95,6 +95,8 @@ from app.service_tickets.models import (
     Customer,
     FieldLabel,
     HistoryEntry,
+    Locality,
+    Part,
     ServiceSettings,
     Ticket,
 )
@@ -168,6 +170,12 @@ TARGET = CUSTOMERS["target"]
 CUSTOMER_PASSWORD = "4321"
 
 CAT_A, CAT_B, CAT_C = _uid(0x301), _uid(0x302), _uid(0x303)  # A used by both tickets, B spare, C inactive
+#: Settlements (task 30.2) are all inactive in the seeded database on purpose: with no active settlement the
+#: ticket form keeps its free-text city, so the submission probes below are unaffected by the lists. The
+#: probes of the list routes need rows to rename, deactivate, reactivate and delete, not active ones.
+LOC_A, LOC_B, LOC_C = _uid(0x501), _uid(0x502), _uid(0x503)
+#: Replaceable parts: A and B active, C inactive.
+PART_A, PART_B, PART_C = _uid(0x601), _uid(0x602), _uid(0x603)
 TICKET_OWN, TICKET_OTHER = 10000, 10001  # the owner's ticket and the target customer's
 TICKET_OWN_ID, TICKET_OTHER_ID = _uid(0x401), _uid(0x402)
 #: The owner's ticket has a stored photo, so the photo probe has something to deliver (task 16.4). The
@@ -379,6 +387,8 @@ class Probe:
             "entry_id": ENTRY_ID,
             "customer_id": TARGET.id,
             "category_id": CAT_B,
+            "locality_id": LOC_B,
+            "part_id": PART_B,
         }
         return self.path.format(**{**defaults, **self.values})
 
@@ -493,6 +503,19 @@ PROBES: tuple[Probe, ...] = (
         json={"description_required": True, "photo_upload_enabled": True},
     ),
     Probe("PUT", "/staff/labels", CONFIG_STAFF, 200, json={"labels": {"city": {"he": "עיר", "en": "City"}}}),
+    # --- configuration staff: settlements and replaceable parts (R30.1, R29.6), reads included
+    Probe("GET", "/staff/localities", CONFIG_STAFF, 200),
+    Probe("POST", "/staff/localities", CONFIG_STAFF, 201, json={"name_he": "נהריה", "name_en": "Nahariya"}),
+    Probe("PUT", "/staff/localities/{locality_id}", CONFIG_STAFF, 200, json=_PLAIN),
+    Probe("POST", "/staff/localities/{locality_id}/deactivate", CONFIG_STAFF, 200),
+    Probe("POST", "/staff/localities/{locality_id}/reactivate", CONFIG_STAFF, 200),
+    Probe("DELETE", "/staff/localities/{locality_id}", CONFIG_STAFF, 200),
+    Probe("GET", "/staff/parts", CONFIG_STAFF, 200),
+    Probe("POST", "/staff/parts", CONFIG_STAFF, 201, json={"name_he": "אטם", "name_en": "Seal"}),
+    Probe("PUT", "/staff/parts/{part_id}", CONFIG_STAFF, 200, json=_PLAIN),
+    Probe("POST", "/staff/parts/{part_id}/deactivate", CONFIG_STAFF, 200),
+    Probe("POST", "/staff/parts/{part_id}/reactivate", CONFIG_STAFF, 200, values={"part_id": PART_C}),
+    Probe("DELETE", "/staff/parts/{part_id}", CONFIG_STAFF, 200),
 )
 
 _PARAMETER = re.compile(r"\{[^}]*\}")
@@ -573,6 +596,22 @@ def _seed(session: Session) -> None:
                 is_active=active,
             )
         )
+    for model, seeds in (
+        (Locality, ((LOC_A, "Haifa"), (LOC_B, "Akko"), (LOC_C, "Safed"))),
+        (Part, ((PART_A, "Filter"), (PART_B, "Gasket"), (PART_C, "Valve"))),
+    ):
+        for seq, (item_id, name) in enumerate(seeds, start=1):
+            session.add(
+                model(
+                    id=item_id,
+                    seq=seq,
+                    name_he=f"{name}-he",
+                    name_en=name,
+                    name_he_key=f"{name}-he".casefold(),
+                    name_en_key=name.casefold(),
+                    is_active=model is Part and item_id != PART_C,
+                )
+            )
     session.add(ServiceSettings(id=1, description_required=True, photo_upload_enabled=True))
     session.add_all(
         FieldLabel(field_key=key, label_he=f"{key}-he", label_en=f"{key}-en") for key in FIELD_LABEL_KEYS
@@ -629,18 +668,21 @@ def template() -> Iterator[Engine]:
 
 @pytest.fixture(autouse=True)
 def numbered() -> Iterator[None]:
-    """Number `Category.seq` of categories the tests create, as PostgreSQL's identity column does."""
+    """Number `seq` of the categories, settlements and parts the tests create (PostgreSQL does it)."""
     counters: dict[Engine, Iterator[int]] = {}  # one count per database, so two worlds number alike
 
-    def assign(_mapper: Any, connection: Any, target: Category) -> None:
+    def assign(_mapper: Any, connection: Any, target: Any) -> None:
         if target.seq is None:
             target.seq = next(counters.setdefault(connection.engine, itertools.count(1000)))
 
-    event.listen(Category, "before_insert", assign)
+    models = (Category, Locality, Part)
+    for model in models:
+        event.listen(model, "before_insert", assign)
     try:
         yield
     finally:
-        event.remove(Category, "before_insert", assign)
+        for model in models:
+            event.remove(model, "before_insert", assign)
 
 
 class Numbers:
@@ -987,6 +1029,24 @@ ORDER_ROUTES: tuple[OrderRoute, ...] = (
         vo=Req("PUT", f"/staff/customers/{MISSING_UUID}", _CUSTOMER_BAD),
     ),
     OrderRoute(
+        "config settlement rename",
+        CONFIG_STAFF,
+        v_code="invalid_settlement_name_en",
+        o_code="settlement_not_found",
+        v=Req("PUT", f"/staff/localities/{LOC_B}", {"name_he": "שונה"}),
+        o=Req("PUT", f"/staff/localities/{MISSING_UUID}", _PLAIN),
+        vo=Req("PUT", f"/staff/localities/{MISSING_UUID}", {"name_he": "שונה"}),
+    ),
+    OrderRoute(
+        "config part rename",
+        CONFIG_STAFF,
+        v_code="invalid_part_name_en",
+        o_code="part_not_found",
+        v=Req("PUT", f"/staff/parts/{PART_B}", {"name_he": "שונה"}),
+        o=Req("PUT", f"/staff/parts/{MISSING_UUID}", _PLAIN),
+        vo=Req("PUT", f"/staff/parts/{MISSING_UUID}", {"name_he": "שונה"}),
+    ),
+    OrderRoute(
         "config category rename",
         CONFIG_STAFF,
         v_code="invalid_name_en",
@@ -1057,13 +1117,24 @@ def test_check_order(world: World, state: str, route: OrderRoute, variant: tuple
         assert world.snapshot() == before, "a failed request changed data"
 
 
-@pytest.mark.parametrize("route_name", ["customer cancel", "customer submit", "config category rename"])
+@pytest.mark.parametrize(
+    "route_name",
+    [
+        "customer cancel",
+        "customer submit",
+        "config category rename",
+        "config settlement rename",
+        "config part rename",
+    ],
+)
 def test_every_order_route_is_valid_for_an_admitted_caller(world: World, route_name: str):
     """The 'valid' twin of each request is accepted, so the variants above fail only for their reason."""
     valid = {
         "customer cancel": ("customer", "POST", f"/tickets/{TICKET_OWN}/cancel", _CANCEL_OK, None, 200),
         "customer submit": ("customer", "POST", "/tickets", None, GOOD_FORM, 201),
         "config category rename": ("admin", "PUT", f"/staff/categories/{CAT_B}", _PLAIN, None, 200),
+        "config settlement rename": ("admin", "PUT", f"/staff/localities/{LOC_B}", _PLAIN, None, 200),
+        "config part rename": ("admin", "PUT", f"/staff/parts/{PART_B}", _PLAIN, None, 200),
     }
     state, method, path, body, form, status = valid[route_name]
 
@@ -1091,6 +1162,8 @@ MALFORMED_CASES = [
     for method, path in (
         ("POST", f"/staff/tickets/{TICKET_OWN}/status"),
         ("PUT", f"/staff/categories/{CAT_B}"),
+        ("PUT", f"/staff/localities/{LOC_B}"),
+        ("PUT", f"/staff/parts/{PART_B}"),
         ("POST", f"/tickets/{TICKET_OWN}/cancel"),
     )
 ]
