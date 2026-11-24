@@ -440,6 +440,7 @@ def test_me_returns_the_profile_and_nothing_else(client: TestClient, make_custom
         "city": None,
         "apartment": None,
         "must_change_password": False,
+        "locality": None,  # R30.6: the settlement, null for a customer whose city is only text
     }
 
 

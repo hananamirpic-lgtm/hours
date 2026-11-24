@@ -21,6 +21,10 @@ Rules kept here:
   is kept as typed and shown literally by the front ends (R9.13). Length is counted in Unicode
   characters after trimming. A value PostgreSQL cannot store (a NUL character or a lone surrogate)
   counts as invalid, so it fails with its field's code and never surfaces as a database error.
+* Settlements (R30): while the caller passes a non-empty map of active settlements the form carries
+  `locality_id` instead of `city`, and the ticket stores the id and the settlement's Hebrew name as its
+  city (and the folded key of that name). While the map is empty `locality_id` is refused and `city`
+  works as above. Every mismatch is `invalid_settlement` under the `city` key.
 * The phone is stored as the Normalized_Phone of the submitted value (R4, R9.8).
 * A description is required to hold 1 to 2000 characters while the setting says so; otherwise an empty
   or whitespace-only one is accepted and stored as empty (R9.5).
@@ -55,6 +59,7 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_CITY,
     CODE_INVALID_DESCRIPTION,
     CODE_INVALID_PHONE,
+    CODE_INVALID_SETTLEMENT,
     CODE_INVALID_URGENT,
     CODE_UNKNOWN_FIELD,
 )
@@ -70,6 +75,8 @@ DESCRIPTION_MAX_LENGTH = 2000
 
 #: The form fields that carry a value this module validates, in form reading order.
 FIELD_CITY = "city"
+#: The settlement part (R30.2, R30.3). Required, and `city` not accepted, while the active list is not empty.
+FIELD_LOCALITY = "locality_id"
 FIELD_APARTMENT = "apartment"
 FIELD_PHONE = "phone"
 FIELD_CATEGORY = "category_id"
@@ -86,7 +93,7 @@ VALIDATED_FIELDS = (
     FIELD_DESCRIPTION,
     FIELD_URGENT,
 )
-KNOWN_FIELDS = frozenset((*VALIDATED_FIELDS, FIELD_PHOTO))
+KNOWN_FIELDS = frozenset((*VALIDATED_FIELDS, FIELD_LOCALITY, FIELD_PHOTO))
 
 INITIAL_STATUS = "received"
 
@@ -120,6 +127,8 @@ class CleanSubmission:
     category_id: uuid.UUID
     description: str
     urgent: bool
+    #: The chosen settlement, or `None` when the city is free text. `city` is its Hebrew name then (R30.4).
+    locality_id: uuid.UUID | None = None
 
 
 class _Owner(Protocol):
@@ -184,22 +193,51 @@ def _clean_category(value: object, active_category_ids: Collection[uuid.UUID]) -
     return category_id
 
 
+def _clean_locality(value: object, active_localities: Mapping[uuid.UUID, str]) -> uuid.UUID | None:
+    """The id of an active settlement named by `value` (a UUID or its canonical text), else `None`."""
+    if isinstance(value, uuid.UUID):
+        locality_id = value
+    elif isinstance(value, str):
+        locality_id = parse_uuid_path(value)
+    else:
+        return None
+    return locality_id if locality_id in active_localities else None
+
+
 def validate_submission(
     values: Mapping[str, object],
     settings: FormSettings | _DescriptionSettings,
     active_category_ids: Collection[uuid.UUID],
+    active_localities: Mapping[uuid.UUID, str] | None = None,
 ) -> CleanSubmission:
-    """Check every rule of Requirements 9.4, 9.5 and 9.9 and return the clean values.
+    """Check every rule of Requirements 9.4, 9.5, 9.9 and 30.2 to 30.4 and return the clean values.
 
     Raises `SubmissionValidationError` listing every failing field when any rule fails (R9.6). The
     check does not touch the database: `active_category_ids` is the set of active categories the caller
     read, and `settings.description_required` says whether an empty description is acceptable.
+
+    `active_localities` maps the id of each active settlement to its Hebrew name (default: none). While
+    it is not empty, exactly one form applies: `locality_id` must name one of them and `city` must be
+    absent, and the stored city is the Hebrew name. While it is empty, `locality_id` is not accepted
+    and `city` follows R9.4. Any mismatch is `invalid_settlement` under the `city` key, which is the
+    field the form shows it on; the settlement check takes the place of the city check, so the order of
+    the failing fields does not change.
     """
     problems: dict[str, str] = {}
+    localities = active_localities or {}
 
-    city = _clean_required_text(values.get(FIELD_CITY), CITY_MAX_LENGTH)
-    if city is None:
-        problems[FIELD_CITY] = CODE_INVALID_CITY
+    locality_id: uuid.UUID | None = None
+    if localities:
+        locality_id = _clean_locality(values.get(FIELD_LOCALITY), localities)
+        city: str | None = localities[locality_id] if locality_id is not None else None
+        if locality_id is None or FIELD_CITY in values:
+            problems[FIELD_CITY] = CODE_INVALID_SETTLEMENT
+    else:
+        city = _clean_required_text(values.get(FIELD_CITY), CITY_MAX_LENGTH)
+        if FIELD_LOCALITY in values:
+            problems[FIELD_CITY] = CODE_INVALID_SETTLEMENT
+        elif city is None:
+            problems[FIELD_CITY] = CODE_INVALID_CITY
 
     apartment = _clean_required_text(values.get(FIELD_APARTMENT), APARTMENT_MAX_LENGTH)
     if apartment is None:
@@ -242,6 +280,7 @@ def validate_submission(
         category_id=category_id,
         description=description,
         urgent=urgent,
+        locality_id=locality_id,
     )
 
 
@@ -281,6 +320,7 @@ def create_ticket(
         category_id=values.category_id,
         city=values.city,
         city_key=fold_key(values.city),
+        locality_id=values.locality_id,
         apartment=values.apartment,
         phone=values.phone,
         description=values.description,

@@ -251,7 +251,7 @@ def test_create_customer_stores_initial_password_and_leaks_nothing(
 
     assert response.status_code == 201
     body = response.json()
-    assert set(body) == {"id", "full_name", "phone", "city", "apartment", "is_active"}
+    assert set(body) == {"id", "full_name", "phone", "city", "apartment", "is_active", "locality"}
     assert body["phone"] == "0505556677"
     assert body["city"] is None and body["apartment"] == "7" and body["is_active"] is True
     assert "1234" not in response.text and "password" not in response.text and "$2" not in response.text
@@ -320,6 +320,7 @@ def test_edit_replaces_the_four_values_and_keeps_tokens_valid(
         "city": "Akko",
         "apartment": None,
         "is_active": True,
+        "locality": None,
     }
     row = _row(session, customer.id)
     assert row.password_hash == old_hash and row.token_version == old_version
@@ -390,7 +391,7 @@ def test_deactivate_revokes_tokens_and_leaves_tickets_alone(
 
     assert response.status_code == 200
     assert response.json()["is_active"] is False
-    assert set(response.json()) == {"id", "full_name", "phone", "city", "apartment", "is_active"}
+    assert set(response.json()) == {"id", "full_name", "phone", "city", "apartment", "is_active", "locality"}
     stale = client.get("/api/service/probe", headers=old)
     assert (stale.status_code, _code(stale)) == (401, "invalid_token")
     session.rollback()
@@ -463,7 +464,7 @@ def test_list_is_sorted_by_name_and_shows_the_listed_fields(client: TestClient, 
     body = response.json()
     assert (body["page"], body["page_size"], body["total"]) == (1, 50, 4)
     assert _names(response) == ["Avi Katz", "Beni Katz", "Dana Levi", "MIRA Ben-David"]
-    assert set(body["items"][0]) == {"id", "full_name", "phone", "city", "apartment", "is_active"}
+    assert set(body["items"][0]) == {"id", "full_name", "phone", "city", "apartment", "is_active", "locality"}
     assert "password" not in response.text and "token_version" not in response.text
 
 
@@ -562,7 +563,7 @@ def test_report_without_filters_covers_every_ticket(client: TestClient, headers,
     assert (page["page"], page["page_size"], page["total"], len(page["items"])) == (1, 25, 5, 5)
     assert set(page["items"][0]) == {
         "ticket_number", "created_at", "customer_name", "city", "apartment",
-        "category", "status", "assigned_technician_name", "urgent",
+        "category", "status", "assigned_technician_name", "urgent", "locality",
     }  # fmt: skip
     assert "phone" not in page["items"][0] and "description" not in page["items"][0]
 

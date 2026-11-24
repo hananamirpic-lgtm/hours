@@ -20,6 +20,8 @@ export interface CustomerProfile {
   city: string | null;
   apartment: string | null;
   must_change_password: boolean;
+  /** The customer's settlement with its current names; null or absent when the city is only text (R30.6). */
+  locality?: { id: string; name_he: string; name_en: string } | null;
 }
 
 export function fetchCustomerProfile(signal?: AbortSignal): Promise<CustomerProfile> {

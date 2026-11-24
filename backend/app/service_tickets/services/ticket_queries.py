@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import ColumnElement, and_, case, func, select
 from sqlalchemy.orm import Session
@@ -58,7 +59,7 @@ from app.service_tickets.grammars import (
     fold_key,
     parse_ticket_number_path,
 )
-from app.service_tickets.models import Category, Customer, HistoryEntry, Ticket
+from app.service_tickets.models import Category, Customer, HistoryEntry, Locality, Ticket
 from app.service_tickets.services.lifecycle import TicketNotFound
 
 __all__ = [
@@ -69,6 +70,7 @@ __all__ = [
     "StaffTicketPageView",
     "StaffTicketRowView",
     "TicketCategory",
+    "TicketLocality",
     "TicketNotFound",
     "get_customer_ticket",
     "get_staff_ticket",
@@ -83,6 +85,15 @@ _OPEN_STATUSES = ("received", "in_progress")
 @dataclass(frozen=True, slots=True)
 class TicketCategory:
     """The category of a ticket, active or not: id and the two names, nothing about its state."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class TicketLocality:
+    """The settlement of a ticket with its current names, active or not: id and the two names."""
 
     id: uuid.UUID
     name_he: str
@@ -115,6 +126,7 @@ class CustomerTicketDetailView(CustomerTicketRowView):
     phone: str
     description: str
     has_photo: bool
+    locality: TicketLocality | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +150,8 @@ class StaffTicketRowView:
     status: str
     assigned_technician_name: str
     urgent: bool
+    #: Keyword-only so that the detail view, which adds required fields, can extend this class.
+    locality: TicketLocality | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +205,21 @@ def _ticket_number(value: object) -> int:
 
 def _category(category_id: uuid.UUID, name_he: str, name_en: str) -> TicketCategory:
     return TicketCategory(id=category_id, name_he=name_he, name_en=name_en)
+
+
+def _locality(row: Any) -> TicketLocality | None:
+    """The settlement of a query row that selected the three `locality_*` columns of an outer join."""
+    if row.locality_id is None:
+        return None
+    return TicketLocality(id=row.locality_id, name_he=row.locality_name_he, name_en=row.locality_name_en)
+
+
+#: The three columns of the settlement the queries below add, with an outer join on `Ticket.locality_id`.
+_LOCALITY_COLUMNS = (
+    Locality.id.label("locality_id"),
+    Locality.name_he.label("locality_name_he"),
+    Locality.name_en.label("locality_name_en"),
+)
 
 
 # --------------------------------------------------------------------------------- customer
@@ -267,8 +296,10 @@ def get_customer_ticket(
             Category.id.label("category_id"),
             Category.name_he,
             Category.name_en,
+            *_LOCALITY_COLUMNS,
         )
         .join(Category, Category.id == Ticket.category_id)
+        .outerjoin(Locality, Locality.id == Ticket.locality_id)
         .where(Ticket.ticket_number == number, Ticket.customer_id == customer_id)
     ).one_or_none()
     if row is None:
@@ -284,6 +315,7 @@ def get_customer_ticket(
         phone=row.phone,
         description=row.description,
         has_photo=bool(row.has_photo),
+        locality=_locality(row),
     )
 
 
@@ -296,6 +328,7 @@ def _staff_conditions(
     statuses: tuple[str, ...],
     category_id: uuid.UUID | None,
     city: str | None,
+    locality_id: uuid.UUID | None,
     urgent_only: bool,
     date_from: date | None,
     date_to: date | None,
@@ -310,6 +343,8 @@ def _staff_conditions(
     city_key = fold_key(city) if city is not None else ""
     if city_key:
         conditions.append(Ticket.city_key == city_key)
+    if locality_id is not None:
+        conditions.append(Ticket.locality_id == locality_id)
     if urgent_only:
         conditions.append(Ticket.urgent.is_(True))
     if date_from is not None:
@@ -326,6 +361,7 @@ def list_staff_tickets(
     statuses: Iterable[str] = (),
     category_id: uuid.UUID | None = None,
     city: str | None = None,
+    locality_id: uuid.UUID | None = None,
     urgent_only: bool = False,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -337,8 +373,9 @@ def list_staff_tickets(
     `search` is the parsed ticket number (`grammars.parse_ticket_search`) or `None`. `statuses` is the
     parsed status set (`grammars.parse_status_filter`); empty means no status filter. A date range with
     `date_from` after `date_to`, an unknown status or a category that does not exist raises
-    `InvalidDateRange` or `InvalidFilter`, with or without a search. A page past the end is an empty list
-    with the right total.
+    `InvalidDateRange` or `InvalidFilter`, with or without a search. `locality_id` filters on one
+    settlement (R30.7), combined with `city` by AND; an id that is no settlement raises `InvalidFilter`.
+    A page past the end is an empty list with the right total.
     """
     page = _check_page(page)
     status_set = tuple(dict.fromkeys(statuses))
@@ -348,12 +385,15 @@ def list_staff_tickets(
         raise InvalidDateRange
     if category_id is not None and session.get(Category, category_id) is None:
         raise InvalidFilter
+    if locality_id is not None and session.get(Locality, locality_id) is None:
+        raise InvalidFilter
 
     conditions = _staff_conditions(
         search=search,
         statuses=status_set,
         category_id=category_id,
         city=city,
+        locality_id=locality_id,
         urgent_only=urgent_only,
         date_from=date_from,
         date_to=date_to,
@@ -378,10 +418,12 @@ def list_staff_tickets(
             Category.id.label("category_id"),
             Category.name_he,
             Category.name_en,
+            *_LOCALITY_COLUMNS,
             func.count().over().label("total"),
         )
         .join(Customer, Customer.id == Ticket.customer_id)
         .join(Category, Category.id == Ticket.category_id)
+        .outerjoin(Locality, Locality.id == Ticket.locality_id)
         .where(*conditions)
         .order_by(*order)
         .limit(STAFF_PAGE_SIZE)
@@ -407,6 +449,7 @@ def list_staff_tickets(
                 status=row.status,
                 assigned_technician_name=row.assigned_technician_name,
                 urgent=row.urgent,
+                locality=_locality(row),
             )
             for row in rows
         ),
@@ -441,9 +484,11 @@ def get_staff_ticket(session: Session, ticket_number: object) -> StaffTicketDeta
             Category.id.label("category_id"),
             Category.name_he,
             Category.name_en,
+            *_LOCALITY_COLUMNS,
         )
         .join(Customer, Customer.id == Ticket.customer_id)
         .join(Category, Category.id == Ticket.category_id)
+        .outerjoin(Locality, Locality.id == Ticket.locality_id)
         .where(Ticket.ticket_number == number)
     ).one_or_none()
     if row is None:
@@ -472,4 +517,5 @@ def get_staff_ticket(session: Session, ticket_number: object) -> StaffTicketDeta
         history=tuple(history),
         updated_at=row.updated_at,
         opened_by_username=row.opened_by_username,
+        locality=_locality(row),
     )

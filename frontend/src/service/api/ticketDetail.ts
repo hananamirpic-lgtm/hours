@@ -54,6 +54,8 @@ export interface CustomerTicketDetail {
   readonly phone: string;
   readonly description: string;
   readonly has_photo: boolean;
+  /** The ticket's settlement with its current names; null or absent for a ticket with a text city (R30.5). */
+  readonly locality?: CategoryRef | null;
 }
 
 /** Query keys. They start with the portal root, so sign-out drops them with every other portal query. */

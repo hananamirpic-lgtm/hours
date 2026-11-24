@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.service_tickets import error_codes
-from app.service_tickets.models import Category, Customer, Ticket
+from app.service_tickets.models import Category, Customer, Locality, Ticket
 from app.service_tickets.services.config_admin import FormSettings
 from app.service_tickets.services.numbering import TicketNumbersExhausted
 from app.service_tickets.services.tickets import (
@@ -445,3 +445,95 @@ def test_creating_a_ticket_leaves_the_customer_unchanged(
     session.commit()
     assert snapshot() == before
     assert owner.city is None and owner.apartment is None
+
+
+# --------------------------------------------------------------------------------- settlements (R30)
+
+LOCALITY_ID = uuid.UUID("33333333-3333-4333-8333-333333333333")
+OTHER_LOCALITY_ID = uuid.UUID("44444444-4444-4444-8444-444444444444")
+LOCALITIES = {LOCALITY_ID: "חיפה"}
+
+
+def settlement_values(**overrides: object) -> dict[str, object]:
+    values = good_values(locality_id=str(LOCALITY_ID), **overrides)
+    del values["city"]
+    return values
+
+
+def test_with_active_settlements_the_clean_city_is_the_hebrew_name_and_the_id_is_kept() -> None:
+    clean = validate_submission(settlement_values(), DESCRIPTION_REQUIRED, ACTIVE, LOCALITIES)
+
+    assert (clean.city, clean.locality_id) == ("חיפה", LOCALITY_ID)
+
+
+def test_with_no_settlement_the_city_text_works_and_the_id_is_none() -> None:
+    clean = validate_submission(good_values(), DESCRIPTION_REQUIRED, ACTIVE, {})
+
+    assert (clean.city, clean.locality_id) == ("Haifa", None)
+
+
+@pytest.mark.parametrize(
+    "locality_id",
+    [None, "", "nope", str(OTHER_LOCALITY_ID), str(uuid.UUID(int=0)), 5],
+    ids=["none", "blank", "malformed", "unknown", "nil", "number"],
+)
+def test_a_bad_locality_id_is_invalid_settlement_under_city(locality_id: object) -> None:
+    values = settlement_values()
+    values["locality_id"] = locality_id
+
+    with pytest.raises(SubmissionValidationError) as caught:
+        validate_submission(values, DESCRIPTION_REQUIRED, ACTIVE, LOCALITIES)
+
+    assert caught.value.fields == {"city": error_codes.CODE_INVALID_SETTLEMENT}
+    assert caught.value.code == error_codes.CODE_INVALID_SETTLEMENT
+
+
+def test_a_city_beside_a_valid_locality_id_and_a_locality_id_with_no_settlement_are_refused() -> None:
+    with pytest.raises(SubmissionValidationError) as both:
+        validate_submission(
+            {**settlement_values(), "city": "Haifa"}, DESCRIPTION_REQUIRED, ACTIVE, LOCALITIES
+        )
+    with pytest.raises(SubmissionValidationError) as none_active:
+        validate_submission({**good_values(), "locality_id": str(LOCALITY_ID)}, DESCRIPTION_REQUIRED, ACTIVE)
+
+    assert both.value.fields == {"city": error_codes.CODE_INVALID_SETTLEMENT}
+    assert none_active.value.fields == {"city": error_codes.CODE_INVALID_SETTLEMENT}
+
+
+def test_the_settlement_failure_keeps_the_place_of_the_city_failure() -> None:
+    values = settlement_values(apartment="", phone="1")
+    values["stray"] = "x"
+
+    with pytest.raises(SubmissionValidationError) as caught:
+        validate_submission(values, DESCRIPTION_REQUIRED, ACTIVE, LOCALITIES)
+
+    assert list(caught.value.fields) == ["apartment", "phone", "stray"]
+    # With the settlement missing too, its failure comes first, where the city check was.
+    del values["locality_id"]
+    with pytest.raises(SubmissionValidationError) as missing:
+        validate_submission(values, DESCRIPTION_REQUIRED, ACTIVE, LOCALITIES)
+    assert list(missing.value.fields) == ["city", "apartment", "phone", "stray"]
+
+
+def test_create_ticket_stores_the_settlement_id_the_hebrew_name_and_its_folded_key(session: Session) -> None:
+    owner = Customer(
+        phone="0505556677",
+        full_name="Dana",
+        full_name_key="dana",
+        password_hash="x",
+        must_change_password=False,
+        token_version=1,
+    )
+    category = Category(seq=1, name_he="a", name_en="A", name_he_key="a", name_en_key="a")
+    locality = Locality(
+        id=LOCALITY_ID, seq=1, name_he="חיפה", name_en="Haifa", name_he_key="חיפה", name_en_key="haifa"
+    )
+    session.add_all([owner, category, locality])
+    session.commit()
+    clean = validate_submission(
+        settlement_values(category_id=str(category.id)), DESCRIPTION_REQUIRED, {category.id}, LOCALITIES
+    )
+
+    ticket = create_ticket(session, owner, clean, allocator=lambda _session: 10000)
+
+    assert (ticket.locality_id, ticket.city, ticket.city_key) == (LOCALITY_ID, "חיפה", "חיפה")

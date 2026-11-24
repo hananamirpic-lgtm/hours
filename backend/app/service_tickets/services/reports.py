@@ -16,6 +16,8 @@ Filters (all optional, combined with AND; an absent filter restricts nothing, R1
 * `category_id`: one category, active or inactive (R18.6). A category that does not exist raises
   `InvalidFilter`. The router passes `None` for an absent filter and raises `InvalidFilter` itself for
   text that is not a UUID.
+* `locality_id`: one settlement (R30.7), combined with the city filter by AND. A settlement that does not
+  exist raises `InvalidFilter`; the router raises it itself for text that is not a UUID.
 
 Counts. One statement, `SELECT ... GROUP BY status UNION ALL SELECT ... GROUP BY category`, gives both
 sets from one snapshot, so each set sums to the same total (R18.8). The total is the sum of the status
@@ -59,7 +61,7 @@ from app.service_tickets.grammars import (
     InvalidPage,
     fold_key,
 )
-from app.service_tickets.models import Category, Customer, Ticket
+from app.service_tickets.models import Category, Customer, Locality, Ticket
 
 _STATUS_KIND = "status"
 _CATEGORY_KIND = "category"
@@ -73,6 +75,15 @@ class ReportCategory:
     name_he: str
     name_en: str
     seq: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReportLocality:
+    """The settlement of a report row: id and the two names, active or not."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +105,8 @@ class ReportTicketRow:
     status: str
     assigned_technician_name: str
     urgent: bool
+    #: The settlement with its current names (R30.5), or `None` for a ticket with a text city.
+    locality: ReportLocality | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +123,11 @@ class Report:
 
 
 def _conditions(
-    date_from: date | None, date_to: date | None, city: str | None, category_id: uuid.UUID | None
+    date_from: date | None,
+    date_to: date | None,
+    city: str | None,
+    category_id: uuid.UUID | None,
+    locality_id: uuid.UUID | None = None,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = []
     if date_from is not None:
@@ -122,6 +139,8 @@ def _conditions(
         conditions.append(Ticket.city_key == city_key)
     if category_id is not None:
         conditions.append(Ticket.category_id == category_id)
+    if locality_id is not None:
+        conditions.append(Ticket.locality_id == locality_id)
     return conditions
 
 
@@ -132,6 +151,7 @@ def get_report(
     date_to: date | None = None,
     city: str | None = None,
     category_id: uuid.UUID | None = None,
+    locality_id: uuid.UUID | None = None,
     page: int = 1,
 ) -> Report:
     """The report for the filters, with page `page` (1-based) of the ticket table. Never commits."""
@@ -141,8 +161,10 @@ def get_report(
         raise InvalidPage
     if category_id is not None and session.get(Category, category_id) is None:
         raise InvalidFilter
+    if locality_id is not None and session.get(Locality, locality_id) is None:
+        raise InvalidFilter
 
-    conditions = _conditions(date_from, date_to, city, category_id)
+    conditions = _conditions(date_from, date_to, city, category_id, locality_id)
 
     by_status_query = (
         select(
@@ -193,15 +215,16 @@ def get_report(
     rows: list[ReportTicketRow] = []
     if offset < total:
         page_query = (
-            select(Ticket, Customer.full_name, Category)
+            select(Ticket, Customer.full_name, Category, Locality)
             .join(Customer, Customer.id == Ticket.customer_id)
             .join(Category, Category.id == Ticket.category_id)
+            .outerjoin(Locality, Locality.id == Ticket.locality_id)
             .where(*conditions)
             .order_by(Ticket.created_at.desc(), Ticket.ticket_number.desc())
             .limit(STAFF_PAGE_SIZE)
             .offset(offset)
         )
-        for ticket, customer_name, category in session.execute(page_query):
+        for ticket, customer_name, category, locality in session.execute(page_query):
             rows.append(
                 ReportTicketRow(
                     ticket_number=ticket.ticket_number,
@@ -215,6 +238,11 @@ def get_report(
                     status=ticket.status,
                     assigned_technician_name=ticket.assigned_technician_name,
                     urgent=ticket.urgent,
+                    locality=(
+                        None
+                        if locality is None
+                        else ReportLocality(locality.id, locality.name_he, locality.name_en)
+                    ),
                 )
             )
 

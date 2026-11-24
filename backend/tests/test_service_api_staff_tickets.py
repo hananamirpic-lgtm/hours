@@ -334,6 +334,7 @@ def test_list_row_shape_and_paging(client: TestClient, admin, make_ticket) -> No
         "status",
         "assigned_technician_name",
         "urgent",
+        "locality",
     }
     assert first["items"][0]["customer_name"] == "Dana Levi"
     assert set(first["items"][0]["category"]) == {"id", "name_he", "name_en"}
@@ -520,6 +521,7 @@ def test_detail_shape_and_history_order(client: TestClient, admin, make_ticket, 
         "status",
         "assigned_technician_name",
         "urgent",
+        "locality",
         "phone",
         "description",
         "has_photo",

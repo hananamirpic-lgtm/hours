@@ -822,6 +822,7 @@ def test_the_detail_holds_the_stored_values_and_nothing_staff_only(
         "phone",
         "description",
         "has_photo",
+        "locality",
     }
     assert (body["city"], body["apartment"], body["phone"]) == ("Acre", "7", "0521112233")
     assert body["has_photo"] is True
@@ -897,6 +898,7 @@ def test_cancel_from_received_and_in_progress_keeps_everything_else(
         "phone",
         "description",
         "has_photo",
+        "locality",
     }
     assert "Dan" not in response.text
     after = _stored(session, ticket.ticket_number)

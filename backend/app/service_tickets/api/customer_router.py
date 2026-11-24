@@ -97,7 +97,7 @@ from app.service_tickets.error_codes import (
     CODE_UNKNOWN_FIELD,
 )
 from app.service_tickets.grammars import GrammarError, parse_page, parse_ticket_number_path
-from app.service_tickets.models import Category, Customer
+from app.service_tickets.models import Category, Customer, Locality
 from app.service_tickets.photo import MAX_PHOTO_BYTES, PhotoError, ProcessedPhoto
 from app.service_tickets.photo_store import (
     PhotoStorageUnavailable,
@@ -277,9 +277,16 @@ def me(principal: CustomerPrincipalUngatedDep, session: ServiceSession) -> Custo
 
 def _load_profile(session: Session, principal: CustomerPrincipal) -> CustomerProfile | None:
     row = session.execute(
-        select(Customer.full_name, Customer.city, Customer.apartment).where(
-            Customer.id == principal.customer_id
+        select(
+            Customer.full_name,
+            Customer.city,
+            Customer.apartment,
+            Locality.id.label("locality_id"),
+            Locality.name_he.label("locality_name_he"),
+            Locality.name_en.label("locality_name_en"),
         )
+        .outerjoin(Locality, Locality.id == Customer.locality_id)
+        .where(Customer.id == principal.customer_id)
     ).one_or_none()
     if row is None:
         return None
@@ -289,6 +296,11 @@ def _load_profile(session: Session, principal: CustomerPrincipal) -> CustomerPro
         city=row.city,
         apartment=row.apartment,
         must_change_password=principal.must_change_password,
+        locality=(
+            None
+            if row.locality_id is None
+            else LocalityRef(id=row.locality_id, name_he=row.locality_name_he, name_en=row.locality_name_en)
+        ),
     )
 
 
@@ -362,6 +374,10 @@ def _ticket_row(view: ticket_queries.CustomerTicketRowView) -> CustomerTicketRow
     )
 
 
+def _locality_ref(locality: ticket_queries.TicketLocality) -> LocalityRef:
+    return LocalityRef(id=locality.id, name_he=locality.name_he, name_en=locality.name_en)
+
+
 def _ticket_detail(view: ticket_queries.CustomerTicketDetailView) -> CustomerTicketDetail:
     return CustomerTicketDetail(
         **_ticket_row(view).model_dump(),
@@ -369,6 +385,7 @@ def _ticket_detail(view: ticket_queries.CustomerTicketDetailView) -> CustomerTic
         phone=view.phone,
         description=view.description,
         has_photo=view.has_photo,
+        locality=None if view.locality is None else _locality_ref(view.locality),
     )
 
 
@@ -562,7 +579,12 @@ def _store_ticket(
     clean: CleanSubmission | None = None
     problems: dict[str, str] = {}
     try:
-        clean = validate_submission(values, form.settings, active_category_ids)
+        clean = validate_submission(
+            values,
+            form.settings,
+            active_category_ids,
+            {locality.id: locality.name_he for locality in form.localities},
+        )
     except SubmissionValidationError as error:
         problems = dict(error.fields)
     photo, photo_code = _settle_photo(files, enabled=form.settings.photo_upload_enabled)
@@ -693,7 +715,10 @@ def cancel_ticket(
             CustomerActor(customer_id=principal.customer_id),
         )
         category = session.execute(select(Category).where(Category.id == ticket.category_id)).scalar_one()
-        response = customer_ticket_detail(ticket, category)
+        locality = (
+            session.get(Locality, ticket.locality_id) if ticket.locality_id is not None else None
+        )
+        response = customer_ticket_detail(ticket, category, locality)
     except lifecycle.LifecycleError as error:
         session.rollback()
         raise _error(error.code) from error

@@ -78,6 +78,7 @@ STAFF_ONLY_FIELDS = {
     "customer_id",
     "photo_key",
     "city_key",
+    "locality_id",  # R30: customers see the `locality` reference object, never the id column
     "token_version",
     "is_active",
     "password_hash",
@@ -205,21 +206,23 @@ def _staff_detail_values() -> dict[str, Any]:
 # --- the two customer serializers
 
 ROW_FIELDS = {"ticket_number", "category", "created_date", "apartment", "status", "urgent"}
-DETAIL_FIELDS = ROW_FIELDS | {"city", "apartment", "phone", "description", "has_photo"}
+DETAIL_FIELDS = ROW_FIELDS | {"city", "apartment", "phone", "description", "has_photo", "locality"}
 
 
 def test_customer_ticket_row_has_exactly_the_listed_fields() -> None:
     assert _fields(schemas.CustomerTicketRow) == ROW_FIELDS
 
 
-def test_customer_ticket_detail_has_exactly_the_row_fields_plus_four() -> None:
-    # The row already carries the apartment (R12.1 as amended), so the detail adds four fields to it.
+def test_customer_ticket_detail_has_exactly_the_row_fields_plus_five() -> None:
+    # The row already carries the apartment (R12.1 as amended), so the detail adds four fields to it,
+    # and the settlement reference of R30.5. The list row has no settlement.
     assert _fields(schemas.CustomerTicketDetail) == DETAIL_FIELDS
     assert _fields(schemas.CustomerTicketDetail) - _fields(schemas.CustomerTicketRow) == {
         "city",
         "phone",
         "description",
         "has_photo",
+        "locality",
     }
 
 
@@ -409,6 +412,7 @@ def test_staff_row_has_the_fields_of_r15_2() -> None:
         "status",
         "assigned_technician_name",
         "urgent",
+        "locality",  # R30.5: the settlement with its current names, null for a text city
     }
 
 
@@ -445,7 +449,8 @@ def test_history_entry_is_built_from_a_stored_entry() -> None:
 def test_customer_record_never_carries_the_hash_or_token_version() -> None:
     record = schemas.CustomerRecord.model_validate(_customer())
     payload = record.model_dump(mode="json")
-    assert set(payload) == {"id", "full_name", "phone", "city", "apartment", "is_active"}
+    assert set(payload) == {"id", "full_name", "phone", "city", "apartment", "is_active", "locality"}
+    assert payload["locality"] is None
     text = json.dumps(payload)
     assert SECRET_HASH not in text
     assert "token_version" not in payload
@@ -453,7 +458,8 @@ def test_customer_record_never_carries_the_hash_or_token_version() -> None:
 
 def test_customer_profile_hides_id_hash_and_counters() -> None:
     payload = schemas.CustomerProfile.model_validate(_customer()).model_dump(mode="json")
-    assert set(payload) == {"full_name", "phone", "city", "apartment", "must_change_password"}
+    assert set(payload) == {"full_name", "phone", "city", "apartment", "must_change_password", "locality"}
+    assert payload["locality"] is None
     assert SECRET_HASH not in json.dumps(payload)
 
 

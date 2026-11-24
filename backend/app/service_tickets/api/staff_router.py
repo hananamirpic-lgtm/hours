@@ -82,6 +82,7 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_PART_NAME_EN,
     CODE_INVALID_PART_NAME_HE,
     CODE_INVALID_PHONE,
+    CODE_INVALID_SETTLEMENT,
     CODE_INVALID_SETTLEMENT_NAME_EN,
     CODE_INVALID_SETTLEMENT_NAME_HE,
     CODE_INVALID_TARGET_STATUS,
@@ -138,6 +139,7 @@ from app.service_tickets.schemas import (
     LocalityDeleteResult,
     LocalityList,
     LocalityRecord,
+    LocalityRef,
     LocalityUpdateRequest,
     NumberWarning,
     PartCreateRequest,
@@ -218,6 +220,7 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_INVALID_FULL_NAME: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_CITY: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_APARTMENT: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_SETTLEMENT: HTTPStatus.UNPROCESSABLE_ENTITY,  # R30.6, under `fields.city`
     # list and report query parameters
     CODE_INVALID_PAGE: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_TICKET_NUMBER: HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -306,7 +309,26 @@ def _category_filter(raw: str | None) -> uuid.UUID | None:
     return category_id
 
 
+def _locality_filter(raw: str | None) -> uuid.UUID | None:
+    """The settlement filter (R30.7): absent or blank is no filter; text that is not a UUID is
+    `invalid_filter`. An id that names no settlement is `invalid_filter` in the query service."""
+    if raw is None or not raw.strip():
+        return None
+    locality_id = parse_uuid_path(raw.strip())
+    if locality_id is None:
+        raise InvalidFilter
+    return locality_id
+
+
 # --- result dataclass -> response model
+
+
+def _locality_out(locality: Any) -> LocalityRef | None:
+    """The `locality` object of a ticket, row or customer view (any value with `id`, `name_he`,
+    `name_en`), or `None`."""
+    if locality is None:
+        return None
+    return LocalityRef(id=locality.id, name_he=locality.name_he, name_en=locality.name_en)
 
 
 def _category_out(category: TicketCategory) -> CategoryRef:
@@ -324,6 +346,7 @@ def _staff_row_out(row: StaffTicketRowView) -> StaffTicketRow:
         status=row.status,  # type: ignore[arg-type]  # the column check constraint holds the four values
         assigned_technician_name=row.assigned_technician_name,
         urgent=row.urgent,
+        locality=_locality_out(row.locality),
     )
 
 
@@ -357,6 +380,7 @@ def _staff_detail_out(view: StaffTicketDetailView) -> StaffTicketDetail:
         history=[_history_entry_out(entry) for entry in view.history],
         updated_at=view.updated_at,
         opened_by_username=view.opened_by_username,
+        locality=_locality_out(view.locality),
     )
 
 
@@ -415,6 +439,7 @@ def list_tickets(
     status: Annotated[list[str] | None, Query()] = None,
     category_id: Annotated[str | None, Query()] = None,
     city: Annotated[str | None, Query()] = None,
+    locality_id: Annotated[str | None, Query()] = None,
     urgent_only: Annotated[str | None, Query()] = None,
     date_from: Annotated[str | None, Query()] = None,
     date_to: Annotated[str | None, Query()] = None,
@@ -432,6 +457,7 @@ def list_tickets(
             statuses=statuses,
             category_id=_category_filter(category_id),
             city=city,
+            locality_id=_locality_filter(locality_id),
             urgent_only=_flag(urgent_only),
             date_from=start,
             date_to=end,
@@ -645,7 +671,15 @@ def _active_filter(raw: str | None) -> bool | None:
 
 
 def _customer_out(view: CustomerView) -> CustomerRecord:
-    return CustomerRecord.model_validate(view)
+    return CustomerRecord(
+        id=view.id,
+        full_name=view.full_name,
+        phone=view.phone,
+        city=view.city,
+        apartment=view.apartment,
+        is_active=view.is_active,
+        locality=_locality_out(view.locality),
+    )
 
 
 @router.get("/customers", response_model=CustomerRecordPage)
@@ -683,6 +717,7 @@ def create_customer(body: CustomerCreateRequest, session: ServiceSession) -> Cus
             full_name=body.full_name,
             city=body.city,
             apartment=body.apartment,
+            locality_id=body.locality_id,
         )
         out = _customer_out(view)
     session.commit()
@@ -693,15 +728,22 @@ def create_customer(body: CustomerCreateRequest, session: ServiceSession) -> Cus
 def update_customer(
     customer_id: str, body: CustomerUpdateRequest, session: ServiceSession
 ) -> CustomerRecord:
-    """Replace name, phone, city and apartment; outstanding tokens stay valid (R3.6, R3.13)."""
+    """Replace name, phone, city and apartment; outstanding tokens stay valid (R3.6, R3.13).
+
+    The optional `locality_id` (R30.6) is told apart by whether the key was sent: absent keeps the stored
+    settlement (while the city text is unchanged), a settlement id sets it, `null` clears it and, when
+    `city` is not sent either, keeps the stored text. See `customer_service.update_customer`.
+    """
+    sent = body.model_fields_set
     with _domain_errors(session):
         view = customer_service.update_customer(
             session,
             _customer_id_in_path(customer_id),
             phone=body.phone,
             full_name=body.full_name,
-            city=body.city,
+            city=body.city if "city" in sent or "locality_id" not in sent else customer_service.UNSET,
             apartment=body.apartment,
+            locality_id=body.locality_id if "locality_id" in sent else customer_service.UNSET,
         )
         out = _customer_out(view)
     session.commit()
@@ -754,6 +796,7 @@ def _report_row_out(row: ReportTicketRow) -> StaffTicketRow:
         status=row.status,  # type: ignore[arg-type]  # the column check constraint holds the four values
         assigned_technician_name=row.assigned_technician_name,
         urgent=row.urgent,
+        locality=_locality_out(row.locality),
     )
 
 
@@ -765,6 +808,7 @@ def get_report(
     date_to: Annotated[str | None, Query()] = None,
     city: Annotated[str | None, Query()] = None,
     category_id: Annotated[str | None, Query()] = None,
+    locality_id: Annotated[str | None, Query()] = None,
 ) -> ReportResponse:
     """Counts per status and per category, and a page (25) of the matching tickets (R18.1 to R18.9)."""
     with _domain_errors(session):
@@ -776,6 +820,7 @@ def get_report(
             date_to=end,
             city=city,
             category_id=_category_filter(category_id),
+            locality_id=_locality_filter(locality_id),
             page=page_number,
         )
     return ReportResponse(

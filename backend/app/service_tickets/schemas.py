@@ -37,7 +37,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, StrictBool
 
-from app.service_tickets.models import Category, Ticket
+from app.service_tickets.models import Category, Locality, Ticket
 
 TicketStatus = Literal["received", "in_progress", "closed", "cancelled"]
 FieldLabelKey = Literal["city", "apartment", "phone", "category", "description", "photo", "urgent"]
@@ -112,21 +112,35 @@ class HistoryEntryRequest(_Request):
 
 
 class CustomerCreateRequest(_Request):
-    """`POST /staff/customers` (R3.2). Empty city or apartment is stored as absent by the service."""
+    """`POST /staff/customers` (R3.2). Empty city or apartment is stored as absent by the service.
+
+    `locality_id` (R30.6) is the optional settlement. It is `Any` so that a malformed value reaches the
+    service and gets `invalid_settlement` under `city`, with every other failing field, instead of a
+    generic validation error. When it names an active settlement the customer's city becomes its
+    Hebrew name and a `city` in the same body is ignored.
+    """
 
     phone: str
     full_name: str
     city: str | None = None
     apartment: str | None = None
+    locality_id: Any = None
 
 
 class CustomerUpdateRequest(_Request):
-    """`PUT /staff/customers/{id}` (R3.6). The four editable values are sent together: a PUT replaces them."""
+    """`PUT /staff/customers/{id}` (R3.6). The four editable values are sent together: a PUT replaces them.
+
+    `locality_id` (R30.6) is optional and tells apart three cases, by whether the key was sent: absent
+    leaves the stored settlement; a settlement id sets it (and `city` becomes its Hebrew name, any `city`
+    in the body is ignored); `null` clears it. See `services.customers.update_customer` for what each case
+    does with the city text. `Any`, like on create.
+    """
 
     phone: str
     full_name: str
     city: str | None = None
     apartment: str | None = None
+    locality_id: Any = None
 
 
 class CategoryCreateRequest(_Request):
@@ -260,6 +274,8 @@ class CustomerProfile(_Response):
     city: str | None
     apartment: str | None
     must_change_password: bool
+    #: The customer's settlement with its current names (R30.6); null when the city is only text.
+    locality: LocalityRef | None = None
 
 
 class FormConfig(_Response):
@@ -306,6 +322,8 @@ class CustomerTicketDetail(CustomerTicketRow):
     phone: str
     description: str
     has_photo: bool
+    #: The settlement of the ticket with its current names (R30.5); null for a ticket with a text city.
+    locality: LocalityRef | None = None
 
 
 class CustomerTicketPage(_Response):
@@ -321,6 +339,10 @@ def category_ref(category: Category) -> CategoryRef:
     return CategoryRef(id=category.id, name_he=category.name_he, name_en=category.name_en)
 
 
+def locality_ref(locality: Locality) -> LocalityRef:
+    return LocalityRef(id=locality.id, name_he=locality.name_he, name_en=locality.name_en)
+
+
 def customer_ticket_row(ticket: Ticket, category: Category) -> CustomerTicketRow:
     """The customer row of a stored ticket. Copies exactly the six listed fields."""
     return CustomerTicketRow(
@@ -333,8 +355,13 @@ def customer_ticket_row(ticket: Ticket, category: Category) -> CustomerTicketRow
     )
 
 
-def customer_ticket_detail(ticket: Ticket, category: Category) -> CustomerTicketDetail:
-    """The customer detail of a stored ticket. Copies exactly the ten listed fields."""
+def customer_ticket_detail(
+    ticket: Ticket, category: Category, locality: Locality | None = None
+) -> CustomerTicketDetail:
+    """The customer detail of a stored ticket. Copies exactly the eleven listed fields.
+
+    `locality` is the ticket's settlement row, read by the caller, or `None` when it has none.
+    """
     return CustomerTicketDetail(
         ticket_number=ticket.ticket_number,
         category=category_ref(category),
@@ -346,6 +373,7 @@ def customer_ticket_detail(ticket: Ticket, category: Category) -> CustomerTicket
         phone=ticket.phone,
         description=ticket.description,
         has_photo=ticket.photo_key is not None,
+        locality=None if locality is None else locality_ref(locality),
     )
 
 
@@ -376,6 +404,9 @@ class StaffTicketRow(_Response):
     status: TicketStatus
     assigned_technician_name: str
     urgent: bool
+    #: The settlement with its current names, also when it was deactivated later (R30.5); null for a
+    #: ticket with a text city.
+    locality: LocalityRef | None = None
 
 
 class StaffTicketDetail(StaffTicketRow):
@@ -411,6 +442,8 @@ class CustomerRecord(_Response):
     city: str | None
     apartment: str | None
     is_active: bool
+    #: The settlement with its current names (R30.6); null when the city is only text.
+    locality: LocalityRef | None = None
 
 
 class CustomerRecordPage(_Response):

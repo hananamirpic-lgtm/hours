@@ -231,6 +231,7 @@ def test_customer_detail_returns_the_values_stored_on_the_ticket(session, custom
         "phone",
         "description",
         "has_photo",
+        "locality",
     }
 
 

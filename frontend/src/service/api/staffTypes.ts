@@ -19,6 +19,12 @@ export interface StaffCategoryRef {
   readonly name_en: string;
 }
 
+/** `LocalityRef`: a settlement with its current names, active or not. */
+export interface StaffLocalityRef {
+  readonly id: string;
+  readonly name_he: string;
+  readonly name_en: string;
+}
 /** `StaffTicketRow`: a row of the staff list and of the report table. */
 export interface StaffTicketRow {
   /** 10000 to 99999. */
@@ -33,6 +39,8 @@ export interface StaffTicketRow {
   /** Empty when no technician is assigned. */
   readonly assigned_technician_name: string;
   readonly urgent: boolean;
+  /** The settlement with its current names; null or absent for a ticket with a text city (R30.5). */
+  readonly locality?: StaffLocalityRef | null;
 }
 
 /** `HistoryEntryOut`: one treatment-history entry. `edited_at` is null until the entry is edited. */
@@ -79,6 +87,8 @@ export interface StaffCustomer {
   readonly city: string | null;
   readonly apartment: string | null;
   readonly is_active: boolean;
+  /** The settlement with its current names; null or absent when the city is only text (R30.6). */
+  readonly locality?: StaffLocalityRef | null;
 }
 
 /** `CustomerRecordPage`: 50 per page. */

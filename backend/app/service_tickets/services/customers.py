@@ -17,6 +17,13 @@ Conventions of the package, kept here:
 * Order of checks for create and edit: validation (422), then existence (404, edit only), then the
   duplicate phone (409), as the ticket endpoints do.
 
+Settlements (R30.6): `create_customer` and `update_customer` take an optional `locality_id`. A given id must
+name an ACTIVE settlement, else `CustomerValidationError` with `invalid_settlement` under `city` (the field
+the form shows it on). The customer's `city` then becomes the settlement's Hebrew name and a `city` value
+given with it is ignored: the settlement wins. While no settlement is active every given id is refused
+the same way. The views carry `locality`, the settlement's CURRENT names (also when it was deactivated
+later), loaded with one outer join per page and one read for a single customer.
+
 Token revocation (R3.7, R3.9, R3.13): `token_version` goes up in the same single `UPDATE` as the state
 change, so two staff actions at once cannot lose an increment. Deactivate and reset bump it. Edit and
 reactivate do not: a phone edit keeps outstanding tokens valid, and a reactivated customer signs in with
@@ -44,10 +51,11 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_CITY,
     CODE_INVALID_FULL_NAME,
     CODE_INVALID_PHONE,
+    CODE_INVALID_SETTLEMENT,
     CODE_PHONE_ALREADY_REGISTERED,
 )
-from app.service_tickets.grammars import CUSTOMER_PAGE_SIZE, fold_key
-from app.service_tickets.models import Customer, SigninFailure
+from app.service_tickets.grammars import CUSTOMER_PAGE_SIZE, fold_key, parse_uuid_path
+from app.service_tickets.models import Customer, Locality, SigninFailure
 from app.service_tickets.phone import InvalidPhone, normalize_phone, strip_search_phone_chars
 
 #: The password of a new customer and of a reset customer (the Initial_Password of the glossary).
@@ -94,6 +102,29 @@ class CustomerValidationError(CustomerError):
 
 
 @dataclass(frozen=True, slots=True)
+class CustomerLocality:
+    """The settlement of a customer with its current names, active or not."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+
+
+class _Unset:
+    """The type of `UNSET`: an argument that was not sent, as opposed to one sent as `None`."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+#: `update_customer(locality_id=UNSET)`: the settlement is not touched. `None` clears it.
+#: `update_customer(city=UNSET)`: only meaningful together with `locality_id=None` (see there).
+UNSET = _Unset()
+
+
+@dataclass(frozen=True, slots=True)
 class CustomerView:
     """A customer as staff see them. There is deliberately no field for the hash."""
 
@@ -105,6 +136,7 @@ class CustomerView:
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    locality: CustomerLocality | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +161,14 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _view(customer: Customer) -> CustomerView:
+def _locality_view(locality: Locality | None) -> CustomerLocality | None:
+    if locality is None:
+        return None
+    return CustomerLocality(id=locality.id, name_he=locality.name_he, name_en=locality.name_en)
+
+
+def _view(customer: Customer, locality: Locality | None = None) -> CustomerView:
+    """The view of a customer row; `locality` is its settlement row, already read by the caller."""
     return CustomerView(
         id=customer.id,
         phone=customer.phone,
@@ -139,7 +178,16 @@ def _view(customer: Customer) -> CustomerView:
         is_active=customer.is_active,
         created_at=customer.created_at,
         updated_at=customer.updated_at,
+        locality=_locality_view(locality),
     )
+
+
+def _view_of(session: Session, customer: Customer) -> CustomerView:
+    """The view of a customer row, reading its settlement (one primary-key read) when it has one."""
+    locality = (
+        session.get(Locality, customer.locality_id) if customer.locality_id is not None else None
+    )
+    return _view(customer, locality)
 
 
 def _optional_text(value: object, max_length: int) -> tuple[str | None, bool]:
@@ -154,8 +202,34 @@ def _optional_text(value: object, max_length: int) -> tuple[str | None, bool]:
     return text, len(text) <= max_length
 
 
-def _validate(*, phone: object, full_name: object, city: object, apartment: object) -> _CleanFields:
-    """Normalize and check the four fields, collecting one code per failing field (R3.3, R3.5)."""
+def _active_settlement(session: Session, raw: object) -> Locality | None:
+    """The ACTIVE settlement named by `raw` (a UUID or its canonical text), else `None`."""
+    if isinstance(raw, uuid.UUID):
+        locality_id: uuid.UUID | None = raw
+    elif isinstance(raw, str):
+        locality_id = parse_uuid_path(raw)
+    else:
+        locality_id = None
+    if locality_id is None:
+        return None
+    return session.execute(
+        select(Locality).where(Locality.id == locality_id, Locality.is_active.is_(True))
+    ).scalar_one_or_none()
+
+
+def _validate(
+    *,
+    phone: object,
+    full_name: object,
+    city: object,
+    apartment: object,
+    settlement_refused: bool = False,
+) -> _CleanFields:
+    """Normalize and check the four fields, collecting one code per failing field (R3.3, R3.5).
+
+    `settlement_refused` puts `invalid_settlement` at the place of the city check: a `locality_id` was
+    sent that is not an active settlement (R30.6).
+    """
     problems: dict[str, str] = {}
 
     clean_phone = ""
@@ -169,7 +243,9 @@ def _validate(*, phone: object, full_name: object, city: object, apartment: obje
         problems["full_name"] = CODE_INVALID_FULL_NAME
 
     clean_city, city_ok = _optional_text(city, CITY_MAX_LENGTH)
-    if not city_ok:
+    if settlement_refused:
+        problems["city"] = CODE_INVALID_SETTLEMENT
+    elif not city_ok:
         problems["city"] = CODE_INVALID_CITY
 
     clean_apartment, apartment_ok = _optional_text(apartment, APARTMENT_MAX_LENGTH)
@@ -223,16 +299,29 @@ def create_customer(
     full_name: str,
     city: str | None = None,
     apartment: str | None = None,
+    locality_id: object = None,
 ) -> CustomerView:
-    """Create an active customer with the initial password and the must-change flag set (R3.2)."""
-    fields = _validate(phone=phone, full_name=full_name, city=city, apartment=apartment)
+    """Create an active customer with the initial password and the must-change flag set (R3.2).
+
+    A `locality_id` other than `None` must name an active settlement; the city is then its Hebrew name
+    and a given `city` is ignored (R30.6).
+    """
+    settlement = _active_settlement(session, locality_id) if locality_id is not None else None
+    fields = _validate(
+        phone=phone,
+        full_name=full_name,
+        city=None if locality_id is not None else city,
+        apartment=apartment,
+        settlement_refused=locality_id is not None and settlement is None,
+    )
     if _phone_taken(session, fields.phone):
         raise PhoneAlreadyRegistered
     customer = Customer(
         phone=fields.phone,
         full_name=fields.full_name,
         full_name_key=fold_key(fields.full_name),
-        city=fields.city,
+        city=settlement.name_he if settlement is not None else fields.city,
+        locality_id=settlement.id if settlement is not None else None,
         apartment=fields.apartment,
         password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=True,
@@ -241,7 +330,7 @@ def create_customer(
     )
     with _phone_guard(session, fields.phone):
         session.add(customer)
-    return _view(customer)
+    return _view(customer, settlement)
 
 
 def update_customer(
@@ -250,26 +339,63 @@ def update_customer(
     *,
     phone: str,
     full_name: str,
-    city: str | None = None,
+    city: str | None | _Unset = None,
     apartment: str | None = None,
+    locality_id: object | _Unset = UNSET,
 ) -> CustomerView:
-    """Replace name, phone, city and apartment (R3.6, R3.13).
+    """Replace name, phone, city and apartment (R3.6, R3.13), and optionally the settlement (R30.6).
 
     The password hash, the flags and `token_version` stay as they are, and no ticket is touched: a
     ticket stores its own city, apartment and phone, and staff views read the name from this row.
+
+    What `locality_id` does, and what happens to the city text with it:
+
+    * a settlement id (UUID or its text): it must be ACTIVE, else `invalid_settlement` under `city`. The
+      city becomes the settlement's Hebrew name; a `city` value given with it is ignored (the
+      settlement wins).
+    * `None`: the settlement is cleared. The city is the given `city` under the rule below; when `city`
+      is `UNSET` (not sent) the stored text stays as it is, so clearing the settlement alone keeps the
+      text.
+    * `UNSET` (not sent): the stored settlement stays, as long as the city text is unchanged. The city
+      is replaced by the given `city` as always (a PUT replaces the four values; `None` clears it), and
+      a stored settlement whose text was changed is cleared with it, so an id never points at a city
+      the customer no longer has. A client that sends the same text back keeps the settlement.
     """
-    fields = _validate(phone=phone, full_name=full_name, city=city, apartment=apartment)
+    given = locality_id is not UNSET and locality_id is not None
+    settlement = _active_settlement(session, locality_id) if given else None
+    keep_text = locality_id is None and isinstance(city, _Unset)
+    fields = _validate(
+        phone=phone,
+        full_name=full_name,
+        city=None if given or keep_text or isinstance(city, _Unset) else city,
+        apartment=apartment,
+        settlement_refused=given and settlement is None,
+    )
     customer = _load(session, customer_id)
     if _phone_taken(session, fields.phone, except_id=customer.id):
         raise PhoneAlreadyRegistered
+    new_city = fields.city
+    new_locality_id = customer.locality_id
+    if settlement is not None:
+        new_city, new_locality_id = settlement.name_he, settlement.id
+    elif locality_id is None:
+        new_locality_id = None
+        if keep_text:
+            new_city = customer.city
+    else:  # `UNSET`: the settlement stays while the text is unchanged
+        if isinstance(city, _Unset):
+            new_city = customer.city
+        if new_city != customer.city:
+            new_locality_id = None
     with _phone_guard(session, fields.phone, except_id=customer.id):
         customer.phone = fields.phone
         customer.full_name = fields.full_name
         customer.full_name_key = fold_key(fields.full_name)
-        customer.city = fields.city
+        customer.city = new_city
+        customer.locality_id = new_locality_id
         customer.apartment = fields.apartment
         customer.updated_at = _now()
-    return _view(customer)
+    return _view_of(session, customer)
 
 
 def _apply(session: Session, customer_id: uuid.UUID, **values: object) -> CustomerView:
@@ -285,7 +411,7 @@ def _apply(session: Session, customer_id: uuid.UUID, **values: object) -> Custom
     customer = session.get(Customer, customer_id, populate_existing=True)
     if customer is None:  # deleted between the update and the read; nothing deletes customers today
         raise CustomerNotFound
-    return _view(customer)
+    return _view_of(session, customer)
 
 
 def deactivate_customer(session: Session, customer_id: uuid.UUID) -> CustomerView:
@@ -327,7 +453,7 @@ def reset_password(session: Session, customer_id: uuid.UUID) -> CustomerView:
 
 def get_customer(session: Session, customer_id: uuid.UUID) -> CustomerView:
     """The customer with this id, or `CustomerNotFound`."""
-    return _view(_load(session, customer_id))
+    return _view_of(session, _load(session, customer_id))
 
 
 def list_customers(
@@ -360,17 +486,18 @@ def list_customers(
     total = session.execute(select(func.count()).select_from(Customer).where(*conditions)).scalar_one()
     rows = (
         session.execute(
-            select(Customer)
+            select(Customer, Locality)
+            .outerjoin(Locality, Locality.id == Customer.locality_id)
             .where(*conditions)
             .order_by(Customer.full_name_key, Customer.id)
             .offset((page - 1) * CUSTOMER_PAGE_SIZE)
             .limit(CUSTOMER_PAGE_SIZE)
         )
-        .scalars()
+        .tuples()
         .all()
     )
     return CustomerPage(
-        items=tuple(_view(row) for row in rows),
+        items=tuple(_view(customer, locality) for customer, locality in rows),
         page=page,
         page_size=CUSTOMER_PAGE_SIZE,
         total=int(total),
