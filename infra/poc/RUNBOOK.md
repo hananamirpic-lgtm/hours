@@ -321,7 +321,7 @@ throwaway DB run `pg_restore` from the dump and confirm the data is there.
 The service-ticket system (customer portal at `/service`, management screens at `/tickets`,
 API under `/api/service/`) ships inside the normal release (Phase 9) but stays **off** until
 you turn it on. One flag, `SERVICE_TICKETS_ENABLED`, controls it. The migration
-`0011_service_tickets` and `0012_staff_opened_tickets` run on every deploy whatever the flag says, so
+`0011_service_tickets`, `0012_staff_opened_tickets` and `0013_service_lists_branding` run on every deploy whatever the flag says, so
 turning the flag on later needs **no migration**. This phase covers only what is extra for this feature.
 
 ### 12.1 Settings
@@ -608,7 +608,7 @@ Environment for paths 2 and 3: the same as "Rolling back manually" in Phase 9.
 
 **Path 4, schema removal.** Take a backup first (`./infra/poc/scripts/backup.sh pre-downgrade`), then turn the
 flag **off** and recreate the API (12.8) so nothing is querying the tables when they disappear. Run the
-downgrade with the **new** image, the one that contains revision `0012_staff_opened_tickets` (an older image
+downgrade with the **new** image, the one that contains revision `0013_service_lists_branding` (an older image
 cannot find the revision):
 
 ```bash
@@ -617,11 +617,11 @@ docker compose -f docker-compose.yml -f infra/poc/docker-compose.prod.yml \
   --env-file infra/poc/.env.prod run --rm api alembic downgrade 0010_operations_admin_role
 ```
 
-What the downgrade (revisions `0012_staff_opened_tickets` then `0011_service_tickets`, going back to `0010_operations_admin_role`) does and does not do:
+What the downgrade (revisions `0013_service_lists_branding`, then `0012_staff_opened_tickets`, then `0011_service_tickets`, going back to `0010_operations_admin_role`) does and does not do:
 
 - It **drops the `svc_` tables only**: `svc_customers`, `svc_categories`, `svc_tickets`,
-  `svc_history_entries`, `svc_settings`, `svc_field_labels`, `svc_signin_failures`, and the ticket-number
-  sequence. It **deletes every customer and ticket**.
+  `svc_history_entries`, `svc_settings`, `svc_field_labels`, `svc_signin_failures`, `svc_localities`,
+  `svc_parts`, `svc_ticket_parts`, `svc_branding`, and the ticket-number sequence. It **deletes every customer and ticket**.
 - It **never touches the Hours tables or their data**: no existing table, column, index, constraint or row changes.
 - It keeps the `technician` value in the user-role type (PostgreSQL cannot remove a value without
   rebuilding the type) and keeps every photo object under `service-tickets/` in the bucket.

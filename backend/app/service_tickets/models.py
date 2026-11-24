@@ -1,10 +1,12 @@
 """The `svc_` tables of the service-ticket feature.
 
-A mapping onto the tables migration 0011 creates, not a definition of them: the same relationship every
-model in `app.models` has to its migration. Seven tables, all prefixed `svc_`. Relations exist only
-between `svc_` tables, and every one of them is `RESTRICT`. Nothing here references `users`,
-`employees`, `sites` or any other existing table (Requirement 20.2); the Hours `users` table is read by
-primary key elsewhere and never joined.
+A mapping onto the tables migrations 0011 to 0013 create, not a definition of them: the same
+relationship every model in `app.models` has to its migration. Eleven tables, all prefixed `svc_`
+(seven from 0011, four from 0013: `svc_localities`, `svc_parts`, `svc_ticket_parts`, `svc_branding`).
+Relations exist only between `svc_` tables, and every one of them is `RESTRICT` except the link from
+`svc_ticket_parts` to its ticket, which is `CASCADE` (a link has no life of its own). Nothing here
+references `users`, `employees`, `sites` or any other existing table (Requirement 20.2); the Hours
+`users` table is read by primary key elsewhere and never joined.
 
 Names follow `NAMING_CONVENTION` in `app.db.base`. Primary keys, foreign keys and check constraints get
 their names from it (a check constraint is given only the suffix, the convention prefixes `ck_<table>_`).
@@ -19,9 +21,10 @@ Two things are not declared, for the reasons `app.models.user` gives for its own
 * The sequence `svc_ticket_number_seq`. A sequence is not a column attribute here; migration 0011 owns
   it, and the numbering service reads it with `nextval`.
 
-`Category.seq` and `SigninFailure.id` are identity columns (`GENERATED ALWAYS AS IDENTITY` on
-PostgreSQL). SQLite has no identity columns, so under `create_all` only `SigninFailure.id`, an integer
-primary key there, numbers itself. A test that inserts a `Category` on SQLite supplies `seq`.
+`Category.seq`, `Locality.seq`, `Part.seq` and `SigninFailure.id` are identity columns (`GENERATED ALWAYS
+AS IDENTITY` on PostgreSQL). SQLite has no identity columns, so under `create_all` only
+`SigninFailure.id`, an integer primary key there, numbers itself. A test that inserts a `Category`, a
+`Locality` or a `Part` on SQLite supplies `seq`.
 """
 
 from __future__ import annotations
@@ -84,6 +87,7 @@ class Customer(Base):
         CheckConstraint("city IS NULL OR length(city) BETWEEN 1 AND 100", name="city_length"),
         CheckConstraint("apartment IS NULL OR length(apartment) BETWEEN 1 AND 20", name="apartment_length"),
         Index("ix_svc_customers_full_name_key", "full_name_key"),
+        Index("ix_svc_customers_locality_id", "locality_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -99,6 +103,12 @@ class Customer(Base):
 
     city: Mapped[str | None] = mapped_column(Text, nullable=True)
     apartment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: The chosen settlement (Requirement 30.6), added by migration 0013. NULL for a customer whose city
+    #: is only text. `city` keeps the Hebrew name of the settlement, so every reader of the text works.
+    locality_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("svc_localities.id", ondelete="RESTRICT"), nullable=True
+    )
 
     #: bcrypt only.
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
@@ -161,6 +171,89 @@ class Category(Base):
         return f"Category({self.name_en!r} active={self.is_active})"
 
 
+class Locality(Base):
+    """A settlement of the list the ticket form offers (Requirement 30). Shaped like `Category`.
+
+    Deleted when no ticket or customer uses it, deactivated when one does. The table is created empty by
+    migration 0013: with no active settlement the form keeps the free-text city field.
+    """
+
+    __tablename__ = "svc_localities"
+
+    __table_args__ = (
+        UniqueConstraint("seq", name="uq_svc_localities_seq"),
+        UniqueConstraint("name_he_key", name="uq_svc_localities_name_he_key"),
+        UniqueConstraint("name_en_key", name="uq_svc_localities_name_en_key"),
+        CheckConstraint("length(name_he) BETWEEN 1 AND 100", name="name_he_length"),
+        CheckConstraint("length(name_en) BETWEEN 1 AND 100", name="name_en_length"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    #: Display order, oldest first. `GENERATED ALWAYS AS IDENTITY`: no Python default, as for `Category`.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), nullable=False)
+
+    name_he: Mapped[str] = mapped_column(Text, nullable=False)
+    name_en: Mapped[str] = mapped_column(Text, nullable=False)
+
+    #: NFC, stripped and casefolded names, the case-insensitive uniqueness per language (Requirement 30.1).
+    name_he_key: Mapped[str] = mapped_column(Text, nullable=False)
+    name_en_key: Mapped[str] = mapped_column(Text, nullable=False)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now(), onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"Locality({self.name_en!r} active={self.is_active})"
+
+
+class Part(Base):
+    """A replaceable part recorded when a ticket is resolved (Requirement 29). Shaped like `Category`.
+
+    Deleted when no ticket uses it, deactivated when one does. Created empty by migration 0013.
+    """
+
+    __tablename__ = "svc_parts"
+
+    __table_args__ = (
+        UniqueConstraint("seq", name="uq_svc_parts_seq"),
+        UniqueConstraint("name_he_key", name="uq_svc_parts_name_he_key"),
+        UniqueConstraint("name_en_key", name="uq_svc_parts_name_en_key"),
+        CheckConstraint("length(name_he) BETWEEN 1 AND 60", name="name_he_length"),
+        CheckConstraint("length(name_en) BETWEEN 1 AND 60", name="name_en_length"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    #: Display order, oldest first. `GENERATED ALWAYS AS IDENTITY`, as for `Category`.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), nullable=False)
+
+    name_he: Mapped[str] = mapped_column(Text, nullable=False)
+    name_en: Mapped[str] = mapped_column(Text, nullable=False)
+
+    #: NFC, stripped and casefolded names, the case-insensitive uniqueness per language (Requirement 29.6).
+    name_he_key: Mapped[str] = mapped_column(Text, nullable=False)
+    name_en_key: Mapped[str] = mapped_column(Text, nullable=False)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now(), onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"Part({self.name_en!r} active={self.is_active})"
+
+
 class Ticket(Base):
     """A service ticket. Owned by one customer, classified by one category."""
 
@@ -184,6 +277,7 @@ class Ticket(Base):
         Index("ix_svc_tickets_category_id", "category_id"),
         Index("ix_svc_tickets_city_key", "city_key"),
         Index("ix_svc_tickets_created_date", "created_date"),
+        Index("ix_svc_tickets_locality_id", "locality_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -236,8 +330,36 @@ class Ticket(Base):
     #: NULL when the customer opened it. Added by migration 0012. Never serialized to a customer.
     opened_by_username: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: The settlement chosen when the ticket was opened (Requirement 30.4), added by migration 0013. NULL
+    #: for a ticket opened before the list existed or while it was empty; `city` holds the text then.
+    locality_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("svc_localities.id", ondelete="RESTRICT"), nullable=True
+    )
+
     def __repr__(self) -> str:
         return f"Ticket(#{self.ticket_number} status={self.status})"
+
+
+class TicketPart(Base):
+    """One replaced part recorded on a ticket (Requirement 29.2). The primary key is `(ticket_id, part_id)`.
+
+    The link goes with its ticket (`CASCADE`); a part that a ticket uses cannot be deleted (`RESTRICT`),
+    which is why the application deactivates it instead (Requirement 29.6).
+    """
+
+    __tablename__ = "svc_ticket_parts"
+
+    __table_args__ = (Index("ix_svc_ticket_parts_part_id", "part_id"),)
+
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("svc_tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    part_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("svc_parts.id", ondelete="RESTRICT"), primary_key=True
+    )
+
+    def __repr__(self) -> str:
+        return f"TicketPart(ticket={self.ticket_id} part={self.part_id})"
 
 
 class HistoryEntry(Base):
@@ -297,6 +419,39 @@ class ServiceSettings(Base):
 
     def __repr__(self) -> str:
         return f"ServiceSettings(description_required={self.description_required})"
+
+
+class Branding(Base):
+    """The single branding row: the optional company name and the key of the optional logo (Requirement 28).
+
+    Migration 0013 inserts the empty row; the application only ever updates it.
+    """
+
+    __tablename__ = "svc_branding"
+
+    __table_args__ = (
+        UniqueConstraint("logo_key", name="uq_svc_branding_logo_key"),
+        CheckConstraint("id = 1", name="id_is_one"),
+        CheckConstraint(
+            "company_name IS NULL OR length(company_name) BETWEEN 1 AND 100", name="company_name_length"
+        ),
+    )
+
+    #: Always 1: the check constraint is what makes this a one-row table.
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False, default=1)
+
+    #: Plain text, 1 to 100 characters after trimming; NULL when no name is set.
+    company_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: Object-store key of the processed logo (`service-tickets/branding/<uuid>.png`); NULL when none.
+    logo_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now(), onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"Branding(has_name={self.company_name is not None} has_logo={self.logo_key is not None})"
 
 
 class FieldLabel(Base):

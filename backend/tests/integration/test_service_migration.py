@@ -3,6 +3,11 @@
 Migration `0012_staff_opened_tickets` (Requirement 26.4) adds one nullable column,
 `svc_tickets.opened_by_username`; a downgrade to `0011` removes only that column.
 
+Migration `0013_service_lists_branding` (Requirements 28.6, 29.6, 29.7, 30.1, 30.4) adds four tables
+(`svc_localities`, `svc_parts`, `svc_ticket_parts`, `svc_branding`) and a nullable `locality_id` column on
+`svc_tickets` and `svc_customers`; a downgrade to `0012` removes exactly those and keeps every ticket and
+customer.
+
 This file is the permanent proof of the product owner's overriding constraint for the service-tickets
 release: applying the migration to a live Hours database changes nothing the Hours system holds.
 
@@ -54,10 +59,14 @@ from app.db.base import Base
 HOURS_REVISION = "0010_operations_admin_role"
 SERVICE_REVISION = "0011_service_tickets"
 STAFF_OPENED_REVISION = "0012_staff_opened_tickets"
+LISTS_REVISION = "0013_service_lists_branding"
 OPENED_BY_COLUMN = "opened_by_username"
+LOCALITY_COLUMN = "locality_id"
 SVC_PREFIX = "svc_"
 
-SVC_TABLES = {
+# What migration 0011 creates: the tables, the ticket-number sequence and the two sequences behind the
+# identity columns.
+SVC_TABLES_0011 = {
     "svc_customers",
     "svc_categories",
     "svc_tickets",
@@ -66,8 +75,15 @@ SVC_TABLES = {
     "svc_field_labels",
     "svc_signin_failures",
 }
-# The ticket-number sequence and the two sequences behind the identity columns.
-SVC_SEQUENCES = {"svc_ticket_number_seq", "svc_categories_seq_seq", "svc_signin_failures_id_seq"}
+SVC_SEQUENCES_0011 = {"svc_ticket_number_seq", "svc_categories_seq_seq", "svc_signin_failures_id_seq"}
+
+# What migration 0013 adds: four tables and the two sequences behind their identity columns.
+SVC_TABLES_0013 = {"svc_localities", "svc_parts", "svc_ticket_parts", "svc_branding"}
+SVC_SEQUENCES_0013 = {"svc_localities_seq_seq", "svc_parts_seq_seq"}
+
+# The closed sets at head.
+SVC_TABLES = SVC_TABLES_0011 | SVC_TABLES_0013
+SVC_SEQUENCES = SVC_SEQUENCES_0011 | SVC_SEQUENCES_0013
 
 # Requirement 19.14, in the design's order. Written out here, not imported from the migration, so a
 # change to the migration's seed cannot silently move the test with it.
@@ -576,20 +592,27 @@ def _expected_enum_labels(before: Inventory) -> dict[str, list[str]]:
     }
 
 
-def _assert_only_service_objects_added(before: Inventory, after: Inventory) -> None:
-    """The database differs by the `svc_` objects and by the `technician` enum value, and nothing else."""
+def _assert_only_service_objects_added(
+    before: Inventory,
+    after: Inventory,
+    *,
+    tables: set[str] = SVC_TABLES_0011,
+    sequences: set[str] = SVC_SEQUENCES_0011,
+    enum_labels: Callable[[Inventory], dict[str, list[str]]] = _expected_enum_labels,
+) -> None:
+    """The database differs by the given `svc_` objects (and the enum change, if any), and nothing else."""
     assert before.relations <= after.relations, "an existing relation disappeared"
     added = after.relations - before.relations
     assert added, "the migration added nothing"
     foreign = sorted(name for name, _ in added if not _is_svc(name))
     assert foreign == [], f"relations outside the svc_ namespace were added: {foreign}"
-    assert {name for name, kind in added if kind == "r"} == SVC_TABLES
-    assert {name for name, kind in added if kind == "S"} == SVC_SEQUENCES
+    assert {name for name, kind in added if kind == "r"} == tables
+    assert {name for name, kind in added if kind == "S"} == sequences
 
     assert before.types <= after.types, "an existing type disappeared"
     assert all(_is_svc(name) for name, _ in after.types - before.types)
 
-    assert after.enum_labels == _expected_enum_labels(before)
+    assert after.enum_labels == enum_labels(before)
     assert after.functions == before.functions
     assert after.extensions == before.extensions
 
@@ -623,6 +646,40 @@ def _insert_customer_and_ticket(connection: sa.Connection) -> None:
     )
 
 
+def _use_the_new_lists(connection: sa.Connection) -> None:
+    """At 0013 with a ticket and a customer in place: fill every table and column 0013 added.
+
+    One settlement chosen by the customer and the ticket, one part linked to the ticket, a company name
+    and a logo key on the branding row. `city` keeps the text it had, as the application will keep it.
+    """
+    locality_id = _scalar(
+        connection,
+        "INSERT INTO svc_localities (name_he, name_en, name_he_key, name_en_key) "
+        "VALUES ('ראש צורים', 'Rosh Tzurim', :hek, :enk) RETURNING id",
+        hek=_key("ראש צורים"),
+        enk=_key("Rosh Tzurim"),
+    )
+    part_id = _scalar(
+        connection,
+        "INSERT INTO svc_parts (name_he, name_en, name_he_key, name_en_key) "
+        "VALUES ('אטם', 'Gasket', :hek, :enk) RETURNING id",
+        hek=_key("אטם"),
+        enk=_key("Gasket"),
+    )
+    connection.execute(sa.text("UPDATE svc_tickets SET locality_id = :id"), {"id": locality_id})
+    connection.execute(sa.text("UPDATE svc_customers SET locality_id = :id"), {"id": locality_id})
+    connection.execute(
+        sa.text("INSERT INTO svc_ticket_parts (ticket_id, part_id) SELECT id, :part FROM svc_tickets"),
+        {"part": part_id},
+    )
+    connection.execute(
+        sa.text(
+            "UPDATE svc_branding SET company_name = 'Acme Service', "
+            f"logo_key = 'service-tickets/branding/{uuid.uuid4()}.png'"
+        )
+    )
+
+
 def _sequence_state(connection: sa.Connection, name: str) -> tuple[int, bool]:
     # Reads the sequence's own row. `nextval` would consume a number and change what is measured.
     row = connection.execute(sa.text(f"SELECT last_value, is_called FROM {name}")).one()
@@ -630,10 +687,15 @@ def _sequence_state(connection: sa.Connection, name: str) -> tuple[int, bool]:
 
 
 def _service_state(connection: sa.Connection) -> dict[str, Any]:
-    """Row counts and checksums of every `svc_` table, and the state of every `svc_` sequence."""
+    """Row counts and checksums of every existing `svc_` table, and the state of every `svc_` sequence.
+
+    Read from the catalog, so the same helper serves every revision from 0011 on (0013 adds tables).
+    """
+    tables = sorted(row[0] for row in _rows(connection, _SERVICE_RELATIONS_SQL, kind="r"))
+    sequences = sorted(row[0] for row in _rows(connection, _SERVICE_RELATIONS_SQL, kind="S"))
     return {
-        "tables": {table: _row_digest(connection, table) for table in sorted(SVC_TABLES)},
-        "sequences": {name: _sequence_state(connection, name) for name in sorted(SVC_SEQUENCES)},
+        "tables": {table: _row_digest(connection, table) for table in tables},
+        "sequences": {name: _sequence_state(connection, name) for name in sequences},
     }
 
 
@@ -662,7 +724,7 @@ def test_upgrade_leaves_every_existing_hours_table_unchanged(hours_database: Scr
         assert _version(connection) == SERVICE_REVISION
         after_tables = _existing_tables(connection)
         assert [t for t in after_tables if not t.startswith(SVC_PREFIX)] == tables
-        assert {t for t in after_tables if t.startswith(SVC_PREFIX)} == SVC_TABLES
+        assert {t for t in after_tables if t.startswith(SVC_PREFIX)} == SVC_TABLES_0011
         after = _hours_snapshot(connection, tables)
         inventory_after = _inventory(connection)
 
@@ -789,11 +851,11 @@ def test_a_rerun_against_existing_tables_changes_nothing(scratch: Scratch) -> No
     assert settings == [(1, False, False)]
 
 
-@pytest.mark.parametrize("start", [SERVICE_REVISION, STAFF_OPENED_REVISION])
+@pytest.mark.parametrize("start", [SERVICE_REVISION, STAFF_OPENED_REVISION, LISTS_REVISION])
 def test_downgrade_removes_only_the_service_objects(hours_database: Scratch, start: str) -> None:
     """R25.9: tables and sequence gone, `technician` kept, every existing table as it was at 0010.
 
-    Taken from 0011 and from 0012: the back-out target that removes the whole feature stays 0010.
+    Taken from 0011, 0012 and 0013: the back-out target that removes the whole feature stays 0010.
     """
     with hours_database.engine.connect() as connection:
         tables = _existing_tables(connection)
@@ -803,8 +865,10 @@ def test_downgrade_removes_only_the_service_objects(hours_database: Scratch, sta
     command.upgrade(hours_database.config, start)
     with hours_database.engine.begin() as connection:
         _insert_customer_and_ticket(connection)  # the downgrade must also work with data in place
-        if start == STAFF_OPENED_REVISION:
+        if start in (STAFF_OPENED_REVISION, LISTS_REVISION):
             connection.execute(sa.text(f"UPDATE svc_tickets SET {OPENED_BY_COLUMN} = 'tech.one'"))
+        if start == LISTS_REVISION:
+            _use_the_new_lists(connection)  # lists, links and branding in place too
     command.downgrade(hours_database.config, HOURS_REVISION)
 
     with hours_database.engine.connect() as connection:
@@ -887,11 +951,15 @@ def test_models_and_schema_agree_for_the_service_tables(migrated_engine: Engine)
 
     service_diffs = [diff for diff in diffs if _diff_table(diff).startswith(SVC_PREFIX)]
     assert [diff for diff in service_diffs if not _is_documented_uuid_default_omission(diff)] == []
-    # The exception is the one the models document, not a blanket pass: exactly the four uuid keys.
+    # The exception is the one the models document, not a blanket pass: exactly the uuid keys that have
+    # a server default (the two list tables of 0013 included; `svc_ticket_parts` and `svc_branding` have
+    # no uuid key).
     assert sorted(_diff_table(diff) for diff in service_diffs) == [
         "svc_categories",
         "svc_customers",
         "svc_history_entries",
+        "svc_localities",
+        "svc_parts",
         "svc_tickets",
     ]
 
@@ -963,17 +1031,22 @@ def _ticket_columns(connection: sa.Connection) -> list[tuple[Any, ...]]:
     )
 
 
-def test_the_migration_chain_ends_at_the_staff_opened_revision(scratch: Scratch) -> None:
-    """The head is 0012, it follows 0011, and a fresh upgrade to head lands on it."""
+def test_the_migration_chain_runs_from_0010_through_0011_and_0012_to_0013(scratch: Scratch) -> None:
+    """The head is 0013 on 0012 on 0011 on 0010, and a fresh upgrade to head lands on it."""
     script = ScriptDirectory.from_config(scratch.config)
-    assert script.get_heads() == [STAFF_OPENED_REVISION]
-    revision = script.get_revision(STAFF_OPENED_REVISION)
-    assert revision is not None
-    assert revision.down_revision == SERVICE_REVISION
+    assert script.get_heads() == [LISTS_REVISION]
+    for revision_id, parent in (
+        (LISTS_REVISION, STAFF_OPENED_REVISION),
+        (STAFF_OPENED_REVISION, SERVICE_REVISION),
+        (SERVICE_REVISION, HOURS_REVISION),
+    ):
+        revision = script.get_revision(revision_id)
+        assert revision is not None
+        assert revision.down_revision == parent
 
     command.upgrade(scratch.config, "head")
     with scratch.engine.connect() as connection:
-        assert _version(connection) == STAFF_OPENED_REVISION
+        assert _version(connection) == LISTS_REVISION
 
 
 def test_upgrade_adds_only_a_nullable_text_column_and_keeps_the_tickets(hours_database: Scratch) -> None:
@@ -1069,3 +1142,343 @@ def test_upgrade_to_0012_succeeds_when_the_column_already_exists(hours_database:
         assert _version(connection) == STAFF_OPENED_REVISION
         assert _rows(connection, f"SELECT {OPENED_BY_COLUMN} FROM svc_tickets") == [("tech.one",)]
         assert _service_state(connection) == service_before
+
+
+# --------------------------------------------------- 0013: lists, branding and part links
+
+
+def _table_columns(connection: sa.Connection, table: str) -> list[tuple[Any, ...]]:
+    """Every column of `table` as (name, type, nullable, default), in table order."""
+    return _rows(
+        connection,
+        "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = :t ORDER BY ordinal_position",
+        t=table,
+    )
+
+
+def _service_snapshots(connection: sa.Connection, tables: set[str]) -> dict[str, dict[str, Any]]:
+    return {table: _table_snapshot(connection, table) for table in sorted(tables)}
+
+
+def test_upgrade_to_0013_adds_only_the_designed_objects(hours_database: Scratch) -> None:
+    """R28.6, R29.6, R29.7, R30.1, R30.4: four tables, two columns, an empty branding row, nothing else."""
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+    with hours_database.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+    with hours_database.engine.connect() as connection:
+        tables = _existing_tables(connection)
+        hours_tables = [name for name in tables if not name.startswith(SVC_PREFIX)]
+        hours_before = _hours_snapshot(connection, hours_tables)
+        inventory_before = _inventory(connection)
+        tickets_before = _table_columns(connection, "svc_tickets")
+        customers_before = _table_columns(connection, "svc_customers")
+        categories_columns = _table_columns(connection, "svc_categories")
+        rows_before = (
+            _rows(connection, "SELECT id, ticket_number, city, city_key, description FROM svc_tickets"),
+            _rows(connection, "SELECT id, phone, full_name, city FROM svc_customers"),
+        )
+        untouched = sorted(SVC_TABLES_0011 - {"svc_tickets", "svc_customers"})
+        other_before = {table: _row_digest(connection, table) for table in untouched}
+    assert LOCALITY_COLUMN not in [row[0] for row in tickets_before + customers_before]
+
+    command.upgrade(hours_database.config, LISTS_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == LISTS_REVISION
+        after_tables = _existing_tables(connection)
+        assert [name for name in after_tables if not name.startswith(SVC_PREFIX)] == hours_tables
+        assert {name for name in after_tables if name.startswith(SVC_PREFIX)} == SVC_TABLES
+        inventory_after = _inventory(connection)
+        hours_after = _hours_snapshot(connection, hours_tables)
+
+        # Each new column: nullable uuid, no default, appended after the existing columns.
+        locality = (LOCALITY_COLUMN, "uuid", "YES", None)
+        assert _table_columns(connection, "svc_tickets") == [*tickets_before, locality]
+        assert _table_columns(connection, "svc_customers") == [*customers_before, locality]
+
+        # The two list tables have exactly the shape of `svc_categories`.
+        assert _table_columns(connection, "svc_localities") == categories_columns
+        assert _table_columns(connection, "svc_parts") == categories_columns
+        for table in ("svc_categories", "svc_localities", "svc_parts"):
+            assert _rows(
+                connection,
+                "SELECT a.attname, a.attidentity::text FROM pg_attribute a "
+                "WHERE a.attrelid = CAST(:t AS regclass) AND a.attname = 'seq'",
+                t=table,
+            ) == [("seq", "a")]
+        assert _table_columns(connection, "svc_ticket_parts") == [
+            ("ticket_id", "uuid", "NO", None),
+            ("part_id", "uuid", "NO", None),
+        ]
+        assert _table_columns(connection, "svc_branding") == [
+            ("id", "smallint", "NO", None),
+            ("company_name", "text", "YES", None),
+            ("logo_key", "text", "YES", None),
+            ("updated_at", "timestamp with time zone", "NO", "now()"),
+        ]
+
+        # No seed rows in the lists, the empty branding row, and no link.
+        for table in ("svc_localities", "svc_parts", "svc_ticket_parts"):
+            assert _scalar(connection, f"SELECT count(*) FROM {table}") == 0
+        assert _rows(connection, "SELECT id, company_name, logo_key FROM svc_branding") == [(1, None, None)]
+
+        # Every stored ticket and customer is as it was, with a NULL settlement.
+        assert (
+            _rows(connection, "SELECT id, ticket_number, city, city_key, description FROM svc_tickets")
+            == rows_before[0]
+        )
+        assert _rows(connection, "SELECT id, phone, full_name, city FROM svc_customers") == rows_before[1]
+        assert _rows(connection, "SELECT locality_id FROM svc_tickets") == [(None,)]
+        assert _rows(connection, "SELECT locality_id FROM svc_customers") == [(None,)]
+        assert {table: _row_digest(connection, table) for table in untouched} == other_before
+
+    _assert_hours_unchanged(hours_before, hours_after, "upgrade 0012 to 0013")
+    _assert_only_service_objects_added(
+        inventory_before,
+        inventory_after,
+        tables=SVC_TABLES_0013,
+        sequences=SVC_SEQUENCES_0013,
+        enum_labels=lambda before: before.enum_labels,
+    )
+
+
+def test_the_new_objects_carry_the_designed_names_and_rules(migrated_engine: Engine) -> None:
+    """Constraint and index names equal what the models declare; every foreign key has its delete rule."""
+    with migrated_engine.connect() as connection:
+        constraints = set(
+            _rows(
+                connection,
+                "SELECT conrelid::regclass::text, conname, contype::text, "
+                "CASE WHEN contype = 'f' THEN confdeltype::text END FROM pg_constraint "
+                "WHERE contype <> 'n' AND (conrelid::regclass::text IN "
+                "('svc_localities', 'svc_parts', 'svc_ticket_parts', 'svc_branding') "
+                "OR conname IN ('fk_svc_tickets_locality_id_svc_localities', "
+                "'fk_svc_customers_locality_id_svc_localities'))",
+            )
+        )
+        indexes = set(
+            _rows(
+                connection,
+                "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = 'public' AND "
+                "(tablename IN ('svc_localities', 'svc_parts', 'svc_ticket_parts', 'svc_branding') "
+                "OR indexname IN ('ix_svc_tickets_locality_id', 'ix_svc_customers_locality_id'))",
+            )
+        )
+        locality_index_definitions = _rows(
+            connection,
+            "SELECT indexdef FROM pg_indexes WHERE indexname IN "
+            "('ix_svc_tickets_locality_id', 'ix_svc_customers_locality_id') ORDER BY indexname",
+        )
+
+    expected: set[tuple[str, str, str, str | None]] = {
+        ("svc_ticket_parts", "svc_ticket_parts_pkey", "p", None),
+        ("svc_ticket_parts", "fk_svc_ticket_parts_ticket_id_svc_tickets", "f", "c"),  # CASCADE
+        ("svc_ticket_parts", "fk_svc_ticket_parts_part_id_svc_parts", "f", "r"),  # RESTRICT
+        ("svc_branding", "svc_branding_pkey", "p", None),
+        ("svc_branding", "uq_svc_branding_logo_key", "u", None),
+        ("svc_branding", "ck_svc_branding_id_is_one", "c", None),
+        ("svc_branding", "ck_svc_branding_company_name_length", "c", None),
+        ("svc_tickets", "fk_svc_tickets_locality_id_svc_localities", "f", "r"),
+        ("svc_customers", "fk_svc_customers_locality_id_svc_localities", "f", "r"),
+    }
+    for table in ("svc_localities", "svc_parts"):
+        expected |= {
+            (table, f"{table}_pkey", "p", None),
+            (table, f"uq_{table}_seq", "u", None),
+            (table, f"uq_{table}_name_he_key", "u", None),
+            (table, f"uq_{table}_name_en_key", "u", None),
+            (table, f"ck_{table}_name_he_length", "c", None),
+            (table, f"ck_{table}_name_en_length", "c", None),
+        }
+    assert constraints == expected
+
+    assert indexes == {
+        ("svc_localities", "svc_localities_pkey"),
+        ("svc_localities", "uq_svc_localities_seq"),
+        ("svc_localities", "uq_svc_localities_name_he_key"),
+        ("svc_localities", "uq_svc_localities_name_en_key"),
+        ("svc_parts", "svc_parts_pkey"),
+        ("svc_parts", "uq_svc_parts_seq"),
+        ("svc_parts", "uq_svc_parts_name_he_key"),
+        ("svc_parts", "uq_svc_parts_name_en_key"),
+        ("svc_ticket_parts", "svc_ticket_parts_pkey"),
+        ("svc_ticket_parts", "ix_svc_ticket_parts_part_id"),
+        ("svc_branding", "svc_branding_pkey"),
+        ("svc_branding", "uq_svc_branding_logo_key"),
+        ("svc_customers", "ix_svc_customers_locality_id"),
+        ("svc_tickets", "ix_svc_tickets_locality_id"),
+    }
+    assert all(row[0].endswith("(locality_id)") for row in locality_index_definitions)
+
+
+def _integrity_failure(engine: Engine, sql: str, **params: Any) -> None:
+    """The statement, run alone in its own transaction, is refused by a constraint."""
+    with pytest.raises(sa.exc.IntegrityError), engine.begin() as connection:
+        connection.execute(sa.text(sql), params)
+
+
+def test_the_new_tables_enforce_their_rules(scratch: Scratch) -> None:
+    """Name lengths, one branding row, the composite key, CASCADE for a ticket and RESTRICT elsewhere."""
+    command.upgrade(scratch.config, "head")
+    insert_name = (
+        "INSERT INTO {table} (name_he, name_en, name_he_key, name_en_key) VALUES (:he, :en, :hek, :enk)"
+    )
+
+    def name_params(he: str, en: str) -> dict[str, str]:
+        return {"he": he, "en": en, "hek": _key(he), "enk": _key(en)}
+
+    # Settlement names run 1 to 100 characters, part names 1 to 60, in each language.
+    for table, longest in (("svc_localities", 100), ("svc_parts", 60)):
+        sql = insert_name.format(table=table)
+        for he, en in (("א" * (longest + 1), "ok"), ("ok", "b" * (longest + 1)), ("", "ok"), ("ok", "")):
+            _integrity_failure(scratch.engine, sql, **name_params(he, en))
+        with scratch.engine.begin() as connection:
+            connection.execute(sa.text(sql), name_params("א" * longest, "b" * longest))
+            connection.execute(sa.text(sql), name_params("x", "y"))
+        # The casefolded key is unique per language.
+        _integrity_failure(scratch.engine, sql, **name_params("x", "other"))
+        _integrity_failure(scratch.engine, sql, **name_params("other", "y"))
+
+    # One branding row, with a name of 1 to 100 characters or none.
+    _integrity_failure(scratch.engine, "INSERT INTO svc_branding (id) VALUES (2)")
+    _integrity_failure(scratch.engine, "INSERT INTO svc_branding (id) VALUES (1)")
+    _integrity_failure(scratch.engine, "UPDATE svc_branding SET company_name = ''")
+    _integrity_failure(scratch.engine, "UPDATE svc_branding SET company_name = :name", name="n" * 101)
+    with scratch.engine.begin() as connection:
+        connection.execute(sa.text("UPDATE svc_branding SET company_name = :name"), {"name": "n" * 100})
+        connection.execute(sa.text("UPDATE svc_branding SET company_name = NULL, logo_key = 'k'"))
+    assert _scalar_engine(scratch.engine, "SELECT count(*) FROM svc_branding") == 1
+
+    # Links: one row per (ticket, part); a part or a settlement in use cannot be deleted; a ticket takes
+    # its links with it.
+    with scratch.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+        _use_the_new_lists(connection)
+    ticket_id = _scalar_engine(scratch.engine, "SELECT id FROM svc_tickets")
+    part_id = _scalar_engine(scratch.engine, "SELECT part_id FROM svc_ticket_parts")
+    locality_id = _scalar_engine(scratch.engine, "SELECT locality_id FROM svc_tickets")
+    _integrity_failure(
+        scratch.engine,
+        "INSERT INTO svc_ticket_parts (ticket_id, part_id) VALUES (:t, :p)",
+        t=ticket_id,
+        p=part_id,
+    )
+    _integrity_failure(scratch.engine, "DELETE FROM svc_parts WHERE id = :p", p=part_id)
+    _integrity_failure(scratch.engine, "DELETE FROM svc_localities WHERE id = :loc", loc=locality_id)
+    # An unknown settlement is refused too.
+    _integrity_failure(scratch.engine, "UPDATE svc_customers SET locality_id = gen_random_uuid()")
+
+    # With the ticket gone the settlement is still held by the customer, and the part is free again.
+    with scratch.engine.begin() as connection:
+        connection.execute(sa.text("DELETE FROM svc_tickets WHERE id = :t"), {"t": ticket_id})
+    assert _scalar_engine(scratch.engine, "SELECT count(*) FROM svc_ticket_parts") == 0
+    _integrity_failure(scratch.engine, "DELETE FROM svc_localities WHERE id = :loc", loc=locality_id)
+    with scratch.engine.begin() as connection:
+        connection.execute(sa.text("DELETE FROM svc_parts WHERE id = :p"), {"p": part_id})
+
+
+def _scalar_engine(engine: Engine, sql: str, **params: Any) -> Any:
+    with engine.connect() as connection:
+        return _scalar(connection, sql, **params)
+
+
+def test_downgrade_to_0012_restores_the_exact_0012_state(hours_database: Scratch) -> None:
+    """R28.6, R30.4: only what 0013 added goes; every old svc_ object, row and Hours table is unchanged."""
+    command.upgrade(hours_database.config, STAFF_OPENED_REVISION)
+    with hours_database.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+        connection.execute(sa.text(f"UPDATE svc_tickets SET {OPENED_BY_COLUMN} = 'tech.one'"))
+    with hours_database.engine.connect() as connection:
+        tables = _existing_tables(connection)
+        hours_tables = [name for name in tables if not name.startswith(SVC_PREFIX)]
+        hours_before = _hours_snapshot(connection, hours_tables)
+        snapshots_before = _service_snapshots(connection, SVC_TABLES_0011)
+        service_before = _service_state(connection)
+        inventory_before = _inventory(connection)
+
+    command.upgrade(hours_database.config, LISTS_REVISION)
+    with hours_database.engine.begin() as connection:
+        _use_the_new_lists(connection)  # the downgrade must work with every new object in use
+    command.downgrade(hours_database.config, STAFF_OPENED_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == STAFF_OPENED_REVISION
+        assert _existing_tables(connection) == tables
+        # Columns, constraints, indexes, triggers, grants, row counts and row checksums of every old
+        # svc_ table, and every sequence: exactly what they were before 0013 ran.
+        assert _service_snapshots(connection, SVC_TABLES_0011) == snapshots_before
+        assert _service_state(connection) == service_before
+        assert _scalar(connection, "SELECT count(*) FROM svc_tickets") == 1
+        assert _scalar(connection, "SELECT count(*) FROM svc_customers") == 1
+        assert _rows(connection, f"SELECT {OPENED_BY_COLUMN} FROM svc_tickets") == [("tech.one",)]
+        hours_after = _hours_snapshot(connection, hours_tables)
+        inventory_after = _inventory(connection)
+
+    _assert_hours_unchanged(hours_before, hours_after, "downgrade 0013 to 0012")
+    assert inventory_after == inventory_before
+
+
+def test_a_rerun_of_0013_over_existing_objects_changes_nothing(hours_database: Scratch) -> None:
+    """Deploy-order safety: nothing reset, duplicated or re-seeded, and the branding row is kept."""
+    command.upgrade(hours_database.config, LISTS_REVISION)
+    with hours_database.engine.begin() as connection:
+        _insert_customer_and_ticket(connection)
+        _use_the_new_lists(connection)
+    with hours_database.engine.connect() as connection:
+        tables = _existing_tables(connection)
+        hours_tables = [name for name in tables if not name.startswith(SVC_PREFIX)]
+        hours_before = _hours_snapshot(connection, hours_tables)
+        snapshots_before = _service_snapshots(connection, SVC_TABLES)
+        service_before = _service_state(connection)
+        inventory_before = _inventory(connection)
+        branding_before = _rows(connection, "SELECT id, company_name, logo_key, updated_at FROM svc_branding")
+    assert branding_before[0][1] == "Acme Service"
+
+    # The restored database: every 0013 object present, `alembic_version` back at 0012.
+    command.stamp(hours_database.config, STAFF_OPENED_REVISION)
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == STAFF_OPENED_REVISION
+    command.upgrade(hours_database.config, LISTS_REVISION)
+
+    with hours_database.engine.connect() as connection:
+        assert _version(connection) == LISTS_REVISION
+        assert _existing_tables(connection) == tables
+        assert _service_snapshots(connection, SVC_TABLES) == snapshots_before
+        assert _service_state(connection) == service_before
+        assert _rows(connection, "SELECT id, company_name, logo_key, updated_at FROM svc_branding") == (
+            branding_before
+        )
+        assert _scalar(connection, "SELECT count(*) FROM svc_localities") == 1
+        assert _scalar(connection, "SELECT count(*) FROM svc_parts") == 1
+        assert _scalar(connection, "SELECT count(*) FROM svc_ticket_parts") == 1
+        hours_after = _hours_snapshot(connection, hours_tables)
+        inventory_after = _inventory(connection)
+
+    _assert_hours_unchanged(hours_before, hours_after, "re-run of 0013")
+    assert inventory_after == inventory_before
+
+
+def test_the_0013_grants_match_the_old_tables(scratch: Scratch) -> None:
+    """Dropped and re-created tables are granted again: a re-run after a restore leaves the grants whole."""
+    command.upgrade(scratch.config, "head")
+    with scratch.engine.begin() as connection:
+        # Take the grants away, as a restore into a fresh role setup could, then re-run 0013.
+        for table in sorted(SVC_TABLES_0013):
+            connection.execute(sa.text(f"REVOKE ALL ON {table} FROM hours_app"))
+        for sequence in sorted(SVC_SEQUENCES_0013):
+            connection.execute(sa.text(f"REVOKE ALL ON SEQUENCE {sequence} FROM hours_app"))
+    command.stamp(scratch.config, STAFF_OPENED_REVISION)
+    command.upgrade(scratch.config, LISTS_REVISION)
+
+    with scratch.engine.connect() as connection:
+        for table in sorted(SVC_TABLES_0013 | {"svc_tickets", "svc_customers"}):
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                assert _scalar(
+                    connection, "SELECT has_table_privilege('hours_app', :t, :p)", t=table, p=privilege
+                ), f"{privilege} on {table}"
+        for sequence in sorted(SVC_SEQUENCES_0013):
+            for privilege in ("USAGE", "SELECT"):
+                assert _scalar(
+                    connection, "SELECT has_sequence_privilege('hours_app', :s, :p)", s=sequence, p=privilege
+                ), f"{privilege} on {sequence}"

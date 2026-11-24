@@ -1121,9 +1121,10 @@ _TIME = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d
 _BCRYPT = re.compile(r"\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}")
 #: The username of the acting staff member, stored on a ticket opened for a customer (R26.4), is the one
 #: value that differs between an administrator and an operations administrator by design: the response
-#: field `opened_by_username`, and the last column of a `svc_tickets` row in the snapshot.
+#: field `opened_by_username`, and the column of a `svc_tickets` row in the snapshot that precedes the last
+#: one (`locality_id`, added by migration 0013, comes after it).
 _OPENED_BY_JSON = re.compile(r'("opened_by_username"\s*:\s*)"(?:admin|operations_admin)"')
-_OPENED_BY_ROW = re.compile(r"(, )'(?:admin|operations_admin)'(\)$)")
+_OPENED_BY_ROW = re.compile(r"(, )'(?:admin|operations_admin)'((?:, (?:None|'<id>'))?\)$)")
 
 
 def _masked(text_value: str) -> str:

@@ -47,6 +47,11 @@ EXPECTED_TABLES = {
     "svc_settings",
     "svc_field_labels",
     "svc_signin_failures",
+    # Added by migration 0013 (settlement and part lists, part links, branding).
+    "svc_localities",
+    "svc_parts",
+    "svc_ticket_parts",
+    "svc_branding",
 }
 
 
