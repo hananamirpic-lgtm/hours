@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.service_tickets.api import branding_form
 from app.service_tickets.api.customer_router import (
     FileParts,
     PhotoStoreDep,
@@ -122,6 +123,7 @@ from app.service_tickets.models import (
 from app.service_tickets.photo_store import PhotoStore
 from app.service_tickets.schemas import (
     AssignedTechnicianRequest,
+    BrandingInfo,
     CategoryCount,
     CategoryCreateRequest,
     CategoryDeleteResult,
@@ -1043,6 +1045,45 @@ def update_labels(body: _LabelsBody, session: ServiceSession) -> LabelsResponse:
         out = _labels_out(rows)
     session.commit()
     return out
+
+
+# --------------------------------------------------------------------------------- branding
+# Task 30.5 (Requirement 28). The delivery of the logo, `GET /branding/logo`, is in `photo_router`
+# (it is open to customers too). The form and the write order are in `branding_form`.
+
+
+@router.get("/branding", response_model=BrandingInfo, dependencies=[Depends(config_staff_principal)])
+def get_branding(session: ServiceSession) -> BrandingInfo:
+    """The company name and whether a logo is stored. Configuration staff only (R28.1)."""
+    with _domain_errors(session):
+        branding = config_service.get_form_branding(session)
+    return BrandingInfo(company_name=branding.company_name, has_logo=branding.has_logo)
+
+
+@router.put("/branding", response_model=BrandingInfo, dependencies=[Depends(config_staff_principal)])
+async def update_branding(
+    request: Request, session: ServiceSession, store: PhotoStoreDep
+) -> BrandingInfo:
+    """Set, replace or remove the company name and the logo, from a `multipart/form-data` form (R28.1, R28.2).
+
+    The handler reads the form itself, like the ticket handlers, so every refusal has the package's code.
+    Parts: `company_name`, `logo` (file), `remove_logo=true`, `remove_name=true`; see `branding_form` for
+    the rules, the check order and the write order. The body guard limits the request to 2 MiB; a logo over
+    1 MiB is 413 `logo_too_large`. Nothing is stored unless every part is valid. The answer is the new
+    `{company_name, has_logo}`.
+    """
+    try:
+        form = await request.form()
+    except (StarletteHTTPException, FormParserError) as error:  # a malformed or oversized body
+        raise service_error(
+            HTTPStatus.UNPROCESSABLE_ENTITY, fields={"body": CODE_INVALID_REQUEST}
+        ) from error
+    try:
+        entries = await branding_form.read_entries(form)
+        change = await run_in_threadpool(branding_form.plan_branding, entries)
+        return await run_in_threadpool(branding_form.save_branding, session, store, change)
+    finally:
+        await form.close()
 
 
 # --------------------------------------------------------------------------------- settlements, parts

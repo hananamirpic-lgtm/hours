@@ -56,7 +56,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, event, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
-from test_service_api_photo import FakePhotoStore, jpeg_bytes
+from test_service_api_photo import FakePhotoStore, jpeg_bytes, png_bytes
 from test_service_route_classification import (
     CONFIG_STAFF,
     CUSTOMER,
@@ -77,6 +77,7 @@ from app.service_tickets.config import ServiceConfig
 from app.service_tickets.customer_token import mint_customer_token
 from app.service_tickets.models import (
     FIELD_LABEL_KEYS,
+    Branding,
     Category,
     Customer,
     FieldLabel,
@@ -87,7 +88,7 @@ from app.service_tickets.models import (
     Ticket,
     TicketPart,
 )
-from app.service_tickets.photo_store import get_photo_store
+from app.service_tickets.photo_store import get_photo_store, new_logo_key
 from app.service_tickets.services.numbering import TicketNumbersExhausted
 
 API = "/api/service"
@@ -355,6 +356,18 @@ class World:
         if stored:
             self.photos.seed(key, jpeg_bytes())
         return self.ticket(owner=owner, photo_key=key)
+
+    def set_logo(self, *, present: bool = True, stored: bool = True) -> None:
+        """Make the company logo what a call needs: stored, a row key whose object is gone, or none."""
+        key = new_logo_key() if present else None
+        if key is not None and stored:
+            self.photos.seed(key, png_bytes((40, 20)))
+        row = self.session.get(Branding, 1, populate_existing=True)
+        if row is None:
+            row = Branding(id=1)
+            self.session.add(row)
+        row.logo_key = key
+        self.session.commit()
 
     def entry(self, ticket: Ticket) -> HistoryEntry:
         row = HistoryEntry(
@@ -1524,6 +1537,88 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
         ),
     )
 
+    # ------------------------------------------------------------------ branding (R28)
+    def logo_as_customer(w: World, *, present: bool = True, stored: bool = True) -> Req:
+        w.set_logo(present=present, stored=stored)
+        return as_customer(w, w.cust, "/branding/logo")
+
+    def logo_as_staff(w: World, user: User) -> Req:
+        w.set_logo()
+        return as_staff(w, user, "/branding/logo")
+
+    def logo_store_down(w: World) -> Req:
+        w.photos.fail_get_once = True
+        return logo_as_customer(w)
+
+    def logo_owing(w: World) -> Req:
+        w.set_logo()
+        return as_customer(w, w.owing, "/branding/logo")
+
+    add(
+        "GET",
+        "/branding/logo",
+        Call("a customer", 200, logo_as_customer),
+        Call("an administrator", 200, lambda w: logo_as_staff(w, w.admin)),
+        Call("an operations administrator", 200, lambda w: logo_as_staff(w, w.ops)),
+        Call("a technician", 200, lambda w: logo_as_staff(w, w.tech)),
+        Call("no logo is stored", 404, lambda w: logo_as_customer(w, present=False)),
+        Call("the object is gone", 404, lambda w: logo_as_customer(w, stored=False)),
+        Call("the object store is down", 503, logo_store_down, "photo_storage_unavailable"),
+        Call("a password change is owed", 403, logo_owing, owed),
+        Call(
+            "a deactivated technician",
+            401,
+            lambda w: as_staff(w, w.gone, "/branding/logo"),
+            "invalid_token",
+        ),
+    )
+    add(
+        "GET",
+        "/staff/branding",
+        Call("reads", 200, lambda w: as_staff(w, w.admin, "/staff/branding")),
+        Call("as operations administrator", 200, lambda w: as_staff(w, w.ops, "/staff/branding")),
+    )
+
+    def branding_form(w: World, user: User, *parts: Any, **fields: str) -> Req:
+        return as_staff(w, user, "/staff/branding", files=[*_form(fields), *parts])
+
+    def logo_file(content: bytes) -> tuple[str, Any]:
+        return ("logo", ("logo.png", content, "image/png"))
+
+    add(
+        "PUT",
+        "/staff/branding",
+        Call("sets the name", 200, lambda w: branding_form(w, w.admin, company_name="Acme Service")),
+        Call("uploads a logo", 200, lambda w: branding_form(w, w.ops, logo_file(png_bytes((600, 300))))),
+        Call("replaces the logo", 200, lambda w: branding_form(w, w.admin, logo_file(jpeg_bytes((90, 40))))),
+        Call("removes the name", 200, lambda w: branding_form(w, w.admin, remove_name="true")),
+        Call("removes the logo", 200, lambda w: branding_form(w, w.admin, remove_logo="true")),
+        Call(
+            "the name is too long",
+            422,
+            lambda w: branding_form(w, w.admin, company_name="x" * 101),
+            "invalid_company_name",
+        ),
+        Call(
+            "the logo is not an image",
+            422,
+            lambda w: branding_form(w, w.admin, logo_file(b"not an image")),
+            "invalid_logo_type",
+        ),
+        Call(
+            "a part nobody knows",
+            422,
+            lambda w: branding_form(w, w.admin, surprise="1"),
+            "unknown_field",
+        ),
+        Call(
+            "a technician",
+            403,
+            lambda w: branding_form(w, w.tech, company_name="Acme"),
+            "insufficient_role",
+        ),
+    )
+
     # ------------------------------------------------------------------ staff: settlements and parts
     def named_list(
         path: str,
@@ -1863,6 +1958,7 @@ def test_ticket_api_sql_isolation(
         "svc_signin_failures",
         "svc_localities",
         "svc_parts",
+        "svc_branding",
     } <= written
     # R20.11: every object key starts with the photo prefix, and the run really touched the store: a
     # submission put a photo and the delivery route read photos.

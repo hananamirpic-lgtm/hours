@@ -92,6 +92,9 @@ TEXT_MAX_LENGTH = 60
 #: Longest settlement name, in characters (Requirement 30.1).
 SETTLEMENT_NAME_MAX_LENGTH = 100
 
+#: Longest company name, in characters, after trimming (Requirement 28.1).
+COMPANY_NAME_MAX_LENGTH = 100
+
 #: The two results of `delete_named` and `delete_category`.
 REMOVED: Final = "removed"
 DEACTIVATED: Final = "deactivated"
@@ -606,6 +609,55 @@ def get_form_branding(session: Session) -> FormBranding:
     if row is None:
         return FormBranding(company_name=None, has_logo=False)
     return FormBranding(company_name=row.company_name, has_logo=row.logo_key is not None)
+
+
+def clean_company_name(value: object) -> str | None:
+    """The trimmed company name when it is 1 to 100 characters of text, else `None` (R28.1).
+
+    A name with a NUL or a lone surrogate is invalid too: neither can be stored. The name is plain text;
+    nothing is escaped or removed here, the portal renders it as text (R28.7).
+    """
+    return _clean_text(value, COMPANY_NAME_MAX_LENGTH)
+
+
+def get_logo_key(session: Session) -> str | None:
+    """The object-store key of the stored logo, or `None`. For the delivery route only; it never leaves
+    the service in a response body."""
+    row = session.get(Branding, 1, populate_existing=True)
+    return None if row is None else row.logo_key
+
+
+def update_branding(
+    session: Session,
+    *,
+    set_name: bool = False,
+    company_name: str | None = None,
+    set_logo: bool = False,
+    logo_key: str | None = None,
+) -> tuple[str | None, FormBranding]:
+    """Change the name and/or the logo key of the single branding row, without committing (R28.1, R28.6).
+
+    `set_name` and `set_logo` say which of the two to change; the other keeps its value. `company_name`
+    must already be clean (`clean_company_name`) or `None` to remove the name, and `logo_key` is the key
+    of the object already stored, or `None` to remove the logo. The row is locked for the update, so two
+    saves at once do not mix, and created when it is missing (a unit-test database).
+
+    Returns the key of the logo that this change replaced or removed (the caller deletes that object
+    after its commit) and the branding as it will read after the commit. `None` for the old key when the
+    logo was not touched or there was none.
+    """
+    row = session.get(Branding, 1, populate_existing=True, with_for_update=True)
+    if row is None:
+        row = Branding(id=1)
+        session.add(row)
+    replaced: str | None = None
+    if set_name:
+        row.company_name = company_name
+    if set_logo:
+        replaced = row.logo_key
+        row.logo_key = logo_key
+    session.flush()
+    return replaced, FormBranding(company_name=row.company_name, has_logo=row.logo_key is not None)
 
 
 def get_form_config(session: Session) -> FormConfig:

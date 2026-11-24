@@ -71,7 +71,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, event, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
-from test_service_api_photo import FakePhotoStore, jpeg_bytes
+from test_service_api_photo import FakePhotoStore, jpeg_bytes, png_bytes
 from test_service_route_classification import (
     CONFIG_STAFF,
     CUSTOMER,
@@ -91,6 +91,7 @@ from app.service_tickets.config import ServiceConfig
 from app.service_tickets.customer_token import decode_customer_token, mint_customer_token
 from app.service_tickets.models import (
     FIELD_LABEL_KEYS,
+    Branding,
     Category,
     Customer,
     FieldLabel,
@@ -182,6 +183,8 @@ TICKET_OWN_ID, TICKET_OTHER_ID = _uid(0x401), _uid(0x402)
 #: The owner's ticket has a stored photo, so the photo probe has something to deliver (task 16.4). The
 #: object itself lives in the fake store of each world.
 PHOTO_KEY = "service-tickets/" + "0" * 31 + "1.jpg"
+#: The stored company logo (task 30.5), so the logo probe has something to deliver.
+LOGO_KEY = "service-tickets/branding/" + "0" * 31 + "1.png"
 ENTRY_ID = _uid(0x501)
 MISSING_UUID = _uid(0x9999)
 MISSING_TICKET = 99999
@@ -434,6 +437,8 @@ PROBES: tuple[Probe, ...] = (
     ),
     # --- shared photo (task 16.4): the owner's ticket has a stored photo, so an admitted caller gets it
     Probe("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO, 200),
+    # --- shared logo (task 30.5): a logo is stored, so an admitted caller gets it
+    Probe("GET", "/branding/logo", SHARED_PHOTO, 200),
     # --- ticket staff
     Probe("GET", "/staff/dashboard", TICKET_STAFF, 200),
     Probe("GET", "/staff/tickets", TICKET_STAFF, 200),
@@ -506,6 +511,9 @@ PROBES: tuple[Probe, ...] = (
         json={"description_required": True, "photo_upload_enabled": True},
     ),
     Probe("PUT", "/staff/labels", CONFIG_STAFF, 200, json={"labels": {"city": {"he": "עיר", "en": "City"}}}),
+    # --- configuration staff: the company name and logo (R28.1), the read included
+    Probe("GET", "/staff/branding", CONFIG_STAFF, 200),
+    Probe("PUT", "/staff/branding", CONFIG_STAFF, 200, form={"company_name": "Acme Service"}),
     # --- configuration staff: settlements and replaceable parts (R30.1, R29.6), reads included
     Probe("GET", "/staff/localities", CONFIG_STAFF, 200),
     Probe("POST", "/staff/localities", CONFIG_STAFF, 201, json={"name_he": "נהריה", "name_en": "Nahariya"}),
@@ -616,6 +624,7 @@ def _seed(session: Session) -> None:
                 )
             )
     session.add(ServiceSettings(id=1, description_required=True, photo_upload_enabled=True))
+    session.add(Branding(id=1, company_name="Acme", logo_key=LOGO_KEY))
     session.add_all(
         FieldLabel(field_key=key, label_he=f"{key}-he", label_en=f"{key}-en") for key in FIELD_LABEL_KEYS
     )
@@ -737,6 +746,7 @@ class World:
         self.numbers = Numbers()
         self.photos = FakePhotoStore()
         self.photos.seed(PHOTO_KEY, jpeg_bytes())
+        self.photos.seed(LOGO_KEY, png_bytes((40, 20)))
         config = _enabled_config()
         app = FastAPI()
         mount(app, config, "/api")

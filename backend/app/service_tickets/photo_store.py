@@ -21,9 +21,10 @@ photo is never reachable except through the API's delivery route (R20.11).
   `ServerSideEncryption` on any call, so this store does not either; the bucket stays private by its
   own policy. If Hours ever adds server-side encryption, mirror it here.
 * **Keys.** `new_key()` gives `service-tickets/{uuid4().hex}.jpg`. No part of the client's file name or
-  of any ticket data is in it (R11.8). Every method checks the key first (`check_key`): a non-string, an
-  empty key, a key outside the prefix, a key with an empty, `.` or `..` path segment, a backslash or a
-  control character raises `ValueError`, before any network call.
+  of any ticket data is in it (R11.8). `new_logo_key()` gives `service-tickets/branding/{uuid4().hex}.png`
+  for the one company logo (R28.6). Every method checks the key first (`check_key`): a non-string, an
+  empty key, a key outside the prefix, a key with an empty, `.` or `..` path segment, a backslash, a
+  control character, or any shape other than those two raises `ValueError`, before any network call.
 * **Errors.** `PhotoNotFound` is a missing object (the router answers 404 `ticket_not_found` and logs an
   error with the ticket number). `PhotoStorageUnavailable` is any other failure of `put` or `get` (the
   router answers 503 `photo_storage_unavailable`). `delete` is best effort: the router calls it only
@@ -65,12 +66,23 @@ from app.service_tickets.error_codes import (
     CODE_SERVICE_UNAVAILABLE,
     CODE_TICKET_NOT_FOUND,
 )
+from app.service_tickets.logo import CONTENT_TYPE as LOGO_CONTENT_TYPE
+from app.service_tickets.logo import ProcessedLogo, process_logo
 from app.service_tickets.photo import CONTENT_TYPE, ProcessedPhoto, process_photo
 
 logger = logging.getLogger(__name__)
 
 #: Every key of this store starts with this prefix, and nothing outside it can be touched (R20.11).
 KEY_PREFIX = "service-tickets/"
+
+#: The sub-prefix of the one company logo (R28.6): `service-tickets/branding/<uuid4 hex>.png`.
+LOGO_KEY_PREFIX = f"{KEY_PREFIX}branding/"
+
+#: The two shapes of a key. A ticket photo is `<name>.jpg` directly under the prefix; the name is
+#: lowercase letters and digits (`new_key` makes 32 hex characters). A logo is 32 lowercase hex
+#: characters and `.png` under `branding/`. Nothing else is a key of this store.
+_PHOTO_KEY_SHAPE = re.compile(re.escape(KEY_PREFIX) + r"[0-9a-z]{1,64}\.jpg")
+_LOGO_KEY_SHAPE = re.compile(re.escape(LOGO_KEY_PREFIX) + r"[0-9a-f]{32}\.png")
 
 #: Client timeouts and retries (finding F19).
 CONNECT_TIMEOUT_SECONDS = 3
@@ -118,12 +130,20 @@ def new_key() -> str:
     return f"{KEY_PREFIX}{uuid.uuid4().hex}.jpg"
 
 
+def new_logo_key() -> str:
+    """A new unique logo key: `service-tickets/branding/` plus 32 hex characters plus `.png` (R28.6)."""
+    return f"{LOGO_KEY_PREFIX}{uuid.uuid4().hex}.png"
+
+
 def check_key(key: object) -> str:
-    """Return `key` if it is a safe key inside the prefix, else raise `ValueError`.
+    """Return `key` if it is a safe key of this store, else raise `ValueError`.
 
     Rejects: anything that is not a `str`, the empty string, a key that does not start with
     `service-tickets/`, a key with nothing after the prefix, an empty, `.` or `..` path segment
-    (`service-tickets/../x`, `service-tickets//x`), a backslash and control characters.
+    (`service-tickets/../x`, `service-tickets//x`), a backslash and control characters. What is left must
+    have one of the two shapes of the store: `service-tickets/<lowercase letters and digits>.jpg` (a
+    ticket photo) or `service-tickets/branding/<32 lowercase hex characters>.png` (the logo). Uppercase,
+    another extension, another sub-folder or another depth is a `ValueError`.
     """
     if not isinstance(key, str):
         raise ValueError("photo key must be a string")
@@ -136,6 +156,8 @@ def check_key(key: object) -> str:
         raise ValueError("photo key has a forbidden character")
     if any(segment in ("", ".", "..") for segment in rest.split("/")):
         raise ValueError("photo key has an empty or relative path segment")
+    if not (_PHOTO_KEY_SHAPE.fullmatch(key) or _LOGO_KEY_SHAPE.fullmatch(key)):
+        raise ValueError("photo key does not have the shape of a photo or a logo key")
     return key
 
 
@@ -186,7 +208,8 @@ class PhotoStore:
         return self._client
 
     def put(self, key: str, data: bytes) -> None:
-        """Store JPEG bytes under `key` with `ContentType: image/jpeg` and no ACL.
+        """Store the bytes under `key` with no ACL. A photo key gets `ContentType: image/jpeg`, a logo key
+        (`.png`) gets `image/png`.
 
         Raises `ValueError` for a bad key, `TypeError` for non-bytes, `PhotoStorageUnavailable` when
         the store fails.
@@ -194,9 +217,10 @@ class PhotoStore:
         check_key(key)
         if not isinstance(data, bytes | bytearray | memoryview):
             raise TypeError("data must be bytes")
+        content_type = LOGO_CONTENT_TYPE if key.endswith(".png") else CONTENT_TYPE
         try:
             self._get_client().put_object(
-                Bucket=self.bucket, Key=key, Body=bytes(data), ContentType=CONTENT_TYPE
+                Bucket=self.bucket, Key=key, Body=bytes(data), ContentType=content_type
             )
         except (ClientError, BotoCoreError) as exc:
             logger.error("photo store put failed: %s", type(exc).__name__)
@@ -278,6 +302,20 @@ def process_photo_limited(data: bytes, *, wait_seconds: float = DECODE_WAIT_SECO
         raise service_error(HTTPStatus.SERVICE_UNAVAILABLE, CODE_SERVICE_UNAVAILABLE)
     try:
         return process_photo(data)
+    finally:
+        _DECODE_SLOTS.release()
+
+
+def process_logo_limited(data: bytes, *, wait_seconds: float = DECODE_WAIT_SECONDS) -> ProcessedLogo:
+    """`process_logo(data)` while holding a decode slot of the same pool as the photos (R24.5).
+
+    Same wait, same 503 `service_unavailable` and same release on every path as `process_photo_limited`.
+    `LogoError` from `process_logo` passes through unchanged for the router to map to 422 or 413.
+    """
+    if not _DECODE_SLOTS.acquire(timeout=max(wait_seconds, 0.0)):
+        raise service_error(HTTPStatus.SERVICE_UNAVAILABLE, CODE_SERVICE_UNAVAILABLE)
+    try:
+        return process_logo(data)
     finally:
         _DECODE_SLOTS.release()
 

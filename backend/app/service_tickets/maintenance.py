@@ -17,12 +17,14 @@ references. This command finds such objects and, with ``--delete``, removes them
   (``30m``, ``1h``, ``2d``). The smallest accepted value is 5 minutes and the largest 365 days, so a
   ticket that is being created right now is never swept. An object without a usable ``LastModified`` is
   treated as recent.
-* **References.** The keys of one listed page are looked up in ``svc_tickets.photo_key`` with an ``IN``
-  query (in chunks of 500), never by loading the ticket table. A referenced key is never reported or
-  deleted. The lookup of a page runs immediately before that page is deleted.
+* **References.** The keys of one listed page are looked up in ``svc_tickets.photo_key`` and in
+  ``svc_branding.logo_key`` with ``IN`` queries (in chunks of 500), never by loading the ticket table. A
+  referenced key is never reported or deleted, so the stored company logo
+  (``service-tickets/branding/<32 hex>.png``) is never an orphan, while an old logo object that no row
+  references any more is (R28.6). The lookup of a page runs immediately before that page is deleted.
 * **Prefix safety.** Every listed key goes through ``check_key``; a key outside the prefix, or one that
-  is not a plain key under it, is ignored and counted, never reported or deleted. Deletion goes through
-  ``PhotoStore.delete``, which checks the key again.
+  is not a photo key or a logo key under it, is ignored and counted, never reported or deleted. Deletion
+  goes through ``PhotoStore.delete``, which checks the key again.
 * **Output.** Object keys (``service-tickets/<32 hex>.jpg``), their last-modified time and counters
   only. No ticket data is read except the ``photo_key`` column, and none is printed. Failures print the
   exception class and, for the object store, its error code, never a message that could echo a value.
@@ -57,7 +59,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session_factory
-from app.service_tickets.models import Ticket
+from app.service_tickets.models import Branding, Ticket
 from app.service_tickets.photo_store import KEY_PREFIX, PhotoStore, build_client, check_key
 
 EXIT_OK = 0
@@ -183,11 +185,16 @@ class SweepResult:
 
 
 def referenced_keys(session: Session, keys: Sequence[str]) -> set[str]:
-    """The subset of `keys` that some ticket references, by ``IN`` queries over chunks of the keys."""
+    """The subset of `keys` that something references: a ticket's photo or the stored company logo.
+
+    Looked up by ``IN`` queries over chunks of the keys. The logo key lives in the one ``svc_branding``
+    row (R28.6); without this the sweep would delete the logo as an orphan.
+    """
     found: set[str] = set()
     for start in range(0, len(keys), LOOKUP_CHUNK):
         chunk = list(keys[start : start + LOOKUP_CHUNK])
         found.update(session.execute(select(Ticket.photo_key).where(Ticket.photo_key.in_(chunk))).scalars())
+        found.update(session.execute(select(Branding.logo_key).where(Branding.logo_key.in_(chunk))).scalars())
     found.discard(None)  # type: ignore[arg-type]
     return found
 

@@ -1,12 +1,18 @@
-"""Request body guard for the ticket submission route (Requirements 22.6 and 25.6; design "Abuse protection").
+"""Request body guard for the multipart routes (Requirements 22.6, 25.6 and 28.2; design "Abuse protection").
 
-No layer in front of the API limits a request body today, so the 12 MB rule is enforced here, on two
-paths only: `POST {api_prefix}/service/tickets` (the customer submission) and
-`POST {api_prefix}/service/staff/tickets` (staff opening a ticket for a customer, R26.8), each an exact
-match. Every other path, another method on the same paths and any subpath (`/tickets/10000/cancel`)
-pass through untouched.
+No layer in front of the API limits a request body today, so the limits are enforced here, on three
+routes only, each an exact match of method and path:
 
-* **Declared length.** A `Content-Length` over `MAX_BODY_BYTES` is answered 413 `request_too_large`
+* `POST {api_prefix}/service/tickets` (the customer submission) and
+  `POST {api_prefix}/service/staff/tickets` (staff opening a ticket for a customer, R26.8): 12 MB.
+* `PUT {api_prefix}/service/staff/branding` (the company name and logo, R28.2): 2 MiB, which holds the
+  1 MiB logo and the form around it.
+
+Every other path, another method on the same paths and any subpath (`/tickets/10000/cancel`) pass
+through untouched.
+
+* **Declared length.** A `Content-Length` over the limit of the route (`MAX_BODY_BYTES` or
+  `MAX_BRANDING_BODY_BYTES`) is answered 413 `request_too_large`
   before the application is called, so the body is never read. The check needs no token: the guard
   sits outside routing and authentication.
 * **Streamed length.** The bytes of every `http.request` message are counted, whether or not the
@@ -20,7 +26,7 @@ pass through untouched.
   value too long to be a real size is over the limit. HTTP servers reject these before the application
   anyway; this keeps the guard safe when one does not.
 
-Exactly `MAX_BODY_BYTES` bytes pass; one more fails.
+Exactly the limit of a route passes; one more byte fails.
 
 The middleware is pure ASGI (no `BaseHTTPMiddleware`, which would buffer the stream and wrap the
 exception). In `create_app()` it is added only when the flag is on, before the header middlewares, so
@@ -38,6 +44,9 @@ from app.service_tickets.error_codes import CODE_REQUEST_TOO_LARGE
 
 #: 12 MB as the requirements count it: 12 x 1,048,576 bytes (R22.6). A code constant, not a setting.
 MAX_BODY_BYTES = 12_582_912
+
+#: 2 MiB for the branding form: the 1 MiB logo plus the form around it (R28.2). A code constant.
+MAX_BRANDING_BODY_BYTES = 2_097_152
 
 #: A decimal number of more digits than this (after leading zeros) is larger than any real body.
 _MAX_DIGITS = 19
@@ -65,21 +74,37 @@ def _declared_over_limit(headers: list[tuple[bytes, bytes]], limit: int) -> bool
 
 
 class BodyLimitMiddleware:
-    """Answer 413 `request_too_large` for an oversized ticket submission body (customer or staff path)."""
+    """Answer 413 `request_too_large` for an oversized ticket submission or branding body.
 
-    def __init__(self, app: ASGIApp, *, api_prefix: str, limit: int = MAX_BODY_BYTES) -> None:
+    `limit` is the limit of the two ticket paths and `branding_limit` the one of the branding path.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        api_prefix: str,
+        limit: int = MAX_BODY_BYTES,
+        branding_limit: int = MAX_BRANDING_BODY_BYTES,
+    ) -> None:
         self._app = app
         base = f"{api_prefix.rstrip('/')}/service"
-        # The customer submission and the staff submission on a customer's behalf (R22.6, R26.8).
-        self._paths = frozenset((f"{base}/tickets", f"{base}/staff/tickets"))
-        self._limit = limit
+        # (method, exact path) -> the most bytes the body may have.
+        self._limits: dict[tuple[str, str], int] = {
+            # The customer submission and the staff submission on a customer's behalf (R22.6, R26.8).
+            ("POST", f"{base}/tickets"): limit,
+            ("POST", f"{base}/staff/tickets"): limit,
+            # The company name and logo of the new-ticket page (R28.2).
+            ("PUT", f"{base}/staff/branding"): branding_limit,
+        }
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"] not in self._paths:
+        limit = self._limits.get((scope["method"], scope["path"])) if scope["type"] == "http" else None
+        if limit is None:
             await self._app(scope, receive, send)
             return
 
-        if _declared_over_limit(list(scope.get("headers", [])), self._limit):
+        if _declared_over_limit(list(scope.get("headers", [])), limit):
             await self._too_large(scope, receive, send)
             return
 
@@ -88,12 +113,12 @@ class BodyLimitMiddleware:
 
         async def counting_receive() -> Message:
             nonlocal received
-            if received > self._limit:
+            if received > limit:
                 raise _BodyTooLarge
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self._limit:
+                if received > limit:
                     raise _BodyTooLarge
             return message
 

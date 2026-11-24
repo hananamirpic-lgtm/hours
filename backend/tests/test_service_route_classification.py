@@ -104,6 +104,7 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("GET", "/tickets/{ticket_number}", CUSTOMER),
     E("POST", "/tickets/{ticket_number}/cancel", CUSTOMER),
     E("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO),
+    E("GET", "/branding/logo", SHARED_PHOTO),  # the company logo: any customer or ticket staff (R28.5)
     # --- staff: dashboard, tickets, history
     E("GET", "/staff/dashboard", TICKET_STAFF),
     E("GET", "/staff/tickets", TICKET_STAFF),
@@ -133,6 +134,9 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("GET", "/staff/settings", CONFIG_STAFF),
     E("PUT", "/staff/settings", CONFIG_STAFF),
     E("PUT", "/staff/labels", CONFIG_STAFF),
+    # --- staff: the company name and logo (R28.1), configuration staff only, the read included
+    E("GET", "/staff/branding", CONFIG_STAFF),
+    E("PUT", "/staff/branding", CONFIG_STAFF),
     # --- staff: the settlement and replaceable-parts lists (R30.1, R29.6). Unlike the category list, the
     # list reads are configuration staff only too: the form configuration exposes the active ones.
     E("GET", "/staff/localities", CONFIG_STAFF),
