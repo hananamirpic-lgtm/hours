@@ -9,9 +9,11 @@ import {
   customerListQuery,
   deleteCategory,
   getDashboard,
+  getStaffFormConfig,
   isErrorBody,
   isStaffUnauthenticated,
   listTickets,
+  openTicketForCustomer,
   readLabels,
   reportQuery,
   resetCustomerPassword,
@@ -207,5 +209,58 @@ describe('staff requests', () => {
   it('returns the result of a category delete', async () => {
     stubFetch(answer(200, { result: 'deactivated' }));
     await expect(deleteCategory('c-1')).resolves.toBe('deactivated');
+  });
+});
+
+describe('staff-opened tickets (R26)', () => {
+  function formBody(): FormData {
+    const body = new FormData();
+    body.append('customer_id', 'cust-1');
+    body.append('city', 'Haifa');
+    return body;
+  }
+
+  it('GET the form configuration under /api/service/staff/form-config', async () => {
+    const config = { categories: [], labels: {}, settings: { description_required: true, photo_upload_enabled: false } };
+    const fetchMock = stubFetch(answer(200, config));
+    await expect(getStaffFormConfig()).resolves.toEqual(config);
+    const { url, init } = lastCall(fetchMock);
+    expect(url).toBe('/api/service/staff/form-config');
+    expect(init.method).toBe('GET');
+  });
+
+  it('POST the multipart body as is, with no Content-Type of its own, and returns the 201 detail', async () => {
+    const detail = { ticket_number: 12345, opened_by_username: 'avi' };
+    const fetchMock = stubFetch(answer(201, detail));
+    const body = formBody();
+    await expect(openTicketForCustomer(body)).resolves.toEqual(detail);
+    const { url, init } = lastCall(fetchMock);
+    expect(url).toBe('/api/service/staff/tickets');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(body);
+    const headers = Object.keys((init.headers ?? {}) as Record<string, string>).map((name) => name.toLowerCase());
+    expect(headers).not.toContain('content-type');
+  });
+
+  it('throws the code and the fields of a 422', async () => {
+    stubFetch(answer(422, { detail: { error: { code: 'invalid_phone', fields: { phone: 'invalid_phone', category_id: 'invalid_category' } } } }));
+    await expect(openTicketForCustomer(formBody())).rejects.toMatchObject({
+      code: 'invalid_phone',
+      fields: { phone: 'invalid_phone', category_id: 'invalid_category' },
+    });
+  });
+
+  it('reads customer_not_found (404) and customer_inactive (409)', async () => {
+    stubFetch(answer(404, { detail: { error: { code: 'customer_not_found' } } }));
+    await expect(openTicketForCustomer(formBody())).rejects.toMatchObject({ code: 'customer_not_found', fields: {} });
+    stubFetch(answer(409, { detail: { error: { code: 'customer_inactive' } } }));
+    await expect(openTicketForCustomer(formBody())).rejects.toMatchObject({ code: 'customer_inactive', fields: {} });
+  });
+
+  it('treats a 201 without a ticket number as a lost answer, and no answer as network', async () => {
+    stubFetch(answer(201, { ok: true }));
+    await expect(openTicketForCustomer(formBody())).rejects.toMatchObject({ code: 'generic' });
+    stubFetch(new TypeError('Failed to fetch'));
+    await expect(openTicketForCustomer(formBody())).rejects.toMatchObject({ code: 'network' });
   });
 });

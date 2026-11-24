@@ -24,6 +24,7 @@ import {
   errorKeyOf,
   isApproval,
   ltrIsolate,
+  openedByStaff,
   type DetailLanguage,
   type DetailRow,
   type EntryFailure,
@@ -67,6 +68,7 @@ function RowValue({ row }: { row: DetailRow }) {
 export function TicketFields({ ticket, language }: { ticket: StaffTicketDetail; language: DetailLanguage }) {
   const { t } = useTranslation(SERVICE_NAMESPACE);
   const rows = buildDetailRows(ticket, language);
+  const openedBy = openedByStaff(ticket);
   return (
     <section className="card ticket-detail-section" aria-labelledby="ticket-detail-fields-heading">
       <h2 id="ticket-detail-fields-heading" className="card__title">
@@ -82,6 +84,12 @@ export function TicketFields({ ticket, language }: { ticket: StaffTicketDetail; 
           </div>
         ))}
       </dl>
+      {openedBy !== null && (
+        // Plain text (React escapes it): the username of the staff member who opened the ticket (R26.7).
+        <p className="ticket-detail-opened-by">
+          <bdi>{t('management.ticket.openedByStaff', { name: openedBy })}</bdi>
+        </p>
+      )}
     </section>
   );
 }

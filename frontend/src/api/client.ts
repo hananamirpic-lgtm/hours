@@ -108,7 +108,8 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     ...init,
     headers: {
       Accept: 'application/json',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      // A FormData body sets its own multipart Content-Type with the boundary; forcing JSON would break it.
+      ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers ?? {}),
     },

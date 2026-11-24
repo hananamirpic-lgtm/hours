@@ -583,3 +583,33 @@ describe('HistorySection markup (R16.4, R16.9)', () => {
     expect(markup).toContain('&lt;script&gt;');
   });
 });
+
+describe('TicketFields opened-by line (R26.7)', () => {
+  it.each(LANGUAGES)('shows "Opened by staff: <username>" in %s when the ticket was opened by staff', (language) => {
+    const markup = render(
+      language,
+      createElement(TicketFields, { ticket: ticketOf({ opened_by_username: 'avi' }), language }),
+    );
+    expectNoMissingKeys(markup);
+    expect(markup).toContain(language === 'en' ? 'Opened by staff: avi' : 'נפתחה על ידי הצוות: avi');
+  });
+
+  it.each([null, undefined, ''])('shows nothing when opened_by_username is %j', (value) => {
+    const ticket = ticketOf(value === undefined ? {} : { opened_by_username: value });
+    for (const language of LANGUAGES) {
+      const markup = render(language, createElement(TicketFields, { ticket, language }));
+      expect(markup).not.toContain('ticket-detail-opened-by');
+      expect(markup).not.toContain('Opened by staff');
+      expect(markup).not.toContain('נפתחה על ידי הצוות');
+    }
+  });
+
+  it('shows the username as plain text, never as markup', () => {
+    const markup = render(
+      'en',
+      createElement(TicketFields, { ticket: ticketOf({ opened_by_username: '<b>x</b>' }), language: 'en' }),
+    );
+    expect(markup).not.toContain('<b>x</b>');
+    expect(markup).toContain('Opened by staff: &lt;b&gt;x&lt;/b&gt;');
+  });
+});

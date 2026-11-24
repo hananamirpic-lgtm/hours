@@ -117,3 +117,9 @@
   display: inline-block;
   inline-size: calc(var(--space) * 2);
 }
+
+/* "Opened by staff: <username>" (task 29.5, R26.7): a plain line under the fields, shown only for such tickets. */
+.ticket-detail-opened-by {
+  margin-block: calc(var(--space) * 2) 0;
+  color: var(--color-muted);
+}

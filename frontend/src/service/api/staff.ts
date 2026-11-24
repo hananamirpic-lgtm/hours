@@ -38,7 +38,7 @@ import type {
   StatusChangeBody,
   TicketListQuery,
 } from './staffTypes';
-import type { FormLabelKey, LabelTexts } from './formTypes';
+import type { FormConfig, FormLabelKey, LabelTexts } from './formTypes';
 
 export * from './staffTypes';
 
@@ -168,6 +168,7 @@ export const staffKeys = {
   categories: ['service-staff', 'categories'] as const,
   settings: ['service-staff', 'settings'] as const,
   labels: ['service-staff', 'labels'] as const,
+  formConfig: ['service-staff', 'form-config'] as const,
 };
 
 // --- the transport ---------------------------------------------------------------------------------
@@ -175,6 +176,8 @@ export const staffKeys = {
 interface StaffRequest {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   json?: unknown;
+  /** A multipart body. `apiFetch` leaves Content-Type unset for it, so the browser adds the boundary. */
+  form?: FormData;
   signal?: AbortSignal;
 }
 
@@ -184,6 +187,7 @@ async function send(path: string, request: StaffRequest): Promise<unknown> {
     acceptStatuses: [...ERROR_STATUSES],
   };
   if (request.json !== undefined) init.body = JSON.stringify(request.json);
+  else if (request.form !== undefined) init.body = request.form;
   if (request.signal) init.signal = request.signal;
   try {
     return await apiFetch<unknown>(`${STAFF_PREFIX}${path}`, init);
@@ -253,6 +257,28 @@ export function editHistoryEntry(
     method: 'PUT',
     json: body,
   });
+}
+
+/**
+ * `GET /staff/form-config` (Requirement 26): the body of the customer `GET /form-config` for staff, namely the
+ * active categories, the seven Field_Labels and the two form options.
+ */
+export function getStaffFormConfig(signal?: AbortSignal): Promise<FormConfig> {
+  return staffJson<FormConfig>('/form-config', signal ? { signal } : {});
+}
+
+/**
+ * `POST /staff/tickets` (Requirement 26): opens a ticket for a customer. `formData` holds the customer form
+ * parts (city, apartment, phone, category_id, description, urgent, optional photo) and `customer_id`. No
+ * Content-Type is set here: the browser adds the multipart boundary. Resolves to the new ticket's staff
+ * detail (201); an answer without a usable ticket number is treated as a lost answer (`generic`), because the
+ * ticket may exist.
+ */
+export async function openTicketForCustomer(formData: FormData): Promise<StaffTicketDetail> {
+  const created = await staffJson<StaffTicketDetail>('/tickets', { method: 'POST', form: formData });
+  const number: unknown = created.ticket_number;
+  if (typeof number !== 'number' || !Number.isSafeInteger(number)) throw new StaffApiError(GENERIC_CODE);
+  return created;
 }
 
 /**

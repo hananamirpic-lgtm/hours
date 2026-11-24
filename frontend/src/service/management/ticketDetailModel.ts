@@ -83,6 +83,15 @@ export function formatJerusalemMinute(value: string): string {
 
 // --- the rows of the detail ------------------------------------------------------------------------
 
+/**
+ * The username of the staff member who opened the ticket for the customer (R26.7), or null when the customer
+ * opened it. A value that is missing, not a string or blank counts as "not opened by staff", so nothing is shown.
+ */
+export function openedByStaff(ticket: Pick<StaffTicketDetail, 'opened_by_username'>): string | null {
+  const name = ticket.opened_by_username;
+  return typeof name === 'string' && name.trim() !== '' ? name : null;
+}
+
 export type DetailRowKind =
   /** Text read left to right inside `<bdi dir="ltr">`: the ticket number, the phone, the date. */
   | 'ltr'

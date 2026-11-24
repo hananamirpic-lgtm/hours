@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { StaffCategory, StaffTicketPage, StaffTicketRow, TicketStatus } from '../api/staffTypes';
 import { SERVICE_NAMESPACE } from './namespace';
+import { NEW_TICKET_PATH } from './newTicketModel';
 import {
   STATUS_ORDER,
   categoryName,
@@ -112,6 +113,11 @@ export function TicketListView(props: TicketListViewProps) {
     <section className="page-body ticket-list">
       <header className="page-header">
         <h1>{t('management.tickets.title')}</h1>
+        <div className="page-header__actions">
+          <Link to={NEW_TICKET_PATH} className="button button--primary">
+            {t('management.tickets.newTicket')}
+          </Link>
+        </div>
       </header>
 
       <form

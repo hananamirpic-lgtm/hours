@@ -498,3 +498,13 @@ describe('TicketListView', () => {
     expect(paged).toContain('Next');
   });
 });
+
+describe('TicketListView New ticket link (R26.1)', () => {
+  it.each(['en', 'he'] as const)('links the header to /tickets/list/new in %s', (language) => {
+    const html = render(language, createElement(TicketListView, view({ language, page: page([]) })));
+    expect(html).toContain('href="/tickets/list/new"');
+    expect(html).toContain(`>${text[language].management.tickets.newTicket}</a>`);
+    // The link sits in the page header, before the filters.
+    expect(html.indexOf('href="/tickets/list/new"')).toBeLessThan(html.indexOf('role="search"'));
+  });
+});

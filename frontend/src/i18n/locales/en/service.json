@@ -219,6 +219,7 @@
     },
     "tickets": {
       "title": "Service tickets",
+      "newTicket": "New ticket",
       "total": "Total: {{count}}",
       "searchLabel": "Search by ticket number",
       "searchHint": "A 5-digit number",
@@ -277,6 +278,7 @@
       "description": "Issue description",
       "noDescription": "No description was entered.",
       "created": "Opened",
+      "openedByStaff": "Opened by staff: {{name}}",
       "photo": {
         "heading": "Photo",
         "open": "Open the photo at full size",
@@ -308,6 +310,41 @@
         "created": "Created {{when}}",
         "edited": "Edited {{when}}",
         "by": "Technician: {{name}}"
+      }
+    },
+    "newTicket": {
+      "title": "New ticket",
+      "back": "Back to the ticket list",
+      "submitFailed": "We could not confirm that the ticket was created. Check the ticket list before you send it again.",
+      "picker": {
+        "title": "Choose the customer",
+        "intro": "Search for the active customer the ticket is opened for, then choose the customer from the list.",
+        "searchLabel": "Search by name or phone",
+        "searchHint": "Leave empty to list active customers.",
+        "found": "Matching customers: {{count}}",
+        "resultsLabel": "Matching customers",
+        "empty": "No active customer matches the search.",
+        "loadError": "Could not load the customers.",
+        "apartment": "Apartment {{apartment}}",
+        "refine": "Only the first customers are listed. Narrow the search to find others."
+      },
+      "customer": {
+        "title": "Customer",
+        "change": "Change customer"
+      },
+      "form": {
+        "title": "Ticket details",
+        "requiredNote": "Fields marked (required) must be filled in. The customer's details are filled in and can be changed for this ticket only.",
+        "errorSummary": "Correct the fields marked in the form.",
+        "categoryPlaceholder": "Choose a category",
+        "photoHint": "JPEG, PNG or WebP, up to 10 MB.",
+        "photoSelected": "Photo selected: {{file}}",
+        "photoRemove": "Remove the photo",
+        "urgentHelp": "Select if the problem is urgent.",
+        "submit": "Open ticket",
+        "submitting": "Opening…",
+        "cancel": "Cancel",
+        "loadError": "Could not load the form."
       }
     },
     "customers": {

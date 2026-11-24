@@ -45,6 +45,7 @@ import { CategoriesPage } from '@/service/management/pages/CategoriesPage';
 import { CustomersPage as TicketCustomersPage } from '@/service/management/pages/CustomersPage';
 import { DashboardPage as TicketDashboardPage } from '@/service/management/pages/DashboardPage';
 import { LabelsPage } from '@/service/management/pages/LabelsPage';
+import { NewTicketPage } from '@/service/management/pages/NewTicketPage';
 import { OptionsPage } from '@/service/management/pages/OptionsPage';
 import { ReportsPage as TicketReportsPage } from '@/service/management/pages/ReportsPage';
 import { TicketDetailPage } from '@/service/management/pages/TicketDetailPage';
@@ -106,6 +107,8 @@ export default function App() {
       >
         <Route index element={<TicketDashboardPage />} />
         <Route path="list" element={<TicketListPage />} />
+        {/* Declared before `list/:ticketNumber`, so "new" is never read as a ticket number. */}
+        <Route path="list/new" element={<NewTicketPage />} />
         <Route path="list/:ticketNumber" element={<TicketDetailPage />} />
         <Route path="customers" element={<TicketCustomersPage />} />
         <Route path="reports" element={<TicketReportsPage />} />

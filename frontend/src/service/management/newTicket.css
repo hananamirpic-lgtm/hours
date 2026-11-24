@@ -1,0 +1,119 @@
+/*
+ * Management New ticket screen (task 29.5). Builds on the console classes (.page-body, .card, .field, .input,
+ * .select, .button, .feedback, .form). Logical properties only, so Hebrew mirrors from the same rules.
+ * Every control is at least 44 px high. Required and optional are text; colour only reinforces.
+ */
+
+.new-ticket__step {
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.new-ticket__search-form {
+  align-items: flex-end;
+}
+
+.new-ticket__search {
+  flex: 1 1 240px;
+  min-inline-size: 180px;
+}
+
+.new-ticket__status:empty {
+  display: none;
+}
+
+.new-ticket__status p {
+  margin-block: 0 var(--space);
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.new-ticket__results {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A result is one button: name first, then phone, settlement and apartment on the same wrapped line. */
+.new-ticket__result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: calc(var(--space) / 2) calc(var(--space) * 2);
+  inline-size: 100%;
+  min-block-size: 44px;
+  text-align: start;
+}
+
+.new-ticket__result-name {
+  font-weight: 700;
+}
+
+.new-ticket__result-detail {
+  color: var(--color-muted);
+}
+
+.new-ticket__chosen-text {
+  margin-block: 0 var(--space);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.new-ticket__separator {
+  display: inline-block;
+  inline-size: calc(var(--space) * 2);
+}
+
+.new-ticket__mark {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.new-ticket__textarea {
+  min-block-size: 8rem;
+  resize: vertical;
+}
+
+.new-ticket__check {
+  align-items: center;
+  min-block-size: 44px;
+}
+
+.new-ticket__check input[type='checkbox'] {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.new-ticket__photo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space) calc(var(--space) * 2);
+  margin-block-start: var(--space);
+}
+
+.new-ticket__photo p {
+  margin: 0;
+}
+
+.new-ticket__summary {
+  margin-block: 0;
+  padding-inline-start: calc(var(--space) * 3);
+}
+
+.new-ticket__form .form__error {
+  margin: 0;
+}
+
+.new-ticket a:focus-visible,
+.new-ticket button:focus-visible,
+.new-ticket select:focus-visible,
+.new-ticket input:focus-visible,
+.new-ticket textarea:focus-visible,
+.new-ticket [tabindex='-1']:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
