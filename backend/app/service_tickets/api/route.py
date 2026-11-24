@@ -49,15 +49,17 @@ from app.service_tickets.api.errors import service_error
 from app.service_tickets.error_codes import (
     CODE_INVALID_CATEGORY,
     CODE_INVALID_PASSWORD_FORMAT,
+    CODE_RESOLUTION_REQUIRED,
     CODE_SERVICE_UNAVAILABLE,
     CODE_UNKNOWN_FIELD,
     ERROR_CODES,
+    GENERIC_INVALID_REQUEST,
 )
 
 logger = logging.getLogger(__name__)
 
 #: Answer for a failing field that matches no catalogue code. Deliberately not in `ERROR_CODES`.
-CODE_INVALID_REQUEST = "invalid_request"
+CODE_INVALID_REQUEST = GENERIC_INVALID_REQUEST
 
 #: Where FastAPI says a value came from, the first element of an error `loc`.
 _LOCATIONS = frozenset({"body", "query", "path", "header", "cookie"})
@@ -65,6 +67,9 @@ _LOCATIONS = frozenset({"body", "query", "path", "header", "cookie"})
 #: Fields whose code is not `invalid_<field>`.
 _FIELD_CODE_ALIASES: dict[str, str] = {
     "category_id": CODE_INVALID_CATEGORY,
+    # A `resolution` that is not an object counts as no resolution (R29.1); unknown keys inside it are
+    # `unknown_field` first, because `_code_for` checks `extra_forbidden` before this table.
+    "resolution": CODE_RESOLUTION_REQUIRED,
     "password": CODE_INVALID_PASSWORD_FORMAT,
     "current_password": CODE_INVALID_PASSWORD_FORMAT,
     "new_password": CODE_INVALID_PASSWORD_FORMAT,

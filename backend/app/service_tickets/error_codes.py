@@ -103,6 +103,11 @@ CODE_EXPORT_TOO_LARGE = "export_too_large"
 CODE_SERVICE_UNAVAILABLE = "service_unavailable"
 CODE_PHOTO_STORAGE_UNAVAILABLE = "photo_storage_unavailable"
 
+# The generic answer for a malformed value that has no code of its own. Deliberately not a CODE_ constant and
+# not in ERROR_CODES below: the front end shows its generic message for it. Used by api.route as its
+# CODE_INVALID_REQUEST and by the resolution of a ticket.
+GENERIC_INVALID_REQUEST = "invalid_request"
+
 ERROR_CODES: tuple[str, ...] = (
     # Access
     CODE_NOT_AUTHENTICATED,

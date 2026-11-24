@@ -22,8 +22,9 @@ Staff side
   range. An exact ticket-number search replaces every filter (R15.3); the filter values are still checked,
   so a request with an impossible range or an unknown category fails the same way with and without a
   search (R15.6). `urgent_first` orders the whole result with open urgent tickets first (R15.8).
-* `get_staff_ticket`: one ticket by number, with the owning customer's current name and the history,
-  oldest entry first.
+* `get_staff_ticket`: one ticket by number, with the owning customer's current name, the history,
+  oldest entry first, and the replaced parts of its resolution ordered by part sequence (R29.7), with their
+  current names whether active or not. Three queries in all: the ticket, the history, the parts.
 
 `total` comes from `count(*) OVER ()` in the same statement as the page, so it describes the same
 snapshot as the rows. Only a page that starts past the last row has no row to read it from; that case
@@ -59,13 +60,14 @@ from app.service_tickets.grammars import (
     fold_key,
     parse_ticket_number_path,
 )
-from app.service_tickets.models import Category, Customer, HistoryEntry, Locality, Ticket
+from app.service_tickets.models import Category, Customer, HistoryEntry, Locality, Part, Ticket, TicketPart
 from app.service_tickets.services.lifecycle import TicketNotFound
 
 __all__ = [
     "CustomerTicketDetailView",
     "CustomerTicketPageView",
     "CustomerTicketRowView",
+    "ReplacedPart",
     "StaffTicketDetailView",
     "StaffTicketPageView",
     "StaffTicketRowView",
@@ -94,6 +96,15 @@ class TicketCategory:
 @dataclass(frozen=True, slots=True)
 class TicketLocality:
     """The settlement of a ticket with its current names, active or not: id and the two names."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReplacedPart:
+    """A part recorded by the resolution of a ticket, with its current names, active or not (R29.7)."""
 
     id: uuid.UUID
     name_he: str
@@ -167,6 +178,8 @@ class StaffTicketDetailView(StaffTicketRowView):
     history: tuple[HistoryEntry, ...]
     updated_at: datetime
     opened_by_username: str | None = None
+    #: The recorded replaced parts ordered by part sequence (R29.7); empty when none.
+    parts_replaced: tuple[ReplacedPart, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -501,6 +514,13 @@ def get_staff_ticket(session: Session, ticket_number: object) -> StaffTicketDeta
         .execution_options(populate_existing=True)
     ).scalars()
 
+    parts = session.execute(
+        select(Part.id, Part.name_he, Part.name_en)
+        .join(TicketPart, TicketPart.part_id == Part.id)
+        .where(TicketPart.ticket_id == row.ticket_id)
+        .order_by(Part.seq)
+    ).all()
+
     return StaffTicketDetailView(
         ticket_number=row.ticket_number,
         created_at=row.created_at,
@@ -518,4 +538,7 @@ def get_staff_ticket(session: Session, ticket_number: object) -> StaffTicketDeta
         updated_at=row.updated_at,
         opened_by_username=row.opened_by_username,
         locality=_locality(row),
+        parts_replaced=tuple(
+            ReplacedPart(id=part.id, name_he=part.name_he, name_en=part.name_en) for part in parts
+        ),
     )

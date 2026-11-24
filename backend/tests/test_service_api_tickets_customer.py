@@ -41,8 +41,10 @@ from app.service_tickets.models import (
     FieldLabel,
     HistoryEntry,
     Locality,
+    Part,
     ServiceSettings,
     Ticket,
+    TicketPart,
 )
 from app.service_tickets.photo_store import get_photo_store
 from app.service_tickets.services.numbering import TicketNumbersExhausted
@@ -828,6 +830,67 @@ def test_the_detail_holds_the_stored_values_and_nothing_staff_only(
     assert body["has_photo"] is True
     assert "service-tickets/abc.jpg" not in response.text
     assert "Dan" not in response.text
+
+
+@pytest.mark.parametrize("status", ["closed", "in_progress"])
+def test_no_customer_response_carries_the_resolution_history_technician_or_parts(
+    client: TestClient,
+    session: Session,
+    customer: Customer,
+    category: Category,
+    make_ticket,
+    status: str,
+) -> None:
+    """R29.9. A resolved ticket, and a reopened one that keeps its parts (R29.7), look like any other
+    ticket to the customer: same field set, and none of the history text, the technician name, the part
+    names or the part list in any customer response (detail, list, cancel)."""
+    ticket = make_ticket(customer, category, status=status, assigned_technician_name="Dan")
+    part = Part(
+        seq=1, name_he="אטם-סודי", name_en="SecretGasket", name_he_key="אטם-סודי", name_en_key="secretgasket"
+    )
+    session.add(part)
+    session.flush()
+    session.add(TicketPart(ticket_id=ticket.id, part_id=part.id))
+    session.add(
+        HistoryEntry(ticket_id=ticket.id, entry_text="SecretResolutionText", technician_name="SecretTech")
+    )
+    session.commit()
+    secrets = ("SecretResolutionText", "SecretTech", "SecretGasket", "אטם-סודי", "parts_replaced", "history")
+    detail_fields = {
+        "ticket_number",
+        "category",
+        "created_date",
+        "status",
+        "urgent",
+        "city",
+        "apartment",
+        "phone",
+        "description",
+        "has_photo",
+        "locality",
+    }
+
+    detail = client.get(f"{URL}/tickets/{ticket.ticket_number}", headers=_bearer(customer))
+    listed = client.get(f"{URL}/tickets", headers=_bearer(customer))
+    cancelled = _cancel(client, customer, ticket.ticket_number, {"expected_status": status})
+
+    assert detail.status_code == listed.status_code == 200
+    assert set(detail.json()) == detail_fields
+    assert set(listed.json()["items"][0]) == {
+        "ticket_number",
+        "category",
+        "created_date",
+        "apartment",
+        "status",
+        "urgent",
+    }
+    for response in (detail, listed, cancelled):
+        for secret in secrets:
+            assert secret not in response.text, (response.request.url, secret)
+    if status == "in_progress":  # the cancel is allowed, and answers the plain customer detail too
+        assert cancelled.status_code == 200 and set(cancelled.json()) == detail_fields
+    else:  # a resolved ticket cannot be cancelled
+        assert (cancelled.status_code, _code(cancelled)) == (409, "invalid_transition")
 
 
 def test_missing_foreign_and_malformed_tickets_are_the_same_404(

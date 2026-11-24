@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import UserRole
 from app.service_tickets import error_codes
-from app.service_tickets.models import Category, Customer, HistoryEntry, Ticket
+from app.service_tickets.models import Category, Customer, HistoryEntry, Part, Ticket, TicketPart
 from app.service_tickets.services import lifecycle
 from app.service_tickets.services.lifecycle import (
     CustomerActor,
@@ -30,10 +30,13 @@ from app.service_tickets.services.lifecycle import (
     InvalidExpectedStatus,
     InvalidTargetStatus,
     InvalidTransition,
+    ResolutionRequired,
     TicketNotFound,
     TicketStatusChanged,
+    UnexpectedResolution,
     change_status,
 )
+from app.service_tickets.services.resolution import Resolution, ResolutionValidationError
 from app.service_tickets.services.staff_identity import StaffPrincipal
 
 STATUSES = ("received", "in_progress", "closed", "cancelled")
@@ -50,6 +53,11 @@ ALLOWED = {
 LONG_AGO = datetime(2025, 1, 1, 12, 0, tzinfo=UTC)
 CHANGE_TIME = datetime(2031, 6, 15, 8, 30, tzinfo=UTC)
 USERNAME = "tech.dana"
+
+#: A valid resolution, required by every change to `closed` (R29.1). Without parts.
+RESOLUTION = Resolution(
+    entry_text="Replaced the washer", technician_name="Dana", parts_replaced=False, part_ids=[]
+)
 
 _numbers = itertools.count(10000)
 
@@ -202,16 +210,21 @@ def test_transition_matrix_cell(
     ticket = make_ticket(stored)
     before = _row(session, ticket.ticket_number)
     statements.clear()
+    resolution = RESOLUTION if target == "closed" else None
 
     if (stored, target, who) in ALLOWED:
-        changed = change_status(session, ticket.ticket_number, stored, target, actor, now=CHANGE_TIME)
+        changed = change_status(
+            session, ticket.ticket_number, stored, target, actor, resolution=resolution, now=CHANGE_TIME
+        )
         after = _row(session, ticket.ticket_number)
         assert changed.status == target == after["status"]
         assert _utc(after["updated_at"]) == CHANGE_TIME  # type: ignore[arg-type]
         assert len(_updates(statements)) == 1
     else:
         with pytest.raises(InvalidTransition) as raised:
-            change_status(session, ticket.ticket_number, stored, target, actor, now=CHANGE_TIME)
+            change_status(
+                session, ticket.ticket_number, stored, target, actor, resolution=resolution, now=CHANGE_TIME
+            )
         assert raised.value.code == "invalid_transition"
         assert _row(session, ticket.ticket_number) == before
         assert _updates(statements) == []  # a rejected request never reaches the UPDATE
@@ -472,13 +485,15 @@ def test_an_over_long_name_is_rejected_for_every_staff_change(
 
 def test_closing_ignores_a_supplied_name(session: Session, make_ticket, staff: StaffPrincipal) -> None:
     ticket = make_ticket("in_progress", name="Dana")
-    changed = change_status(session, ticket.ticket_number, "in_progress", "closed", staff, "Someone Else")
+    changed = change_status(
+        session, ticket.ticket_number, "in_progress", "closed", staff, "Someone Else", RESOLUTION
+    )
     assert changed.assigned_technician_name == "Dana"
 
 
 def test_closing_does_not_fill_an_empty_name(session: Session, make_ticket, staff: StaffPrincipal) -> None:
     ticket = make_ticket("in_progress", name="")
-    closed = change_status(session, ticket.ticket_number, "in_progress", "closed", staff)
+    closed = change_status(session, ticket.ticket_number, "in_progress", "closed", staff, None, RESOLUTION)
     assert closed.assigned_technician_name == ""
 
 
@@ -536,7 +551,9 @@ def test_each_kind_of_change_sets_updated_at(
     session: Session, make_ticket, staff: StaffPrincipal, owning_customer: CustomerActor
 ) -> None:
     closed = make_ticket("in_progress")
-    change_status(session, closed.ticket_number, "in_progress", "closed", staff, now=CHANGE_TIME)
+    change_status(
+        session, closed.ticket_number, "in_progress", "closed", staff, resolution=RESOLUTION, now=CHANGE_TIME
+    )
     reopened_at = CHANGE_TIME + timedelta(hours=1)
     change_status(session, closed.ticket_number, "closed", "in_progress", staff, now=reopened_at)
     assert _utc(_row(session, closed.ticket_number)["updated_at"]) == reopened_at  # type: ignore[arg-type]
@@ -561,7 +578,7 @@ def _add_history(session: Session, ticket: Ticket) -> None:
     session.commit()
 
 
-def test_changes_add_no_history_entry_and_leave_existing_entries_unchanged(
+def test_only_the_resolution_adds_a_history_entry_and_existing_entries_stay_unchanged(
     session: Session, make_ticket, staff: StaffPrincipal, owning_customer: CustomerActor
 ) -> None:
     ticket = make_ticket("received")
@@ -571,11 +588,14 @@ def test_changes_add_no_history_entry_and_leave_existing_entries_unchanged(
 
     number = ticket.ticket_number
     change_status(session, number, "received", "in_progress", staff, "Dana")
-    change_status(session, number, "in_progress", "closed", staff)
+    assert _history(session) == entries  # approval adds none
+    change_status(session, number, "in_progress", "closed", staff, resolution=RESOLUTION)
+    resolved = _history(session)
+    assert len(resolved) == 3 and all(entry in resolved for entry in entries)  # the resolution adds one
     change_status(session, number, "closed", "in_progress", staff)  # reopen
     change_status(session, number, "in_progress", "cancelled", owning_customer)
-    assert _history(session) == entries
-    assert session.scalar(select(func.count()).select_from(HistoryEntry)) == 2
+    assert _history(session) == resolved  # reopen and cancel add none
+    assert session.scalar(select(func.count()).select_from(HistoryEntry)) == 3
 
 
 def test_rejected_changes_leave_history_unchanged_too(
@@ -673,3 +693,180 @@ def test_the_guarded_update_names_the_ticket_number_and_the_expected_status(
     where = update.upper().split("WHERE", 1)[1]
     assert "TICKET_NUMBER" in where and "STATUS" in where
     assert "COALESCE" in update.upper()
+
+
+# --------------------------------------------------------------------------------- the resolution (R29)
+
+
+def _part(session: Session, name: str, seq: int, *, active: bool = True) -> Part:
+    part = Part(
+        seq=seq,
+        name_he=f"{name}-he",
+        name_en=name,
+        name_he_key=f"{name}-he".casefold(),
+        name_en_key=name.casefold(),
+        is_active=active,
+    )
+    session.add(part)
+    session.commit()
+    return part
+
+
+def _part_ids(session: Session, ticket: Ticket) -> set[uuid.UUID]:
+    table = TicketPart.__table__
+    rows = session.execute(select(table.c.part_id).where(table.c.ticket_id == ticket.id)).all()
+    return {row[0] for row in rows}
+
+
+def test_the_resolution_errors_carry_their_api_codes() -> None:
+    assert ResolutionRequired.code == error_codes.CODE_RESOLUTION_REQUIRED == "resolution_required"
+    assert UnexpectedResolution.code == error_codes.CODE_UNKNOWN_FIELD == "unknown_field"
+
+
+def test_closing_without_a_resolution_is_refused_before_the_update(
+    session: Session, make_ticket, staff: StaffPrincipal, statements: list[str]
+) -> None:
+    ticket = make_ticket("in_progress")
+    before = _row(session, ticket.ticket_number)
+    statements.clear()
+    with pytest.raises(ResolutionRequired) as raised:
+        change_status(session, ticket.ticket_number, "in_progress", "closed", staff)
+    assert raised.value.code == "resolution_required"
+    assert _row(session, ticket.ticket_number) == before
+    assert _history(session) == []
+    assert _updates(statements) == []
+
+
+@pytest.mark.parametrize(
+    ("stored", "target"), [("received", "in_progress"), ("closed", "in_progress")]
+)
+def test_a_resolution_with_any_other_staff_target_is_refused_and_changes_nothing(
+    session: Session, make_ticket, staff: StaffPrincipal, statements: list[str], stored: str, target: str
+) -> None:
+    ticket = make_ticket(stored)
+    before = _row(session, ticket.ticket_number)
+    statements.clear()
+    with pytest.raises(UnexpectedResolution) as raised:
+        change_status(session, ticket.ticket_number, stored, target, staff, resolution=RESOLUTION)
+    assert raised.value.code == "unknown_field"
+    assert _row(session, ticket.ticket_number) == before
+    assert _history(session) == []
+    assert _updates(statements) == []
+
+
+def test_a_resolution_with_a_customer_cancel_is_refused(
+    session: Session, make_ticket, owning_customer: CustomerActor
+) -> None:
+    ticket = make_ticket("received")
+    with pytest.raises(UnexpectedResolution):
+        change_status(
+            session, ticket.ticket_number, "received", "cancelled", owning_customer, resolution=RESOLUTION
+        )
+    assert _row(session, ticket.ticket_number)["status"] == "received"
+
+
+def test_the_lifecycle_checks_come_before_the_resolution_checks(
+    session: Session, make_ticket, staff: StaffPrincipal
+) -> None:
+    bad = Resolution(entry_text="", technician_name="", parts_replaced="yes", part_ids=None)
+    ticket = make_ticket("received")
+    with pytest.raises(TicketNotFound):
+        change_status(session, 54321, "in_progress", "closed", staff, resolution=bad)
+    with pytest.raises(TicketStatusChanged):
+        change_status(session, ticket.ticket_number, "in_progress", "closed", staff, resolution=bad)
+    with pytest.raises(InvalidTransition):
+        change_status(session, ticket.ticket_number, "received", "closed", staff, resolution=bad)
+    with pytest.raises(InvalidTransition):  # not even `resolution_required`
+        change_status(session, ticket.ticket_number, "received", "closed", staff)
+
+
+def test_closing_adds_the_entry_with_the_clock_of_the_change_and_stores_the_parts(
+    session: Session, make_ticket, staff: StaffPrincipal
+) -> None:
+    gasket, valve = _part(session, "Gasket", 1), _part(session, "Valve", 2)
+    ticket = make_ticket("in_progress", name="Moshe")
+    resolution = Resolution("  Swapped parts ", " Dana ", True, [str(valve.id), str(gasket.id)])
+
+    closed = change_status(
+        session, ticket.ticket_number, "in_progress", "closed", staff, resolution=resolution, now=CHANGE_TIME
+    )
+
+    assert (closed.status, closed.assigned_technician_name) == ("closed", "Moshe")
+    ((_, _, entry_text, technician_name, created_at, edited_at),) = _history(session)
+    assert (entry_text, technician_name, edited_at) == ("Swapped parts", "Dana", None)
+    assert _utc(created_at) == CHANGE_TIME
+    assert _part_ids(session, ticket) == {gasket.id, valve.id}
+
+
+def test_a_failed_resolution_reports_all_fields_in_form_order_and_changes_nothing(
+    session: Session, make_ticket, staff: StaffPrincipal, statements: list[str]
+) -> None:
+    inactive = _part(session, "Retired", 1, active=False)
+    kept = _part(session, "Kept", 2)
+    ticket = make_ticket("in_progress")
+    session.add(TicketPart(ticket_id=ticket.id, part_id=kept.id))
+    session.commit()
+    before = _row(session, ticket.ticket_number)
+    statements.clear()
+    bad = Resolution("", "x" * 101, True, [str(inactive.id)])
+
+    with pytest.raises(ResolutionValidationError) as raised:
+        change_status(session, ticket.ticket_number, "in_progress", "closed", staff, resolution=bad)
+
+    assert raised.value.fields == {
+        "entry_text": "invalid_history_text",
+        "technician_name": "invalid_technician_name",
+        "part_ids": "invalid_part",
+    }
+    assert list(raised.value.fields) == ["entry_text", "technician_name", "part_ids"]
+    assert raised.value.code == "invalid_history_text"
+    assert _row(session, ticket.ticket_number) == before
+    assert _history(session) == []
+    assert _part_ids(session, ticket) == {kept.id}
+    assert _updates(statements) == []
+
+
+def test_a_resolution_that_loses_the_race_leaves_no_entry_and_no_parts(
+    session: Session, make_ticket, staff: StaffPrincipal
+) -> None:
+    gasket = _part(session, "Gasket", 1)
+    ticket = make_ticket("in_progress")
+    gen = _interloper(session, ticket.ticket_number, "cancelled")
+    fired = next(gen)
+    try:
+        with pytest.raises(TicketStatusChanged):
+            change_status(
+                session,
+                ticket.ticket_number,
+                "in_progress",
+                "closed",
+                staff,
+                resolution=Resolution("Done", "Dana", True, [str(gasket.id)]),
+            )
+    finally:
+        gen.close()
+    assert fired
+    assert _row(session, ticket.ticket_number)["status"] == "cancelled"
+    assert _history(session) == []
+    assert _part_ids(session, ticket) == set()
+
+
+def test_reopening_keeps_the_parts_and_a_later_resolution_replaces_them(
+    session: Session, make_ticket, staff: StaffPrincipal
+) -> None:
+    gasket, valve = _part(session, "Gasket", 1), _part(session, "Valve", 2)
+    ticket = make_ticket("in_progress")
+    number = ticket.ticket_number
+
+    def resolve(resolution: Resolution) -> None:
+        change_status(session, number, "in_progress", "closed", staff, resolution=resolution)
+
+    resolve(Resolution("A", "Dana", True, [gasket.id]))
+    change_status(session, number, "closed", "in_progress", staff)
+    assert _part_ids(session, ticket) == {gasket.id}
+    resolve(Resolution("B", "Dana", True, [valve.id]))
+    assert _part_ids(session, ticket) == {valve.id}
+    change_status(session, number, "closed", "in_progress", staff)
+    resolve(RESOLUTION)  # parts_replaced is false
+    assert _part_ids(session, ticket) == set()
+    assert len(_history(session)) == 3

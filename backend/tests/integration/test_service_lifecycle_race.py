@@ -34,11 +34,17 @@ from app.service_tickets.services.lifecycle import (
     LifecycleError,
     change_status,
 )
+from app.service_tickets.services.resolution import Resolution
 from app.service_tickets.services.staff_identity import StaffPrincipal
 
 BASE_TIME = datetime(2031, 1, 1, 8, 0, tzinfo=UTC)
 LONG_AGO = datetime(2025, 1, 1, 12, 0, tzinfo=UTC)
 ROUNDS = 5
+
+#: A valid resolution, required by every change to `closed` (R29.1). Without parts.
+RESOLUTION = Resolution(
+    entry_text="Replaced the washer", technician_name="Dana", parts_replaced=False, part_ids=[]
+)
 
 
 @pytest.fixture
@@ -100,6 +106,16 @@ class Seed:
                 },
             )
         return number
+
+    def history_count(self, number: int) -> int:
+        with self.engine.connect() as connection:
+            return connection.execute(
+                sa.text(
+                    "SELECT count(*) FROM svc_history_entries h JOIN svc_tickets t ON t.id = h.ticket_id "
+                    "WHERE t.ticket_number = :n"
+                ),
+                {"n": number},
+            ).scalar_one()
 
     def row(self, number: int) -> sa.Row[Any]:
         with self.engine.connect() as connection:
@@ -234,7 +250,13 @@ def test_staff_close_racing_a_customer_cancel_applies_exactly_one(scratch_engine
         number = seed.ticket("in_progress", name="Dana")
         base = BASE_TIME + timedelta(minutes=2 * round_number)
         requests = [
-            {"expected": "in_progress", "target": "closed", "actor": _staff("tech"), "now": base},
+            {
+                "expected": "in_progress",
+                "target": "closed",
+                "actor": _staff("tech"),
+                "resolution": RESOLUTION,
+                "now": base,
+            },
             {
                 "expected": "in_progress",
                 "target": "cancelled",
@@ -251,6 +273,8 @@ def test_staff_close_racing_a_customer_cancel_applies_exactly_one(scratch_engine
         assert stored.status == requests[winner]["target"]
         assert stored.assigned_technician_name == "Dana"
         assert stored.updated_at == requests[winner]["now"]
+        # The resolution rides with the closing change: a lost race leaves no history entry behind (R29.2).
+        assert seed.history_count(number) == (1 if requests[winner]["target"] == "closed" else 0)
 
 
 def test_status_changes_on_postgresql_follow_the_name_and_time_rules(scratch_engine: Engine) -> None:
@@ -261,8 +285,9 @@ def test_status_changes_on_postgresql_follow_the_name_and_time_rules(scratch_eng
     owner = CustomerActor(seed.customer_id)
 
     def run(expected: str, target: str, actor: Any, name: str | None, at: datetime) -> None:
+        resolution = RESOLUTION if target == "closed" else None
         with Session(scratch_engine) as session:
-            change_status(session, number, expected, target, actor, name, now=at)
+            change_status(session, number, expected, target, actor, name, resolution, now=at)
             session.commit()
 
     run("received", "in_progress", staff, None, BASE_TIME)

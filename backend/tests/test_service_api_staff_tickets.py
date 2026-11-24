@@ -30,6 +30,14 @@ from app.service_tickets.models import Category, Customer, HistoryEntry, Ticket
 LONG_AGO = datetime(2025, 1, 1, 12, 0, tzinfo=UTC)
 PREFIX = "/api/service/staff"
 
+#: A valid resolution, required by every status change to `closed` (R29.1). Without parts.
+RESOLUTION = {
+    "entry_text": "Replaced the washer",
+    "technician_name": "Dana",
+    "parts_replaced": False,
+    "part_ids": [],
+}
+
 _numbers = itertools.count(20000)
 _seq = itertools.count(1)
 _phones = itertools.count(1)
@@ -528,7 +536,9 @@ def test_detail_shape_and_history_order(client: TestClient, admin, make_ticket, 
         "history",
         "updated_at",
         "opened_by_username",
+        "parts_replaced",
     }
+    assert body["parts_replaced"] == []  # no resolution yet
     assert body["opened_by_username"] is None  # opened by the customer, not by staff
     assert body["customer_name"] == "Dana Levi"
     assert (body["assigned_technician_name"], body["has_photo"]) == ("Dana", False)
@@ -587,7 +597,9 @@ def test_approval_with_an_explicit_name_and_reopen_keeps_it(
         json=_status_body("received", "in_progress", assigned_technician_name="  Moshe  "),
         headers=headers,
     )
-    closed = client.post(path, json=_status_body("in_progress", "closed"), headers=headers)
+    closed = client.post(
+        path, json=_status_body("in_progress", "closed", resolution=RESOLUTION), headers=headers
+    )
     reopened = client.post(
         path,
         json=_status_body("closed", "in_progress", assigned_technician_name="Someone Else"),

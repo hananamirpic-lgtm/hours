@@ -99,6 +99,7 @@ from app.service_tickets.models import (
     Part,
     ServiceSettings,
     Ticket,
+    TicketPart,
 )
 from app.service_tickets.mount import mount
 from app.service_tickets.photo_store import get_photo_store
@@ -198,6 +199,8 @@ SENTINELS = (
     "Electric",
     "Plumbing",
     "Moshe",
+    "Looked at it.",  # a history text (R29.9)
+    "Filter",  # a part replaced on the owner's ticket (R29.9)
 )
 
 
@@ -646,6 +649,7 @@ def _seed(session: Session) -> None:
             created_at=LONG_AGO,
         )
     )
+    session.add(TicketPart(ticket_id=TICKET_OWN_ID, part_id=PART_A))  # recorded by an earlier resolution
     session.commit()
 
 
@@ -966,7 +970,14 @@ class OrderRoute:
 
 _CANCEL_OK = {"expected_status": "received"}
 _CANCEL_BAD = {"expected_status": "bogus"}
-_STATUS_BAD = {"expected_status": "bogus", "target_status": "closed"}
+_RESOLUTION = {
+    "entry_text": "Replaced the washer",
+    "technician_name": "Dana",
+    "parts_replaced": False,
+    "part_ids": [],
+}
+# A closing request carries a valid resolution (R29.1): the bad part is the expected status alone.
+_STATUS_BAD = {"expected_status": "bogus", "target_status": "closed", "resolution": _RESOLUTION}
 _CUSTOMER_OK = {"phone": "0501234567", "full_name": "Dana Levi"}
 _CUSTOMER_BAD = {"phone": "12", "full_name": "Dana Levi"}
 

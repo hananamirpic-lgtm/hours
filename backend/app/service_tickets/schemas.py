@@ -35,7 +35,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from app.service_tickets.models import Category, Locality, Ticket
 
@@ -85,17 +85,36 @@ class CancelTicketRequest(_Request):
 # --- requests: staff
 
 
+class ResolutionRequest(_Request):
+    """The `resolution` of a status change to closed (R29.1): what was done and which parts were replaced.
+
+    Every value is `Any` and defaults to `None`, like the history body, so that a missing or malformed value
+    reaches the resolution service and gets its own code (`invalid_history_text`,
+    `invalid_technician_name`, `invalid_request` for a `parts_replaced` that is not a boolean,
+    `part_required`, `invalid_part`) together with the other failing fields. An unknown key is
+    `unknown_field`.
+    """
+
+    entry_text: Any = None
+    technician_name: Any = None
+    parts_replaced: Any = None
+    part_ids: Any = None
+
+
 class StatusChangeRequest(_Request):
-    """`POST /staff/tickets/{n}/status` (R14.6, R14.8, R14.11).
+    """`POST /staff/tickets/{n}/status` (R14.6, R14.8, R14.11, R29.1).
 
     `expected_status` and `target_status` are validated by the lifecycle service (codes
     `invalid_expected_status` and `invalid_target_status`). `assigned_technician_name` is the optional
     name set when a ticket moves from received to in progress; its length is checked by the service.
+    `resolution` is required for the target `closed` (`resolution_required`) and refused for any other
+    target (`unknown_field`); the lifecycle service decides, so a null and a missing value are the same.
     """
 
     expected_status: Any = None
     target_status: Any = None
     assigned_technician_name: str | None = None
+    resolution: ResolutionRequest | None = None
 
 
 class AssignedTechnicianRequest(_Request):
@@ -409,6 +428,14 @@ class StaffTicketRow(_Response):
     locality: LocalityRef | None = None
 
 
+class PartRef(_Response):
+    """A replaced part as the staff detail shows it: id and the current names, active or not (R29.7)."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+
+
 class StaffTicketDetail(StaffTicketRow):
     """A ticket as staff open it (R16.1): the row plus contact data, history and last-modified time."""
 
@@ -420,6 +447,9 @@ class StaffTicketDetail(StaffTicketRow):
     #: Username of the staff member who opened the ticket for the customer (R26.4); null when the
     #: customer opened it. Staff responses only: no customer model carries it (R26.6).
     opened_by_username: str | None = None
+    #: The parts recorded by the last resolution, ordered by part sequence, with their current names
+    #: (R29.7). Empty when there are none. Staff responses only: no customer model carries it (R29.9).
+    parts_replaced: list[PartRef] = Field(default_factory=list)
 
 
 class StaffTicketPage(_Response):

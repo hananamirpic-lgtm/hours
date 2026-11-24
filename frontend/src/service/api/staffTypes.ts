@@ -61,6 +61,15 @@ export interface StaffTicketDetail extends StaffTicketRow {
   readonly updated_at: string;
   /** The staff username that opened the ticket for the customer; null or absent when the customer opened it. */
   readonly opened_by_username?: string | null;
+  /** The parts recorded by the last resolution, in part order, with their current names (R29.7). */
+  readonly parts_replaced?: readonly StaffReplacedPart[];
+}
+
+/** `PartRef`: a part replaced on a ticket, with its current names, active or not. */
+export interface StaffReplacedPart {
+  readonly id: string;
+  readonly name_he: string;
+  readonly name_en: string;
 }
 
 /** `StaffTicketPage`: 25 per page. */
@@ -144,6 +153,19 @@ export interface StatusChangeBody {
   readonly target_status: TicketStatus;
   /** Used only when a received ticket moves to in progress. */
   readonly assigned_technician_name?: string;
+  /** Required for the target `closed` (422 `resolution_required` without it), refused for any other target. */
+  readonly resolution?: ResolutionBody;
+}
+
+/** The `resolution` of a status change to closed (R29.1): the service history and the replaced parts. */
+export interface ResolutionBody {
+  /** 1 to 2000 characters after trimming. */
+  readonly entry_text: string;
+  /** 1 to 100 characters after trimming. */
+  readonly technician_name: string;
+  readonly parts_replaced: boolean;
+  /** 1 to 20 distinct active part ids when `parts_replaced` is true, empty when it is false. */
+  readonly part_ids: readonly string[];
 }
 
 export interface HistoryEntryBody {

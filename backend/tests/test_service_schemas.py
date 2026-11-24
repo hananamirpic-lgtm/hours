@@ -375,6 +375,7 @@ STAFF_EXTRAS = [
     "customer_name",
     "photo_key",
     "opened_by_username",  # R26.6
+    "parts_replaced",  # R29.9
 ]
 
 
@@ -424,9 +425,11 @@ def test_staff_detail_adds_contact_data_history_and_last_modified_time() -> None
         "history",
         "updated_at",
         "opened_by_username",  # R26.4: staff only; no customer model has it (R26.6)
+        "parts_replaced",  # R29.7: staff only; no customer model has it (R29.9)
     }
     detail = schemas.StaffTicketDetail(**_staff_detail_values()).model_dump(mode="json")
     assert detail["opened_by_username"] is None  # a ticket the customer opened
+    assert detail["parts_replaced"] == []  # no resolution recorded
     assert detail["history"][0]["entry_text"] == "Replaced the seal"
     assert detail["history"][0]["edited_at"] is None
     assert detail["assigned_technician_name"] == SECRET_TECHNICIAN
@@ -596,6 +599,7 @@ def test_the_module_defines_exactly_these_models() -> None:
         "PartDeleteResult",
         "PartList",
         "PartRecord",
+        "PartRef",
         "ReportResponse",
         "SettingsResponse",
         "StaffTicketDetail",
@@ -629,6 +633,12 @@ VALID_REQUESTS: dict[str, dict[str, Any]] = {
     "ChangePasswordRequest": {"current_password": "1234", "new_password": "5678"},
     "CancelTicketRequest": {"expected_status": "received"},
     "StatusChangeRequest": {"expected_status": "received", "target_status": "in_progress"},
+    "ResolutionRequest": {
+        "entry_text": "Replaced the seal",
+        "technician_name": "Yael",
+        "parts_replaced": False,
+        "part_ids": [],
+    },
     "AssignedTechnicianRequest": {"assigned_technician_name": "Yael"},
     "HistoryEntryRequest": {"entry_text": "Done", "technician_name": "Yael"},
     "CustomerCreateRequest": {"phone": "0505556677", "full_name": "Dana Levi"},
@@ -694,6 +704,21 @@ def test_status_values_reach_the_lifecycle_service_unchecked(value: Any) -> None
     assert cancel.expected_status == value
     change = schemas.StatusChangeRequest.model_validate({"expected_status": value, "target_status": value})
     assert (change.expected_status, change.target_status) == (value, value)
+
+
+def test_a_resolution_reaches_the_service_with_every_value_unchecked() -> None:
+    # Bad values must get as far as the resolution service, which names every failing field (R29.1).
+    body = {
+        "expected_status": "in_progress",
+        "target_status": "closed",
+        "resolution": {"entry_text": 5, "technician_name": None, "parts_replaced": "yes", "part_ids": "x"},
+    }
+    resolution = schemas.StatusChangeRequest.model_validate(body).resolution
+    assert resolution is not None
+    assert (resolution.entry_text, resolution.technician_name) == (5, None)
+    assert (resolution.parts_replaced, resolution.part_ids) == ("yes", "x")
+    assert schemas.StatusChangeRequest.model_validate({}).resolution is None
+    assert schemas.StatusChangeRequest.model_validate({"resolution": None}).resolution is None
 
 
 def test_status_fields_may_be_absent() -> None:

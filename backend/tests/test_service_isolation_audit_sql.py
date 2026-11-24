@@ -1105,6 +1105,13 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
         ),
     )
 
+    RESOLUTION = {
+        "entry_text": "Replaced the washer",
+        "technician_name": "Dana",
+        "parts_replaced": False,
+        "part_ids": [],
+    }
+
     def status_body(expected: str, target: str, **extra: Any) -> dict[str, Any]:
         return {"expected_status": expected, "target_status": target, **extra}
 
@@ -1130,7 +1137,11 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
             "closes",
             200,
             lambda w: on_ticket(
-                w, w.tech, "/status", status="in_progress", json=status_body("in_progress", "closed")
+                w,
+                w.tech,
+                "/status",
+                status="in_progress",
+                json=status_body("in_progress", "closed", resolution=RESOLUTION),
             ),
         ),
         Call(

@@ -61,6 +61,7 @@ __all__ = [
     "edit_entry",
     "list_entries",
     "set_assigned_technician_name",
+    "validate_entry",
 ]
 
 
@@ -87,8 +88,11 @@ def _now(now: datetime | None) -> datetime:
     return now if now is not None else datetime.now(UTC)
 
 
-def _validated(entry_text: object, technician_name: object) -> tuple[str, str]:
-    """The trimmed text and name, or `HistoryValidationError` naming every failing field."""
+def validate_entry(entry_text: object, technician_name: object) -> tuple[str, str]:
+    """The trimmed text and name, or `HistoryValidationError` naming every failing field.
+
+    Public because the resolution of a ticket (R29) reuses the same validators and codes.
+    """
     fields: dict[str, str] = {}
     text = entry_text.strip() if isinstance(entry_text, str) else ""
     name = technician_name.strip() if isinstance(technician_name, str) else ""
@@ -165,7 +169,7 @@ def add_entry(
     (`TicketNotFound`). `created_at` comes from the server clock (`now` replaces it for tests) and
     `edited_at` is null. The ticket's `updated_at` is not touched.
     """
-    text, name = _validated(entry_text, technician_name)
+    text, name = validate_entry(entry_text, technician_name)
     ticket_id = _ticket_id(session, ticket_number)
     entry = HistoryEntry(
         ticket_id=ticket_id, entry_text=text, technician_name=name, created_at=_now(now), edited_at=None
@@ -190,7 +194,7 @@ def edit_entry(
     and the last save wins. `TicketNotFound` for a missing ticket, `HistoryEntryNotFound` for an entry
     that does not exist or belongs to another ticket. Neither changes anything.
     """
-    text, name = _validated(entry_text, technician_name)
+    text, name = validate_entry(entry_text, technician_name)
     ticket_id = _ticket_id(session, ticket_number)
     result = session.execute(
         update(HistoryEntry)

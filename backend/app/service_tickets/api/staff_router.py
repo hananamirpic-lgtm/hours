@@ -79,6 +79,7 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_NAME_EN,
     CODE_INVALID_NAME_HE,
     CODE_INVALID_PAGE,
+    CODE_INVALID_PART,
     CODE_INVALID_PART_NAME_EN,
     CODE_INVALID_PART_NAME_HE,
     CODE_INVALID_PHONE,
@@ -91,7 +92,9 @@ from app.service_tickets.error_codes import (
     CODE_INVALID_TRANSITION,
     CODE_LAST_ACTIVE_CATEGORY,
     CODE_PART_NOT_FOUND,
+    CODE_PART_REQUIRED,
     CODE_PHONE_ALREADY_REGISTERED,
+    CODE_RESOLUTION_REQUIRED,
     CODE_SETTLEMENT_NOT_FOUND,
     CODE_TICKET_NOT_FOUND,
     CODE_TICKET_STATUS_CHANGED,
@@ -146,6 +149,7 @@ from app.service_tickets.schemas import (
     PartDeleteResult,
     PartList,
     PartRecord,
+    PartRef,
     PartUpdateRequest,
     ReportResponse,
     ServiceDashboardResponse,
@@ -174,9 +178,10 @@ from app.service_tickets.services.customers import (
     CustomerView,
 )
 from app.service_tickets.services.history import HistoryValidationError
-from app.service_tickets.services.lifecycle import LifecycleError
+from app.service_tickets.services.lifecycle import LifecycleError, UnexpectedResolution
 from app.service_tickets.services.numbering import Allocator
 from app.service_tickets.services.reports import ReportTicketRow
+from app.service_tickets.services.resolution import Resolution, ResolutionValidationError
 from app.service_tickets.services.ticket_queries import (
     StaffTicketDetailView,
     StaffTicketPageView,
@@ -213,6 +218,10 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_INVALID_ASSIGNED_TECHNICIAN_NAME: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_HISTORY_TEXT: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_TECHNICIAN_NAME: HTTPStatus.UNPROCESSABLE_ENTITY,
+    # resolution of a ticket (R29.1, R29.3)
+    CODE_RESOLUTION_REQUIRED: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_PART_REQUIRED: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_INVALID_PART: HTTPStatus.UNPROCESSABLE_ENTITY,
     # customers
     CODE_CUSTOMER_NOT_FOUND: HTTPStatus.NOT_FOUND,
     CODE_PHONE_ALREADY_REGISTERED: HTTPStatus.CONFLICT,
@@ -254,6 +263,8 @@ def _http_error(error: Exception) -> Exception:
     """The `HTTPException` for a domain error, or `error` itself when it is not a listed refusal."""
     code = getattr(error, "code", None)
     status = _ERROR_STATUS.get(code) if isinstance(code, str) else None
+    if status is None and isinstance(error, ResolutionValidationError):
+        status = HTTPStatus.UNPROCESSABLE_ENTITY  # `invalid_request`, a `parts_replaced` that is no boolean
     if status is None:
         return error
     fields: dict[str, str] | None = None
@@ -261,6 +272,8 @@ def _http_error(error: Exception) -> Exception:
         fields = error.fields
     elif isinstance(error, DuplicateName):
         fields = {name: code for name in error.fields}  # the clashing languages
+    elif isinstance(error, UnexpectedResolution):
+        fields = {"resolution": code}
     return service_error(status, code, fields=fields)
 
 
@@ -381,6 +394,9 @@ def _staff_detail_out(view: StaffTicketDetailView) -> StaffTicketDetail:
         updated_at=view.updated_at,
         opened_by_username=view.opened_by_username,
         locality=_locality_out(view.locality),
+        parts_replaced=[
+            PartRef(id=part.id, name_he=part.name_he, name_en=part.name_en) for part in view.parts_replaced
+        ],
     )
 
 
@@ -571,9 +587,21 @@ def change_ticket_status(
     """Move a ticket to another status; the caller names the status it last saw (R14.2 to R14.8, R14.11).
 
     Approving a received ticket without a technician name stores the acting username as the name
-    (`lifecycle.change_status`, R14.6).
+    (`lifecycle.change_status`, R14.6). A change to `closed` carries a `resolution` (history text,
+    technician name, replaced parts); the status, the history entry and the parts are stored in this one
+    transaction or not at all (R29.1 to R29.3). Any other target refuses a resolution.
     """
     number = _ticket_number_in_path(ticket_number)
+    resolution = (
+        None
+        if body.resolution is None
+        else Resolution(
+            entry_text=body.resolution.entry_text,
+            technician_name=body.resolution.technician_name,
+            parts_replaced=body.resolution.parts_replaced,
+            part_ids=body.resolution.part_ids,
+        )
+    )
     with _domain_errors(session):
         lifecycle.change_status(
             session,
@@ -582,6 +610,7 @@ def change_ticket_status(
             body.target_status,
             principal,
             body.assigned_technician_name,
+            resolution,
         )
         detail = _ticket_detail(session, number)
     session.commit()
