@@ -1779,6 +1779,12 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
         duplicate="duplicate_part",
         not_found="part_not_found",
     )
+    add(
+        "GET",
+        "/staff/parts/active",
+        Call("as configuration staff", 200, lambda w: as_staff(w, w.admin, "/staff/parts/active")),
+        Call("as a technician", 200, lambda w: as_staff(w, w.tech, "/staff/parts/active")),
+    )
     return table
 
 

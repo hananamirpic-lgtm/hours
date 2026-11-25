@@ -147,6 +147,7 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("POST", "/staff/localities/{locality_id}/reactivate", CONFIG_STAFF),
     E("DELETE", "/staff/localities/{locality_id}", CONFIG_STAFF),
     E("GET", "/staff/parts", CONFIG_STAFF),
+    E("GET", "/staff/parts/active", TICKET_STAFF),
     E("POST", "/staff/parts", CONFIG_STAFF),
     E("PUT", "/staff/parts/{part_id}", CONFIG_STAFF),
     E("POST", "/staff/parts/{part_id}/deactivate", CONFIG_STAFF),

@@ -523,6 +523,8 @@ PROBES: tuple[Probe, ...] = (
     Probe("POST", "/staff/localities/{locality_id}/reactivate", CONFIG_STAFF, 200),
     Probe("DELETE", "/staff/localities/{locality_id}", CONFIG_STAFF, 200),
     Probe("GET", "/staff/parts", CONFIG_STAFF, 200),
+    # the active parts alone are open to all ticket staff: a technician needs them to resolve (R29.4)
+    Probe("GET", "/staff/parts/active", TICKET_STAFF, 200),
     Probe("POST", "/staff/parts", CONFIG_STAFF, 201, json={"name_he": "אטם", "name_en": "Seal"}),
     Probe("PUT", "/staff/parts/{part_id}", CONFIG_STAFF, 200, json=_PLAIN),
     Probe("POST", "/staff/parts/{part_id}/deactivate", CONFIG_STAFF, 200),

@@ -1269,6 +1269,19 @@ def list_parts(session: ServiceSession) -> PartList:
     return PartList(items=[_part_record(row) for row in rows])  # type: ignore[arg-type]
 
 
+@router.get("/parts/active", response_model=PartList)
+def list_active_parts(session: ServiceSession) -> PartList:
+    """The active parts only, oldest first, for every ticket staff role (R29.4, R29.6).
+
+    A technician picks the replaced parts from this list when resolving a ticket, while the full list
+    above stays for configuration staff. Only the router-level `staff_principal` guards it. It reads and
+    does not commit.
+    """
+    with _domain_errors(session):
+        rows = config_service.list_names(session, config_service.PARTS, active_only=True)
+    return PartList(items=[_part_record(row) for row in rows])  # type: ignore[arg-type]
+
+
 @router.post(
     "/parts",
     response_model=PartRecord,
