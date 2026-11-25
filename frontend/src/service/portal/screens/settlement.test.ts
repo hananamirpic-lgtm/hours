@@ -450,7 +450,7 @@ describe('locale keys of the settlement choice', () => {
 // --- markup: the branding header -------------------------------------------------------------------
 
 describe('branding header markup', () => {
-  // The branding is no longer part of the form frame: GatedLayout renders it above the routed screen.
+  // The branding is no longer part of the form frame: PortalShell renders it above the routed screen.
   // This is that arrangement: the branding, then the screen's own frame with its one h1.
   function frame(language: PortalLanguage, branding: BrandingView | null): string {
     return render(

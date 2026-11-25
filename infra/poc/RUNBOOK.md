@@ -750,7 +750,7 @@ off (12.8), so enter the data after the flag is on and **before the first reside
    characters and a logo (JPEG, PNG or WebP, up to 1 MiB; the API re-encodes it as a PNG of at most 400 by 200 pixels).
    Both are optional and independent. With neither, no portal screen shows anything for it. The name is shown as plain
    text.
-4. **Check as a resident:** every signed-in screen (the ticket list, the new-ticket page, a ticket) shows the branding once above its title, the sign-in screen does not, and the City field opens the settlement window.
+4. **Check as a resident:** every portal screen (the sign-in screen, the ticket list, the new-ticket page, a ticket) shows the branding once above its title, and the City field opens the settlement window.
    **Check as a technician:** the Resolve form lists the parts. Then run the checks M3r, M3p, M5e and M8 to M11 of
    `docs/service-tickets-accessibility-checklist.md`.
 

@@ -121,7 +121,7 @@ function FieldError({ field, text }: { field: string; text: string | null }) {
 
 /**
  * The one `<h1>` of the screen and its language and direction. Stays mounted while the form loads. The
- * company branding is not here: `GatedLayout` shows it once above every signed-in screen (task 30.15).
+ * company branding is not here: `PortalShell` shows it once above every portal screen (tasks 30.15 and 30.17).
  */
 export function TicketFormFrame({ children }: { children: ReactNode }) {
   const { t, i18n } = usePortalTranslation();

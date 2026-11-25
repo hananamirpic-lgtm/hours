@@ -1,41 +1,56 @@
-// The company logo and name above the page content of every signed-in portal screen (task 30.15; R28.3,
-// R28.4, R28.7). `GatedLayout` renders it once, inside the session gate and above the routed screen, so
-// it shows on the ticket list, the new-ticket form, the confirmation, the ticket detail and the
-// not-found screen, and never twice on `/new`.
+// The company logo and name above the page content of every portal screen (tasks 30.15 and 30.17; R28.3,
+// R28.4, R28.7). `PortalShell` renders it once, inside `<main>` and above the routed screen, so it shows on
+// the sign-in screen, the forced change-password screen, the ticket list, the new-ticket form, the
+// confirmation, the ticket detail, the accessibility statement and the not-found screen, and never twice.
 //
-// It reads the same two queries the form uses (`formConfigKey` and `brandingLogoKey`), so the form
-// configuration and the logo are requested once and come from the cache when the customer moves between
-// screens. It is inside the gate, so it never renders without a token (the sign-in screen has none, and the
-// logo endpoint needs a customer token) and not while the password change is forced (the API answers
-// `password_change_required` to the form configuration until the password is changed).
+// It is fed only by the two anonymous endpoints (`/public/branding` and `/public/branding/logo`), so it
+// needs no customer token and does not depend on the form configuration or on the session gate. The
+// `branding` member of the form configuration is left alone; the header no longer reads it.
 //
-// Nothing here can block or break a screen: a failed form configuration or logo request leaves the query
-// in its error state, which is ignored, and nothing is rendered for the part that is missing.
+// Nothing here can block or break a screen: a failed request (401, 403, 429, 503, a network error, a body
+// that is not an image) leaves the query in its error state, which is ignored, and nothing is rendered for
+// the part that is missing. The requests do not go through `portalFetch`, so a failure never signs the
+// customer out or redirects.
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { brandingLogoKey, formConfigKey, getBrandingLogo, getFormConfig } from '../api/ticketCreate';
+import {
+  PUBLIC_BRANDING_QUERY_OPTIONS,
+  getPublicBranding,
+  getPublicBrandingLogo,
+  publicBrandingKey,
+  publicBrandingLogoKey,
+} from '../api/publicBranding';
+import { formConfigKey, getFormConfig } from '../api/ticketCreate';
 import type { FormBranding } from '../api/formTypes';
 import { BrandingHeader } from './screens/BrandingHeader';
 import { brandingView } from './screens/settlementModel';
 
-/** The form configuration. The ticket form uses the same hook, so the two share one request and one cache entry. */
+/** The form configuration. Only the ticket form uses it now; the branding header does not. */
 export function useFormConfig() {
   return useQuery({ queryKey: formConfigKey, queryFn: ({ signal }) => getFormConfig(signal) });
 }
 
+/** The public branding answer: the company name and whether a logo exists. Undefined until it arrives or when it failed. */
+export function usePublicBranding(): FormBranding | undefined {
+  const query = useQuery({
+    queryKey: publicBrandingKey,
+    queryFn: ({ signal }) => getPublicBranding(signal),
+    ...PUBLIC_BRANDING_QUERY_OPTIONS,
+  });
+  return query.data;
+}
+
 /**
- * An object URL for the logo, fetched with the bearer header only when the configuration says there is
- * one. Revoked when the logo changes and on unmount. Null until it exists and after a failed fetch: a logo
- * that cannot be loaded is simply not shown, and no screen is blocked by it (R28.3).
+ * An object URL for the logo, fetched without a token only when the branding says there is one. Revoked
+ * when the logo changes and on unmount. Null until it exists and after a failed fetch: a logo that cannot
+ * be loaded is simply not shown, and no screen is blocked by it (R28.3).
  */
 export function useBrandingLogoUrl(hasLogo: boolean): string | null {
   const logo = useQuery({
-    queryKey: brandingLogoKey,
-    queryFn: ({ signal }) => getBrandingLogo(signal),
+    queryKey: publicBrandingLogoKey,
+    queryFn: ({ signal }) => getPublicBrandingLogo(signal),
     enabled: hasLogo,
-    retry: false,
-    refetchOnWindowFocus: false,
-    staleTime: 5 * 60_000,
+    ...PUBLIC_BRANDING_QUERY_OPTIONS,
   });
   const blob = hasLogo && logo.data !== undefined ? logo.data : null;
   const [object, setObject] = useState<{ blob: Blob; url: string } | null>(null);
@@ -59,8 +74,7 @@ export function PortalBrandingView({ branding, logoUrl }: { branding: FormBrandi
 }
 
 export function PortalBranding() {
-  const config = useFormConfig();
-  const branding = config.data?.branding;
+  const branding = usePublicBranding();
   const logoUrl = useBrandingLogoUrl(branding?.has_logo === true);
   return <PortalBrandingView branding={branding} logoUrl={logoUrl} />;
 }

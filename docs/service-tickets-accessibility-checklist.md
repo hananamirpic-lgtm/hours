@@ -70,7 +70,7 @@ Portal screens are under `/service`. Management screens are under `/tickets`.
 | P4 | New ticket form | `/service/new` | "New ticket" / "קריאה חדשה". |
 | P4e | New ticket form with validation errors | `/service/new` | Press "Send ticket" / "שליחת הקריאה" with the required fields empty. |
 | P4s | Settlement selection dialog | `/service/new` | Activate the City / ישוב control while at least one settlement is active. |
-| P4b | Branding header above the page content | `/service`, `/service/new`, `/service/new/done`, `/service/tickets/<number>` | Sign in and open each screen with branding set (and in the other branding states). It does not show on the sign-in screen. |
+| P4b | Branding header above the page content | `/service` (sign-in and change-password included), `/service/new`, `/service/new/done`, `/service/tickets/<number>`, `/service/accessibility` | Open each screen, signed out and signed in, with branding set (and in the other branding states). It shows on the sign-in screen too. |
 | P5 | Submission confirmation | `/service/new/done` | Send a valid ticket. |
 | P6 | Ticket detail with photo | `/service/tickets/<number>` | Open a ticket with a photo. |
 | P6n | Ticket detail without photo | same | Open a ticket with no photo. |
@@ -321,9 +321,9 @@ Common: A, B, C5, D, E, F6, G, H, I. Requirement R30.8.
 - [ ] Touch targets (G): the City button, the search box, every option row and "Cancel" are at least 44 px high. With 200 % text (F6) the dialog fits the window, the list scrolls inside the dialog, and the title and Cancel stay reachable.
 - [ ] A name with a quote or an ampersand is shown literally and is read correctly.
 
-### P4b. Branding header (every signed-in screen)
+### P4b. Branding header (every portal screen)
 
-Common: A, B, E, F, H. Requirements R28.3, R28.4, R28.7. Check it on the ticket list (`/service`), the new-ticket page (`/service/new`), the confirmation (`/service/new/done`) and a ticket detail, not only on the form.
+Common: A, B, E, F, H. Requirements R28.3, R28.4, R28.7. Check it on the sign-in screen, the forced change-password screen, the ticket list (`/service`), the new-ticket page (`/service/new`), the confirmation (`/service/new/done`), a ticket detail, the accessibility statement (`/service/accessibility`) and the not-found screen, not only on the form.
 
 - [ ] **Name and logo set.** Above the page content, and above the page title (for example "My tickets" or "New service ticket"), the logo and the company name show, **once** on each screen (on the new-ticket page too, not twice). Moving between the list, the form and a detail does not make the logo flash or reload. The logo is an image whose **text alternative equals the company name** (check in the developer tools, Accessibility panel, or with the screen reader: the image is read as the company name). The name below or beside it is visible text.
 - [ ] **Name only.** The name shows as text and nothing else (no empty image, no broken image icon).
@@ -332,8 +332,8 @@ Common: A, B, E, F, H. Requirements R28.3, R28.4, R28.7. Check it on the ticket 
 - [ ] **Plain text.** With the test name `<b>Test</b> & Co` the characters are shown literally (the tags are visible, nothing is bold) and the screen reader reads them as text.
 - [ ] The company name is **not a heading** (the headings list still has one level 1 heading, the page title), and the order in the reading flow is branding first, then the page title.
 - [ ] A long company name wraps and does not overflow at 320 px and at 200 % text (F). A name in Hebrew shows right to left and a name in English left to right (dir auto), whatever the page language.
-- [ ] **Sign-in screen.** The sign-in screen shows no logo and no company name (the logo is loaded only after the sign-in; it does not load for a signed-out visitor). The forced change-password screen shows none either.
-- [ ] If the logo cannot be loaded (block `/api/service/branding/logo` in the developer tools), every screen still works and shows the name only, without an error. If the form configuration cannot be loaded, the screens show no branding and no error of their own.
+- [ ] **Sign-in and change-password screens.** The sign-in screen and the forced change-password screen show the logo and the company name above their page title, once, like every other screen. They load without a token: in the developer tools, Network panel, signed out, the requests `/api/service/public/branding` and `/api/service/public/branding/logo` carry no Authorization header. The accessibility statement shows them too.
+- [ ] If the logo cannot be loaded (block `/api/service/public/branding/logo` in the developer tools), every screen still works and shows the name only, without an error. If the name request cannot be loaded (block `/api/service/public/branding`, or an answer 429 or 503), the screens show no branding, no error of their own, and a signed-in customer is not signed out.
 - [ ] The logo and the name meet contrast (H) and the logo does not carry information that appears nowhere else (the name is the text alternative).
 
 ### P5. Submission confirmation (`/service/new/done`)
