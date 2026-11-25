@@ -324,6 +324,11 @@ you turn it on. One flag, `SERVICE_TICKETS_ENABLED`, controls it. The migration
 `0011_service_tickets`, `0012_staff_opened_tickets` and `0013_service_lists_branding` run on every deploy whatever the flag says, so
 turning the flag on later needs **no migration**. This phase covers only what is extra for this feature.
 
+The second round of changes (the settlement list, the replaceable parts, the company branding, the Resolve form and
+the Excel export of reports) ships in the same release and behind the same flag. Migration `0013_service_lists_branding`
+adds its tables. The extra steps are in 12.11 (enabling) and 12.12 (the export), the new Caddy block is in 12.4,
+and the back-out notes are in 12.9 and 12.10.
+
 ### 12.1 Settings
 
 The 13 `SERVICE_*` settings live in `infra/poc/.env.prod` (template: `infra/poc/.env.prod.example`;
@@ -384,6 +389,9 @@ Do these in order. Keep the flag **off** until step 8.
     (the automated scan `npm run test:a11y` first, then the checklist with one desktop and one mobile
     screen reader, on a test environment running the build you accept). Do it before acceptance and
     before you give customers the address.
+11. **Round-two lists entered** (12.11): the settlements, the replaceable parts and, if you want it, the branding.
+    Do it after step 8 (the Settings screens answer 404 while the flag is off) and **before the first resident is
+    created or given the address**.
 
 ### 12.3 Precondition: port 80 reachable only from CloudFront
 
@@ -412,9 +420,12 @@ Two edge changes ship with this feature. Neither is applied by `deploy.sh`; you 
   `CachingDisabled`, origin request policy `AllViewerAndCloudFrontHeaders-2022-06` (this one forwards
   `CloudFront-Viewer-Address`), compress on, redirect HTTP to HTTPS. `/api/*` is unchanged and still never caches.
   The SPA deep links `/service/*` and `/tickets/*` use the default behavior and need no change.
-- **Caddy:** an exact-path block for `/api/service/tickets` and another for `/api/service/staff/tickets`,
-  each with a 13 MiB request-body cap (above the app's own 12 MiB limit), placed before `handle /api/*`.
-  They are in `infra/poc/caddy/Caddyfile`.
+- **Caddy:** three exact-path blocks, placed before `handle /api/*`: `/api/service/tickets` and
+  `/api/service/staff/tickets`, each with a 13 MiB request-body cap (above the app's own 12 MiB limit), and
+  `/api/service/staff/branding` (the logo upload) with a 3 MiB cap. They are in `infra/poc/caddy/Caddyfile`.
+  The branding block is new in the second round. A box that already runs the first release has only the first two,
+  so step 3 below must be done again for this release: without the new block the logo upload goes through the
+  generic `/api/*` handling and a large file is refused by Caddy before the API can answer `logo_too_large`.
 
 Order:
 
@@ -432,8 +443,9 @@ Order:
    aws cloudfront get-distribution --id <DISTRIBUTION_ID> --query Distribution.Status   # wait for "Deployed"
    ```
 3. **Load the new Caddy config.** Caddy keeps its old config until it is reloaded, and a plain `deploy.sh`
-   does not recreate it. Recreate the container (a few seconds of interruption). Do not rely on
-   `caddy reload` here: `git pull` replaces the file and the container can still show the old one.
+   does not recreate it. **The Caddy container must be recreated after every `git pull` that changes the Caddyfile**
+   (a few seconds of interruption), including the pull for the second round (the new `/api/service/staff/branding` block).
+   Do not rely on `caddy reload` here: `git pull` replaces the file and the container can still show the old one.
 
    ```bash
    cd /opt/hours
@@ -625,6 +637,11 @@ What the downgrade (revisions `0013_service_lists_branding`, then `0012_staff_op
 - It **never touches the Hours tables or their data**: no existing table, column, index, constraint or row changes.
 - It keeps the `technician` value in the user-role type (PostgreSQL cannot remove a value without
   rebuilding the type) and keeps every photo object under `service-tickets/` in the bucket.
+- **Downgrading `0013_service_lists_branding` alone** (back to `0012_staff_opened_tickets`) drops the new lists
+  (`svc_localities` and `svc_parts`), the part links (`svc_ticket_parts`), the branding row (`svc_branding`, the
+  company name and the pointer to the logo) and the `locality_id` column of `svc_tickets` and `svc_customers`. The city
+  text stored on every ticket and customer stays. It makes no object-store call: **the logo object stays in the bucket**
+  with the ticket photos until the orphan sweep removes it. Read the warning in 12.10 before you run that sweep.
 - Never use a target lower than `0010_operations_admin_role` (and never `base`): lower targets undo
   Hours schema changes. A later `deploy.sh` runs `alembic upgrade head` and creates the ticket tables again, empty.
 
@@ -680,10 +697,92 @@ docker compose -f docker-compose.yml -f infra/poc/docker-compose.prod.yml --env-
   (nothing deleted for that page), 5 some deletes failed (run it again).
 - **When to run it:** after an API crash or restart during busy ticket submission, and as occasional
   housekeeping. Always run the report-only form first.
+- **The logo is never an orphan.** The sweep leaves the stored company logo alone as long as the branding row points to
+  it, and the API deletes the previous logo object by itself after a replacement or a removal. You do not need the
+  sweep for the logo while the feature is in use.
 - **Be careful after the tables were removed and recreated** (path 4 followed by a new deploy). The
   new `svc_tickets` is empty, so every photo looks unreferenced and `--delete` would remove all of them.
   Do not use `--delete` in that case unless you mean to discard those photos. While the tables are
   missing, the sweep stops with exit code 4 and deletes nothing.
+
+**Warning: removing the logo after a downgrade of `0013`.** The downgrade deletes the branding row but not the logo object
+(12.9), so the object stays under `service-tickets/branding/`. The sweep can remove it, but only in a state where the
+sweep also sees the tickets table correctly, and the same command **deletes every ticket photo** in the other states:
+
+- While `svc_branding` is missing (right after the downgrade), the sweep of this release cannot read the database. It
+  stops with exit code 4 and deletes nothing.
+- When `svc_branding` exists again with its empty row (the next deploy runs `alembic upgrade head`) and `svc_tickets`
+  still holds the tickets, the old logo object is unreferenced and the sweep reports it as an orphan. Ticket photos are
+  still referenced and stay.
+- When `svc_tickets` was dropped and recreated empty (path 4 down to `0010_operations_admin_role`, then a deploy), **every**
+  `service-tickets/` object is unreferenced, **ticket photos included**, and `--delete` removes all of them. Do not run it
+  then unless you mean to discard every photo.
+
+Run the sweep **only after the flag is off** (12.8), run the report-only form first and read every `ORPHAN` line, and add
+`--delete` only when the report lists nothing you want to keep:
+
+```bash
+cd /opt/hours
+docker compose -f docker-compose.yml -f infra/poc/docker-compose.prod.yml --env-file infra/poc/.env.prod \
+  run --rm api python -m app.service_tickets.maintenance sweep-orphans --older-than 1h
+# only after the flag is off and the report shows nothing you want to keep:
+docker compose -f docker-compose.yml -f infra/poc/docker-compose.prod.yml --env-file infra/poc/.env.prod \
+  run --rm api python -m app.service_tickets.maintenance sweep-orphans --older-than 1h --delete
+```
+
+### 12.11 Round-two features: enabling steps and rules
+
+Migrations `0012_staff_opened_tickets` and `0013_service_lists_branding` already ran with the release (12.4 step 4). They create the
+lists **empty**: nothing is seeded. Until someone fills them, the features below stay in their old behaviour. Only
+`admin` and `operations_admin` see the Settings screens; a technician does not. The screens answer 404 while the flag is
+off (12.8), so enter the data after the flag is on and **before the first resident is created or given the address**:
+
+1. **Settlements.** Management, **System settings**, **Settlements** (`/tickets/settings/localities`). Enter every
+   settlement with a Hebrew and an English name (1 to 100 characters each). **As long as no active settlement exists, the
+   City field stays free text** for residents and on the customer form. From the first active settlement on, the
+   ticket form shows a selection window and the API refuses free text with `invalid_settlement`, so enter the whole
+   list in one session instead of one name now and the rest later. Tickets and customers created before the list keep
+   their city text.
+2. **Replaceable parts.** **System settings**, **Replaceable parts** (`/tickets/settings/parts`), a Hebrew and an English
+   name of 1 to 60 characters each. **Without parts, technicians cannot record a replaced part**: the "Part replaced"
+   checkbox on the Resolve form opens an empty list. They can still resolve a ticket with the box unticked.
+3. **Branding (optional).** **System settings**, **Branding** (`/tickets/settings/branding`): a company name of 1 to 100
+   characters and a logo (JPEG, PNG or WebP, up to 1 MiB; the API re-encodes it as a PNG of at most 400 by 200 pixels).
+   Both are optional and independent. With neither, the new-ticket page shows nothing for it. The name is shown as plain
+   text.
+4. **Check as a resident:** the new-ticket page shows the branding, and the City field opens the settlement window.
+   **Check as a technician:** the Resolve form lists the parts. Then run the checks M3r, M3p, M5e and M8 to M11 of
+   `docs/service-tickets-accessibility-checklist.md`.
+
+Rules that staff will ask about:
+
+- **A technician cannot add parts.** The parts list is edited by Config staff only (admin, operations_admin). A technician
+  only chooses from the active parts when resolving, through a read-only list (`GET /staff/parts/active`).
+- **Resolving a ticket requires a service history.** The move to Resolved is accepted only with a history text of 1 to
+  2,000 characters, a technician name of 1 to 100 characters and, when "Part replaced" is ticked, 1 to 20 active parts.
+  Without the history text the API answers 422 and changes nothing. The ticket list has no one-click Resolve: its
+  "Resolve…" action opens the ticket page with the form open.
+- **The history text, the technician name and the parts are never shown to residents.**
+- **Deleting a used settlement or part deactivates it** instead (the screen says which happened).
+- **The logo and the orphan sweep:** the sweep never deletes the logo (12.10).
+
+### 12.12 Excel export of reports: limit and personal data
+
+The Reports screen has an "Export to Excel" button for every ticket staff role, a technician included. It sends the file
+for the current filters (not only the visible page).
+
+- **Limit: 10,000 tickets.** With more matching tickets the API answers 422 `export_too_large`, sends no file, and the
+  screen tells the user to narrow the filters (for example by dates or by settlement).
+- **The file contains personal data**: customer names and phone numbers, with settlements and apartments. Handle it as
+  you handle the customer list: download it only to a managed work device, share it only with people who need it, do
+  not send it through an unprotected channel or keep it in a shared or personal cloud folder, and delete it when the
+  work is done. Tell every staff member who uses the button.
+- The API builds the file per request and answers with `Cache-Control: no-store`. It keeps no copy on the box, so a lost
+  file cannot be fetched again, only exported again.
+- The export is a read-only request. If it fails or times out, nothing changes on the server; export again with
+  narrower filters.
+- Excel opens the file with the sheet right to left for the Hebrew language of the screen. Cells that begin with
+  `=`, `+`, `-` or `@` are written with a leading single quote so no formula runs.
 
 ---
 

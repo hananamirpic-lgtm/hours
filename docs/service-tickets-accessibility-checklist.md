@@ -2,7 +2,7 @@
 
 This checklist is for a person who tests the service ticket portal and the ticket management screens by hand. You do not need to read code. It covers what the automated scan (axe, task 25.2) cannot judge: screen reader use, keyboard use, real colour contrast, 200 % text size in real browsers, and touch target size.
 
-Requirements covered: R23.1 to R23.15, R8.9 (layout from 320 px), R12.5 and R17.5 (polling). The target is Israeli standard IS 5568 (WCAG 2.0) level AA. This pass is a self-check. It is not a formal conformance audit.
+Requirements covered: R23.1 to R23.15, R8.9 (layout from 320 px), R12.5 and R17.5 (polling), and for the round-two screens R28.3, R28.4, R28.7 (branding header), R29.4 and R29.5 (Resolve form), R30.8 (settlement dialog) and R31.6 (Excel export). The target is Israeli standard IS 5568 (WCAG 2.0) level AA. This pass is a self-check. It is not a formal conformance audit.
 
 ## 1. Before you start
 
@@ -12,6 +12,12 @@ Requirements covered: R23.1 to R23.15, R8.9 (layout from 320 px), R12.5 and R17.
 - [ ] The feature flag is **on**: `SERVICE_TICKETS_ENABLED=true` in the environment of that build. Check: `/api/features` returns `service_tickets: true`, and `/service` shows the sign-in screen (with the flag off it shows the "service unavailable" page instead).
 - [ ] `SERVICE_ACCESSIBILITY_CONTACT` is set to a real phone number or email address. Without it the accessibility statement shows a "contact details not set" message and the footer shows no contact.
 - [ ] At least one **category** is active (otherwise the ticket form cannot be completed).
+- [ ] **Round-two data** is entered, so the screens of sections 4 (P4s, P4b) and 5 (M3r, M3p, M5e, M8 to M11) have something to show:
+  - [ ] At least **three active settlements** (Settings, Settlements / הגדרות, ישובים), one with a long name and one whose name contains a quote or an ampersand. With no settlement the City field stays free text and P4s cannot be run.
+  - [ ] At least **three active replaceable parts** (Settings, Replaceable parts / חלקים להחלפה) and one inactive part.
+  - [ ] **Branding** (Settings, Branding / לוגו ושם החברה) with a company name and a logo. For P4b also prepare three states: name and logo, name only, logo only, and a state with neither. A test name such as `<b>Test</b> & Co` shows whether markup is shown as plain text.
+  - [ ] At least one ticket **In progress** (needed for the Resolve form) and one ticket in status Received.
+  - [ ] A Microsoft Excel (or LibreOffice Calc) installation on the test machine, for the export check in M5e.
 - [ ] Test accounts exist:
 
 | Account | Needed for | Notes |
@@ -20,7 +26,7 @@ Requirements covered: R23.1 to R23.15, R8.9 (layout from 320 px), R12.5 and R17.
 | Resident B, password already changed, with **no tickets** | Empty ticket list | |
 | Resident C, password already changed, with **at least 3 tickets** in different statuses (received, in progress, resolved, cancelled), at least one marked **urgent**, and one with a **photo** and one without | List, detail, cancel dialog | Use a JPEG under 10 MB for the photo. |
 | Staff: role `admin` or `operations_admin` | All Management screens | |
-| Staff: role `technician` | Not-authorized and "not available" checks | A technician sees no configuration screens. |
+| Staff: role `technician` | Not-authorized and "not available" checks, and the Resolve form (M3r) | A technician sees no configuration screens (also not Settlements, Replaceable parts or Branding). A technician can resolve a ticket and choose parts but cannot add parts. |
 | Staff: a role outside admin, operations_admin and technician (for example accounting) | "Not authorized" screen | Optional but required for the not-authorized row. |
 
 - [ ] You can run every item below in **both Hebrew (he) and English (en)**. Do each screen twice, once per language. The portal language switch is in the page header. Management screens follow the console language.
@@ -63,6 +69,8 @@ Portal screens are under `/service`. Management screens are under `/tickets`.
 | P3e | Ticket list, empty | `/service` | Sign in as Resident B. |
 | P4 | New ticket form | `/service/new` | "New ticket" / "קריאה חדשה". |
 | P4e | New ticket form with validation errors | `/service/new` | Press "Send ticket" / "שליחת הקריאה" with the required fields empty. |
+| P4s | Settlement selection dialog | `/service/new` | Activate the City / ישוב control while at least one settlement is active. |
+| P4b | Branding header above the form title | `/service/new` | Open the form with branding set (and in the other branding states). |
 | P5 | Submission confirmation | `/service/new/done` | Send a valid ticket. |
 | P6 | Ticket detail with photo | `/service/tickets/<number>` | Open a ticket with a photo. |
 | P6n | Ticket detail without photo | same | Open a ticket with no photo. |
@@ -76,6 +84,13 @@ Portal screens are under `/service`. Management screens are under `/tickets`.
 | M5 | Reports | `/tickets/reports` | "Reports". |
 | M6 | Categories, field labels, form options | `/tickets/settings/categories`, `/labels`, `/options` | "System settings" in the navigation. |
 | M7 | Not authorized | any `/tickets/...` address | Sign in as a role outside the three staff roles, or open a Management address while signed in as a resident. |
+| M3r | Resolve form on the ticket detail | `/tickets/list/<number>` and `/tickets/list/<number>?resolve=1` | On an In progress ticket choose the Resolved action in the "Change status" section, or use "Resolve…" / "סימון כטופלה…" in the ticket list. |
+| M3p | Parts selection dialog (inside the Resolve form) | same | In the Resolve form tick "Part replaced" / "חלק הוחלף" and press "Choose parts…" / "בחירת חלקים…". |
+| M5e | Reports filters and Export to Excel | `/tickets/reports` | "Reports"; the filters "Part replaced" and "Settlement" and the button "Export to Excel" / "ייצוא ל-Excel". |
+| M8 | Staff New ticket (customer picker) | `/tickets/list/new` | "New ticket" in the ticket list or on the dashboard. |
+| M9 | Settlements | `/tickets/settings/localities` | "System settings", "Settlements" / "ישובים". |
+| M10 | Replaceable parts | `/tickets/settings/parts` | "System settings", "Replaceable parts" / "חלקים להחלפה". |
+| M11 | Branding (with file upload) | `/tickets/settings/branding` | "System settings", "Branding" / "לוגו ושם החברה". |
 
 ---
 
@@ -111,7 +126,7 @@ Unplug or ignore the mouse. Use Tab, Shift+Tab, Enter, Space, arrow keys and Esc
 - [ ] **C2 Order.** The Tab order follows the visual reading order: right to left in Hebrew and left to right in English. It does not jump around the page.
 - [ ] **C3 Visible focus.** The focused element always has a clearly visible outline (about 3 px). No element loses its outline. Take a screenshot of any element where you cannot see where focus is.
 - [ ] **C4 No trap.** You can always Tab out of every region, forwards and backwards (except inside an open dialog, see C5).
-- [ ] **C5 Dialogs.** Applies to the cancel dialog (portal) and to the customer dialogs and configuration dialogs (management).
+- [ ] **C5 Dialogs.** Applies to the cancel dialog and the settlement selection dialog (portal), and to the customer dialogs, the configuration dialogs (including the Settlements and Replaceable parts dialogs) and the parts selection dialog of the Resolve form (management).
   - [ ] Opening the dialog moves focus into it.
   - [ ] Tab and Shift+Tab stay inside the dialog (focus wraps from last to first and back).
   - [ ] Escape closes the dialog (unless the dialog is busy sending a request).
@@ -287,6 +302,39 @@ Common: A, B, C, D, E, F, H, I.
 - [ ] Correcting a field and sending again removes its error. Typed values stay.
 - [ ] A photo that is too large or a file that is not an image shows the matching message ("The photo is too large. Choose a photo of up to 10 MB.") and the message is read.
 
+### P4s. Settlement selection dialog (`/service/new`, at least one active settlement)
+
+Common: A, B, C5, D, E, F6, G, H, I. Requirement R30.8.
+
+- [ ] The City field (label "Settlement" / "ישוב", or the text the business set in M6) is a **button** that shows "Choose a settlement" / "בחרו ישוב" until a settlement is chosen. The screen reader reads the label, the current value and that it opens a dialog. With no active settlement, the field is a plain text box instead (check this once with the list empty, by deactivating all settlements on the test system).
+- [ ] Activating the button opens a dialog titled "Choose a settlement" / "בחירת ישוב". The screen reader announces a dialog with that title.
+- [ ] **Focus goes into the search box** when the dialog opens. The box has a visible label "Search for a settlement" / "חיפוש ישוב" that is read on focus.
+- [ ] **Live match count.** Type part of a name. Without moving focus the screen reader reads the count ("2 settlements found." / "נמצאו שני ישובים.", "1 settlement found." / "נמצא ישוב אחד.", or "No settlements match." / "לא נמצאו ישובים תואמים."). Also check the count for 3 or more ("3 settlements found." / "נמצאו 3 ישובים.").
+- [ ] **Listbox.** The matches are announced as a list box with options. Press the Down arrow in the search box to move to the first option, then Up and Down to move between options. Up from the first option returns to the search box. The currently chosen settlement (if any) is announced as selected.
+- [ ] Settlement names show in the current language (Hebrew names in Hebrew, English names in English), and a name of the other language is not mixed in. Hebrew and English names are each read with the right voice and are not reordered (dir auto).
+- [ ] Enter or Space on an option chooses it, closes the dialog and puts it into the form.
+- [ ] **Focus trap.** Tab and Shift+Tab stay inside the dialog (search box, options, "Cancel" / "ביטול") and wrap around. Content behind the dialog cannot be reached with the screen reader (B4).
+- [ ] **Escape** closes the dialog without changing the field. The "Cancel" button does the same.
+- [ ] **Focus return.** After a choice, Escape or Cancel, focus is back on the City button that opened the dialog.
+- [ ] **Chosen value shown as text.** After a choice the button shows the settlement name as visible text (not only in a hidden value), and the screen reader reads it as the value of the field. Switch the language: the same settlement shows with its name in the other language, and the typed values of the other fields stay.
+- [ ] Sending the form with no settlement chosen shows the field error (P4e) linked to the City button, and focus goes to it as the first failing field.
+- [ ] Touch targets (G): the City button, the search box, every option row and "Cancel" are at least 44 px high. With 200 % text (F6) the dialog fits the window, the list scrolls inside the dialog, and the title and Cancel stay reachable.
+- [ ] A name with a quote or an ampersand is shown literally and is read correctly.
+
+### P4b. Branding header (`/service/new`)
+
+Common: A, B, E, F, H. Requirements R28.3, R28.4, R28.7.
+
+- [ ] **Name and logo set.** Above the page title ("New service ticket") the logo and the company name show. The logo is an image whose **text alternative equals the company name** (check in the developer tools, Accessibility panel, or with the screen reader: the image is read as the company name). The name below or beside it is visible text.
+- [ ] **Name only.** The name shows as text and nothing else (no empty image, no broken image icon).
+- [ ] **Logo only.** The logo shows and its text alternative is **empty** (the screen reader skips it and does not read a file name or "image").
+- [ ] **Neither set.** Nothing is rendered for the branding: no heading, no placeholder, no broken image and no empty gap above the title. The first thing in the main area is the page title. Compare the screen with a state where the branding was removed and confirm the title position is the same as before the feature.
+- [ ] **Plain text.** With the test name `<b>Test</b> & Co` the characters are shown literally (the tags are visible, nothing is bold) and the screen reader reads them as text.
+- [ ] The company name is **not a heading** (the headings list still has one level 1 heading, the page title), and the order in the reading flow is branding first, then the page title.
+- [ ] A long company name wraps and does not overflow at 320 px and at 200 % text (F). A name in Hebrew shows right to left and a name in English left to right (dir auto), whatever the page language.
+- [ ] The logo is loaded with the sign-in (it does not load for a signed-out visitor). If the logo cannot be loaded, the page still works and shows the name only, without an error that blocks the form.
+- [ ] The logo and the name meet contrast (H) and the logo does not carry information that appears nowhere else (the name is the text alternative).
+
 ### P5. Submission confirmation (`/service/new/done`)
 
 Common: A, B, C, D2, E, F, G, H.
@@ -370,10 +418,38 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 - [ ] `h1` "Ticket <n>" / "קריאה <n>". Section headings (Ticket details, Photo, Change status, Assigned technician, Treatment history) are `h2` and in order.
 - [ ] Customer, phone, settlement, apartment, category, description, opened date are read as label and value. The phone and ticket number read left to right.
 - [ ] Photo (when present): alternative text "Photo for ticket <n>, <category>", and the "Open the photo at full size" link works with the keyboard.
+- [ ] The replaced parts, when the ticket has any, show under the heading "Parts replaced" / "חלקים שהוחלפו" as text, in the current language. Resolving a ticket is done only through the Resolve form (M3r), never by a single button press.
 - [ ] Change status: the allowed status choices are buttons or a select with labels. On moving to "in progress" the optional "Assigned technician name (optional)" field has a label and the hint "If no name is entered, your username is used." A failed change reads the error at once, and a status that changed meanwhile shows the current status.
 - [ ] Assigned technician: the field has a label and the hint "Up to 100 characters". Saving reads "The technician name was saved.".
 - [ ] Treatment history: the note "The history is an internal working log and is not shown to the customer." is present. Adding and editing an entry works by keyboard. Each entry shows its time and the technician, and the entry form fields have labels.
 - [ ] A ticket number that does not exist shows "Ticket not found" with a link back.
+
+### M3r. Resolve form (ticket detail) and M3p. Parts selection dialog
+
+Common: A, C, C5 (for M3p), D8, E, F, H, I. Requirements R29.4, R29.5, R23.12. Run it as an admin or operations_admin user and once as a technician.
+
+- [ ] On an In progress ticket the Resolved action in the "Change status" section opens the form on the detail page under that section, and the status is **not** changed until the form is sent. The form is a region named "Mark the ticket as resolved" / "סימון הקריאה כטופלה" with a heading, and **focus goes to the service history field** when it opens.
+- [ ] **Fields and labels.** "Service history" / "היסטוריית טיפול" (required, with the hint "What was done on this ticket, 1 to 2000 characters."), "Technician name" / "שם הטכנאי" (required, prefilled with the assigned technician or the signed-in user name), and the checkbox "Part replaced" / "חלק הוחלף". Each has a visible label read on focus, the required marking is text (I3), and the hints are read after the label.
+- [ ] **Required history text.** Press "Mark as resolved" / "סימון כטופלה" with the history field empty (or only spaces). The ticket stays In progress, the field error "The treatment description is not valid. Enter 1 to 2000 characters." / the Hebrew equivalent shows next to the field and is read when the field has focus.
+- [ ] **Technician name.** An empty technician name is refused in the same way, with its own field error. A name of more than 100 characters is refused.
+- [ ] **Part replaced checkbox.** Space ticks and unticks it. With the box ticked, the buttons "Choose parts…" / "בחירת חלקים…" appear and the text "No parts chosen yet." / "טרם נבחרו חלקים." is shown. With the box unticked, no part list is shown or sent.
+- [ ] Ticking "Part replaced" and pressing Resolve without choosing a part is refused with the field error (`part_required`) next to the choose-parts button.
+- [ ] **Focus management after errors.** After a refusal (empty history, empty name, no part, or a server refusal), **focus moves to the first failing field in reading order** (history, then technician name, then the choose-parts button), and the screen reader reads its label and error. When the server refuses without naming a field (for example "The ticket status changed meanwhile"), the message "The ticket could not be marked as resolved." is read at once (alert) and focus moves to that message.
+- [ ] **Values kept.** After every refusal the typed history, the technician name, the checkbox and the chosen parts are all still there.
+- [ ] **Success.** After a successful resolve the status shows as "Resolved" / "טופלה" as text, the form closes, **focus moves to the "Change status" heading** and the message "Ticket <n> was marked as resolved." / "קריאה <n> סומנה כטופלה." is shown and read. The chosen parts show under "Parts replaced" and the history entry shows in the treatment history. Focus is never lost on the page.
+- [ ] **`?resolve=1` from the list.** In the ticket list, the "Resolve…" link of an In progress ticket (its accessible name includes the ticket number) opens the detail page with the form **already open**, and the status was **not** changed by the list. Reloading the page, or opening the ticket again later, does not reopen the form (the parameter is removed from the address). For a ticket that is not In progress the list offers no Resolve link, and typing `?resolve=1` by hand on such a ticket opens no form.
+- [ ] Cancel closes the form without changing the ticket and moves focus to the "Change status" heading.
+
+**M3p. Parts selection dialog.**
+
+- [ ] "Choose parts…" opens a dialog titled "Choose the replaced parts" / "בחירת חלקים". Focus moves into it, Tab and Shift+Tab stay inside, Escape closes it without changing the chosen parts, and focus returns to the "Choose parts…" button (C5).
+- [ ] The parts are a group of **checkboxes** (group name "Parts replaced" / "חלקים שהוחלפו"), each with the part name in the current language, only active parts. Space toggles each one. Several parts can be ticked (**multi-select**).
+- [ ] **Live count.** After each tick or untick the screen reader reads "Selected: 2 (up to 20)" / "נבחרו: 2 (עד 20)" without focus moving.
+- [ ] "Done" / "סיום" closes the dialog and the chosen parts are shown as **text** in the form ("Chosen parts: …" / "חלקים שנבחרו: …"), the button changes to "Change" / "שינוי". Escape or "Cancel" keeps the earlier choice.
+- [ ] While the parts load, "Loading the parts…" is read. A load failure reads "Could not load the list of parts." at once and the dialog can still be closed. With no active part, the dialog says that there are no active parts and that parts are added on the Replaceable parts screen.
+- [ ] A **technician** can open the dialog and choose parts (the list comes from the read-only active-parts list), and sees no "Add part" control anywhere.
+- [ ] Pressing Enter in the dialog does not submit the Resolve form behind it.
+- [ ] Targets (informative, G7) and 200 % text (F6): the dialog fits, the list scrolls inside it, and "Done" stays reachable.
 
 ### M4. Customers (`/tickets/customers`)
 
@@ -381,11 +457,13 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 - [ ] Row buttons are read with the customer's name, for example "Edit, <name>", "Deactivate, <name>", "Reset password, <name>".
 - [ ] State (Active / Inactive) is text.
 - [ ] **Dialogs** (new customer, edit, deactivate, reactivate, reset password): run C5. The confirmation text names the customer. After the action, a status message is read ("The customer was added.", "The password was reset to 1234…").
+- [ ] The customer form's City field is a **select** labelled "Settlement" / "ישוב" while at least one settlement is active (with the choice "No settlement" / "ללא ישוב"). A deactivated current settlement shows as "<name> (inactive)" / "<שם> (לא פעיל)". A customer with only a text city shows "Current city: <text>" / "ישוב נוכחי: <טקסט>" as help text. With no active settlement the field is a text box.
 - [ ] Phone field has a label, the hint "10 digits starting with 0…", and an error message linked to the field when invalid ("This phone number is already registered to another customer." for a duplicate).
 
 ### M5. Reports (`/tickets/reports`)
 
 - [ ] `h1` "Service ticket reports" / "דוחות קריאות שירות". The filter form (From date, To date, Settlement, Category, "Show report") has labels on every field.
+- [ ] The new filters "Part replaced" / "חלק הוחלף" (Any, Yes, No, or one part; an inactive part shows "<name> (inactive)") and "Settlement" / "ישוב" (All settlements, or one) have labels, can be changed with the keyboard, and the report still follows the full set of filters. The table has a "Parts replaced" / "חלקים שהוחלפו" column.
 - [ ] Results (Total tickets, Open tickets, By status, By category, the ticket table) are read in a logical order. The table has headers. Ticket links read "Open ticket <n>".
 - [ ] A report error reads "Could not load the report." at once and **the filters stay filled in**.
 - [ ] An empty result reads "No tickets match the filters.".
@@ -393,7 +471,7 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 
 ### M6. Categories, field labels, form options (`/tickets/settings/...`)
 
-- [ ] Navigation: under "System settings" / "הגדרות המערכת" the entries "Issue categories", "Field labels", "Form options" are present for admin and operations_admin only, and absent for a technician.
+- [ ] Navigation: under "System settings" / "הגדרות המערכת" the entries "Issue categories", "Field labels", "Form options", "Settlements", "Replaceable parts" and "Branding" are present for admin and operations_admin only, and absent for a technician. The three newer pages are checked in M9 to M11.
 - [ ] **Categories** (`/tickets/settings/categories`): table of categories with Hebrew name, English name and state (Active / Inactive) as text. "Add category" opens a dialog (C5) with labeled fields "Name in Hebrew", "Name in English" and the hint "1 to 60 characters". Deactivate, reactivate and delete buttons are read with the category name. The delete dialog names the category. The result text ("The category was saved.", "The category was deactivated, not deleted, because tickets use it.", and so on) is read as a status message. Try to deactivate the last active category: the error "The last active category cannot be deactivated or deleted…" is read at once.
 - [ ] **Field labels** (`/tickets/settings/labels`): each field has a label and the two inputs "Label in Hebrew" / "Label in English" with the hint "1 to 60 characters". Saving reads "The labels were saved.". An invalid value shows an error linked to its field.
 - [ ] **Form options** (`/tickets/settings/options`): the two checkboxes ("The issue description is required", "Allow a photo on a ticket") have labels and can be toggled with Space. The help text is read. Saving reads "The settings were saved.". After you change "The issue description is required", open the portal form (P4) and check that "(required)" appears or disappears on the Description label.
@@ -405,6 +483,57 @@ Management screens are used by staff on a desktop and do not have a mobile scree
 - [ ] A technician who opens `/tickets/settings/categories` sees "Screen not available" / the matching Hebrew text, not the configuration.
 - [ ] With the flag off, a technician sees "The service ticket system is unavailable" with only a sign-out button.
 - [ ] A signed-out user who opens a `/tickets` address goes to the console sign-in and returns to the address after signing in.
+
+### M5e. Export to Excel (`/tickets/reports`)
+
+Common: A, C, D8, E, F, H. Requirement R31.6, R31.1 to R31.5.
+
+- [ ] The button "Export to Excel" / "ייצוא ל-Excel" is next to the filters, reachable by keyboard, and has the name read by the screen reader. It is available for every staff role (a technician too).
+- [ ] **Busy state.** Press it with filters set. While the file is prepared, the button is **disabled** and announced as busy, and a second press does nothing. The filters stay filled in.
+- [ ] **Status announcement.** "Preparing the file…" / "מכינים את הקובץ…" is read without moving focus, then "The file was downloaded." / "הקובץ הורד." when the browser has saved the file.
+- [ ] **Error announcement.** Make the export fail (for example switch the machine offline, or use filters that match more than 10,000 tickets in a test system). The error is read **at once** ("Could not prepare the file. Try again." / "לא ניתן היה להכין את הקובץ. נסו שוב.", or for too many tickets "The report has too many tickets to export. Narrow the filters." / "בדוח יש יותר מדי קריאות לייצוא. צמצמו את הסינון."), the button works again, and the filters are unchanged.
+- [ ] **Downloaded file.** The file is named `service-tickets-report-<YYYYMMDD>.xlsx`. Open it in **Excel**: no repair prompt, a header row, one row per ticket matching **all** the filters (not only the visible page), typed number and date cells.
+- [ ] **Hebrew.** Export once with the console in Hebrew: the sheet is **right to left** (column A at the right edge), Hebrew headers, status and part names are in Hebrew and read correctly. Export once in English: the sheet is left to right with English headers.
+- [ ] A cell that starts with `=`, `+`, `-` or `@` (use a customer name such as `=1+1` on the test system) shows as text with the typed characters and is not calculated.
+- [ ] The file holds names and phone numbers: handle and delete it as personal data (see the runbook, 12.12).
+
+### M8. Staff New ticket (`/tickets/list/new`)
+
+Common: A, C, D4, D8, E, F, H, I. Requirement R23.12.
+
+- [ ] `h1` "New ticket" / "קריאה חדשה". Step 1 is the customer picker "Choose the customer" / "בחירת הדייר": the search box "Search by name or phone" / "חיפוש לפי שם או טלפון" has a label and a hint, the count "Matching customers: N" / "דיירים תואמים: N" is read as a status message after each search, the results are a labelled list ("Matching customers"), and each customer can be chosen with the keyboard. "No active customer matches the search." and the load error are read.
+- [ ] After choosing, **focus moves to the "Customer" / "דייר" heading**, the customer shows as text with the button "Change customer" / "החלפת דייר" (which returns focus to the search box), and the ticket form shows with the customer's details filled in. The form fields, the settlement choice (P4s applies), the photo control, the Urgent checkbox and the errors work as in P4 and P4e, including focus to the first failing field.
+- [ ] A refusal that cannot confirm the ticket was created reads "We could not confirm that the ticket was created…" at once.
+- [ ] After a successful send you reach the new ticket's detail page (`/tickets/list/<number>`), and the screen reader starts at its heading.
+
+### M9. Settlements (`/tickets/settings/localities`)
+
+Common: A, C, C5, D8, E, F, H, I. Requirement R30.1. Works as the Issue categories screen of M6.
+
+- [ ] Only admin and operations_admin see the entry "Settlements" / "ישובים" under "System settings". A technician who types the address sees the "not available" screen (M7) and no list or controls.
+- [ ] `h1` "Settlements" / "ישובים". The table lists active and inactive settlements with the Hebrew name, the English name and the state "Active" / "Inactive" as text.
+- [ ] "Add settlement" / "הוספת ישוב" opens a dialog (C5) with labelled fields "Name in Hebrew", "Name in English" and the hint "1 to 100 characters". A duplicate name shows the error linked to the field. Success reads "The settlement was added." / "הישוב נוסף.".
+- [ ] Deactivate, reactivate and delete buttons are read with the settlement name ("Deactivate: <name>"). The delete dialog names the settlement and says that a used settlement is deactivated instead. The result text ("The settlement was deleted." or "The settlement was deactivated, not deleted…") is read as a status message. A failed row action reads its error at once.
+- [ ] "There are no settlements." is shown for an empty list, and a load error shows a retry.
+
+### M10. Replaceable parts (`/tickets/settings/parts`)
+
+Same checks as M9 with the part texts. Requirement R29.6.
+
+- [ ] Entry "Replaceable parts" / "חלקים להחלפה" under "System settings", for admin and operations_admin only. A technician cannot reach the screen and cannot add a part (the technician only chooses parts in M3p).
+- [ ] The dialog fields have the hint "1 to 60 characters". Messages: "The part was added.", "The part was deactivated, not deleted, because tickets use it." and so on, read as status messages. State is text.
+
+### M11. Branding (`/tickets/settings/branding`)
+
+Common: A, C, D8, E, F, G (informative), H, I. Requirements R28.1, R28.2.
+
+- [ ] Entry "Branding" / "לוגו ושם החברה" under "System settings", for admin and operations_admin only. A technician sees the "not available" screen.
+- [ ] `h1` "Branding" / "לוגו ושם החברה". The field "Company name" / "שם החברה" has a label and the hint "1 to 100 characters. It is shown as plain text.".
+- [ ] **File upload.** The file control "Logo" / "לוגו" has a visible label that the screen reader reads, and the hint ("A JPEG, PNG or WebP image of up to 1 MB…") is read after it. It can be opened with Enter or Space and a file chosen without a mouse. After choosing, the file name and size are shown as text ("<name> (<size>)") and a preview with the text alternative "Preview of the chosen logo" / "תצוגה מקדימה של הלוגו שנבחר" appears. "Clear the chosen file" / "ביטול הקובץ שנבחר" removes it and keeps focus on a sensible control.
+- [ ] A file that is too large or not an image shows a warning in text ("This file is larger than 1 MB…", "This file is not a JPEG, PNG or WebP image…") that is read when it appears. The server refusal (`logo_too_large`, `invalid_logo_type`, `logo_dimensions_too_large`) is read at once and the entered name stays.
+- [ ] The current logo shows with the text alternative "The current logo" / "הלוגו הנוכחי", or "No logo is set." / "לא הוגדר לוגו." as text. "Loading the logo…" and a load error are read.
+- [ ] "Remove the logo" / "הסרת הלוגו" and "Remove the name" / "הסרת השם" are buttons with clear names. After pressing one, the text "The logo will be removed when you save." / "הלוגו יוסר בעת השמירה." (or the name equivalent) is shown and read, and "Keep the current logo" / "השארת הלוגו הנוכחי" undoes it.
+- [ ] Saving with no change reads "There are no changes to save." Saving reads "The branding was saved." / "הלוגו והשם נשמרו." as a status message. After saving, open P4b to confirm the header.
 
 ---
 
@@ -457,6 +586,12 @@ For quick reference, the matrix below shows which common procedures apply to whi
 | R23.13 focus to the first failing field | P4e |
 | R23.14 non-field messages announced | D1 to D5, D8 |
 | R23.15 30 s reload keeps focus, scroll, input; announce only changed status | D6, D7, P3, M1 |
+| R28.3, R28.4, R28.7 branding header: logo alt text equals the company name, nothing rendered when unset, name as plain text | P4b, M11 |
+| R28.1, R28.2 Branding screen and logo upload | M11 |
+| R29.4, R29.5 Resolve form, parts selection dialog, `?resolve=1` from the list | M3r, M3p, M2 |
+| R29.6, R30.1 Replaceable parts and Settlements screens | M9, M10 |
+| R30.8 settlement dialog: focus trap, Escape, focus return, labelled search, match count | P4s, M8 |
+| R31.6 Export to Excel: busy state, status and error messages, file opens in Excel, Hebrew right to left | M5e |
 
 ---
 
@@ -476,6 +611,7 @@ The automated scan (`npm run test:a11y` from `frontend/`, task 25.2) must pass b
 - **N6. Management screens.** Management has no target size or mobile screen reader requirement in R23. Items G7 and the Management part of B are informative.
 - **N7. Browsers.** Items marked [all browsers] (F) and the visual checks (G, H) can differ between browsers. Record the browser for each line.
 - **N8. When a step cannot be done.** If a step cannot be done (for example no ticket can be created because no category is active), fix the precondition and repeat. Do not mark it passed.
+- **N9. Round-two screens (change requests 28 to 31).** P4s, P4b, M3r, M3p, M5e and M8 to M11 were added with the settlement list, the branding, the Resolve form and the Excel export. They need the round-two data of section 1.1 and Excel (or LibreOffice) for M5e. The export file contains customer names and phone numbers: delete the downloaded test file when the pass is finished.
 
 ---
 
@@ -520,6 +656,10 @@ Write **P** (pass), **F** (fail) or **N/A** with a reason in the notes column. P
 | P4 New ticket form | en | | | | | | | | | | | |
 | P4e Form with errors | he | | | | | | | | | | | |
 | P4e Form with errors | en | | | | | | | | | | | |
+| P4s Settlement dialog | he | | | | | | | | | | | |
+| P4s Settlement dialog | en | | | | | | | | | | | |
+| P4b Branding header | he | | | | | | | | | | | |
+| P4b Branding header | en | | | | | | | | | | | |
 | P5 Confirmation | he | | | | | | | | | | | |
 | P5 Confirmation | en | | | | | | | | | | | |
 | P6 Detail with photo | he | | | | | | | | | | | |
@@ -550,6 +690,20 @@ Write **P** (pass), **F** (fail) or **N/A** with a reason in the notes column. P
 | M6 Form options | en | | n/a | | | | | n/a | | | | |
 | M7 Not authorized | he | | n/a | | | | | n/a | | | | |
 | M7 Not authorized | en | | n/a | | | | | n/a | | | | |
+| M3r Resolve form | he | | n/a | | | | | n/a | | | | |
+| M3r Resolve form | en | | n/a | | | | | n/a | | | | |
+| M3p Parts dialog | he | | n/a | | | | | n/a | | | | |
+| M3p Parts dialog | en | | n/a | | | | | n/a | | | | |
+| M5e Reports filters and export | he | | n/a | | | | | n/a | | | | |
+| M5e Reports filters and export | en | | n/a | | | | | n/a | | | | |
+| M8 Staff new ticket | he | | n/a | | | | | n/a | | | | |
+| M8 Staff new ticket | en | | n/a | | | | | n/a | | | | |
+| M9 Settlements | he | | n/a | | | | | n/a | | | | |
+| M9 Settlements | en | | n/a | | | | | n/a | | | | |
+| M10 Replaceable parts | he | | n/a | | | | | n/a | | | | |
+| M10 Replaceable parts | en | | n/a | | | | | n/a | | | | |
+| M11 Branding | he | | n/a | | | | | n/a | | | | |
+| M11 Branding | en | | n/a | | | | | n/a | | | | |
 
 ### 11.3 Cross-screen checks
 
