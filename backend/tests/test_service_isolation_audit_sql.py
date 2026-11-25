@@ -1614,6 +1614,46 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
             "invalid_token",
         ),
     )
+    # ------------------------------------------------------------------ public branding (R28.8): no token
+    def public_logo(w: World, *, present: bool = True, stored: bool = True) -> Req:
+        w.set_logo(present=present, stored=stored)
+        return anonymous("/public/branding/logo")
+
+    def public_logo_store_down(w: World) -> Req:
+        w.photos.fail_get_once = True
+        return public_logo(w)
+
+    def public_logo_foreign_key(w: World) -> Req:
+        """The row names a ticket photo that is in the store: an anonymous caller must not get it."""
+        key = f"{PHOTO_PREFIX}{uuid.uuid4().hex}.jpg"
+        w.photos.seed(key, jpeg_bytes())
+        row = w.session.get(Branding, 1, populate_existing=True)
+        if row is None:
+            row = Branding(id=1)
+            w.session.add(row)
+        row.logo_key = key
+        w.session.commit()
+        return anonymous("/public/branding/logo")
+
+    add(
+        "GET",
+        "/public/branding",
+        Call("anonymous", 200, lambda _w: anonymous("/public/branding")),
+        Call(
+            "a staff token in the header is ignored",
+            200,
+            lambda w: Req("/public/branding", w.token(w.admin), {}),
+        ),
+    )
+    add(
+        "GET",
+        "/public/branding/logo",
+        Call("anonymous", 200, public_logo),
+        Call("no logo is stored", 404, lambda w: public_logo(w, present=False)),
+        Call("the object is gone", 404, lambda w: public_logo(w, stored=False)),
+        Call("the row names a ticket photo", 404, public_logo_foreign_key),
+        Call("the object store is down", 503, public_logo_store_down, "photo_storage_unavailable"),
+    )
     add(
         "GET",
         "/staff/branding",

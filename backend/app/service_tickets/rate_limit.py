@@ -29,12 +29,18 @@ from app.core.redis import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-# Key groups. A key is `<prefix><identity>`, where the identity is an address key (sign-in) or a
-# customer id (the other two). Never put a phone number or a token in a key.
+# Key groups. A key is `<prefix><identity>`, where the identity is an address key (sign-in and the public
+# branding reads) or a customer id (the other two). Never put a phone number or a token in a key.
 KEY_ROOT = "svc:rl:"
 SIGNIN_PREFIX = "svc:rl:signin:"
 REQUEST_PREFIX = "svc:rl:req:"
 SUBMIT_PREFIX = "svc:rl:submit:"
+PUBLIC_PREFIX = "svc:rl:public:"
+
+
+def public_key(address_key: str) -> str:
+    """Key of the per-address window of the anonymous branding reads (R28.8). Not the sign-in window."""
+    return f"{PUBLIC_PREFIX}{address_key}"
 
 
 def signin_key(address_key: str) -> str:

@@ -766,6 +766,30 @@ Rules that staff will ask about:
 - **Deleting a used settlement or part deactivates it** instead (the screen says which happened).
 - **The logo and the orphan sweep:** the sweep never deletes the logo (12.10).
 
+**Security note: the branding is public.** Two API routes need **no token**, so the sign-in screen can show the company
+name and logo: `GET /api/service/public/branding` (returns exactly `{"company_name": ..., "has_logo": ...}`) and
+`GET /api/service/public/branding/logo` (the PNG, or an empty 404 when there is none). They are the only anonymous
+service routes besides resident sign-in. Treat them as follows:
+
+- **Anything typed in the Branding screen is visible to anyone who can reach the site.** Enter only what you are happy to
+  show on a public page. Nothing else is exposed: they read the one branding row and the one logo object, never a
+  resident, ticket, category, settlement or setting, and they write nothing.
+- **They only exist while the flag is on.** With the flag off both paths answer the same 404 as the rest of
+  `/api/service/` (`ticket_api_off` in 12.6 covers it). CloudFront's `/api/service/*` behavior never caches them (12.4);
+  the logo carries `Cache-Control: public, max-age=300`, so a browser may keep it for five minutes after you replace it.
+- **They are rate limited per visitor address** (120 per 60 seconds, the same numbers as `SERVICE_REQUEST_RATE_MAX` and
+  `_WINDOW_SECONDS`, in a bucket separate from sign-in). Over the limit the answer is 429 `rate_limited` with
+  `Retry-After`. As for sign-in, the address comes from `CloudFront-Viewer-Address`, so the **port 80 lock to CloudFront
+  (12.3) and the forged-header check (12.7) matter here too**; without them a caller can pick the address the limit
+  counts. If Redis is down the limit is skipped and the routes still answer, as for the other limits.
+- **Quick check after enabling** (on the box; expect `200` with the JSON, then `200` or `404` depending on whether a
+  logo is set):
+
+  ```bash
+  curl -s --max-time 30 http://localhost/api/service/public/branding
+  curl -s -o /dev/null -w '%{http_code} %{content_type}\n' --max-time 30 http://localhost/api/service/public/branding/logo
+  ```
+
 ### 12.12 Excel export of reports: limit and personal data
 
 The Reports screen has an "Export to Excel" button for every ticket staff role, a technician included. It sends the file

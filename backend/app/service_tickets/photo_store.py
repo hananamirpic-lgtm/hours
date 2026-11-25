@@ -135,6 +135,15 @@ def new_logo_key() -> str:
     return f"{LOGO_KEY_PREFIX}{uuid.uuid4().hex}.png"
 
 
+def is_logo_key(key: object) -> bool:
+    """True only for a key of the logo shape: `service-tickets/branding/<32 lowercase hex>.png`.
+
+    A ticket photo key is a valid key of the store but not a logo key. The anonymous logo route calls this
+    before `get`, so a branding row that points at anything else is never read (R28.8).
+    """
+    return isinstance(key, str) and _LOGO_KEY_SHAPE.fullmatch(key) is not None
+
+
 def check_key(key: object) -> str:
     """Return `key` if it is a safe key of this store, else raise `ValueError`.
 

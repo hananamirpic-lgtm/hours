@@ -1388,6 +1388,42 @@ def test_customer_sign_in_ignores_any_token_sent_with_it(world: World, state: st
     assert decode_customer_token(response.json()["access_token"]).customer_id == OWNER.id
 
 
+# =========================================================================== anonymous branding (R28.8)
+
+#: The two routes anonymous callers may use besides sign-in. Anything else with no token is 401.
+PUBLIC_BRANDING = ("/public/branding", "/public/branding/logo")
+
+
+@pytest.mark.parametrize("state", list(REFERENCE))
+@pytest.mark.parametrize("path", PUBLIC_BRANDING)
+def test_the_public_branding_reads_ignore_any_token_and_answer_the_same(world: World, state: str, path: str):
+    """R28.8: no token is needed, and a token of any state (valid, expired, forged, revoked, staff of any
+    role) changes nothing: the answer is the one an anonymous caller gets."""
+    anonymous = world.request("GET", path)
+    with_token = world.request("GET", path, world.headers(state))
+
+    assert anonymous.status_code == 200, _outcome(anonymous)
+    assert (with_token.status_code, with_token.content, dict(with_token.headers)) == (
+        anonymous.status_code,
+        anonymous.content,
+        dict(anonymous.headers),
+    )
+
+
+def test_the_public_branding_reads_return_only_the_name_and_the_logo_and_change_nothing(world: World):
+    before = world.snapshot()
+
+    branding = world.request("GET", "/public/branding")
+    logo = world.request("GET", "/public/branding/logo")
+
+    assert branding.json() == {"company_name": "Acme", "has_logo": True}
+    assert logo.headers["content-type"] == "image/png"
+    assert logo.content.startswith(b"\x89PNG\r\n\x1a\n")
+    _assert_no_ticket_data(branding)
+    assert world.snapshot() == before  # nothing was written, and no ticket number was taken
+    assert world.numbers.calls == 0
+
+
 # =========================================================================== R14.5
 
 

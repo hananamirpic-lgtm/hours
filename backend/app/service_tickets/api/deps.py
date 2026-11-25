@@ -132,6 +132,15 @@ def signin_address_limit(request: Request, config: ServiceConfigDep, clock: Cloc
     limits.check_signin_address(request, config, clock())
 
 
+def public_address_limit(request: Request, config: ServiceConfigDep, clock: ClockDep) -> None:
+    """Route dependency of the anonymous branding reads: their own per-address window (R28.8).
+
+    These routes read no token and no principal, so this is the only guard they have besides the flag. See
+    `limits.check_public_address`.
+    """
+    limits.check_public_address(request, config, clock())
+
+
 def _unauthorized(code: str) -> HTTPException:
     return service_error(HTTPStatus.UNAUTHORIZED, code, headers={"WWW-Authenticate": "Bearer"})
 

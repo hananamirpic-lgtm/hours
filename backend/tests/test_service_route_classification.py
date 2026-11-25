@@ -105,6 +105,10 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("POST", "/tickets/{ticket_number}/cancel", CUSTOMER),
     E("GET", "/tickets/{ticket_number}/photo", SHARED_PHOTO),
     E("GET", "/branding/logo", SHARED_PHOTO),  # the company logo: any customer or ticket staff (R28.5)
+    # --- anonymous: the company name and logo for the sign-in screen (R28.8). The only unauthenticated
+    # routes besides customer sign-in; ANONYMOUS_ROUTES below pins that.
+    E("GET", "/public/branding", UNAUTHENTICATED),
+    E("GET", "/public/branding/logo", UNAUTHENTICATED),
     # --- staff: dashboard, tickets, history
     E("GET", "/staff/dashboard", TICKET_STAFF),
     E("GET", "/staff/tickets", TICKET_STAFF),
@@ -303,6 +307,27 @@ def test_no_ticket_route_is_left_without_a_decision(flag_on_app):
     found, _ = classify_app(flag_on_app)
 
     assert [key for key, klass in found.items() if klass is None] == []
+
+
+#: The routes that need no token at all: customer sign-in and the two public branding reads (R28.8).
+#: A route added here is an anonymous exposure: it needs a security decision, not just a table entry.
+ANONYMOUS_ROUTES = frozenset(
+    {
+        ("POST", "/auth/sign-in"),
+        ("GET", "/public/branding"),
+        ("GET", "/public/branding/logo"),
+    }
+)
+
+
+def test_the_only_anonymous_routes_are_sign_in_and_the_two_public_branding_reads(flag_on_app):
+    """R28.8: no other route may be unauthenticated, in the application and in the table."""
+    found, _ = classify_app(flag_on_app)
+
+    assert {key for key, klass in found.items() if klass == UNAUTHENTICATED} == ANONYMOUS_ROUTES
+    assert {(e.method, e.path) for e in ENDPOINT_TABLE if e.klass == UNAUTHENTICATED} == ANONYMOUS_ROUTES
+    # Both public routes are reads, and they live under their own prefix.
+    assert all(method == "GET" for method, path in ANONYMOUS_ROUTES if path.startswith("/public/"))
 
 
 def test_the_table_names_each_route_once_and_only_known_classes():

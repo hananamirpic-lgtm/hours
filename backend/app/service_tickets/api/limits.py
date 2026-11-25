@@ -21,6 +21,10 @@ The three limits and where each one sits in the check order
    slot is reserved before the form is read and given back with `release_submit_slot` on every outcome
    but a created ticket.
 
+A fourth window belongs to no customer: `check_public_address` (run by `deps.public_address_limit`) counts the
+two anonymous branding reads of task 30.16 per client address, in a bucket of its own. It is the only check
+those routes have besides the feature flag.
+
 An answer of 429 `rate_limited` is built by `rate_limited` and carries `Retry-After` in whole seconds.
 It never says which account, phone or limit group was involved.
 
@@ -87,6 +91,32 @@ def check_signin_address(request: Request, config: ServiceConfig, now_ms: int) -
         rate_limit.signin_key(address),
         config.signin_rate_max,
         config.signin_rate_window_seconds * 1000,
+        now_ms,
+    )
+    if not result.allowed:
+        raise rate_limited(result.retry_after)
+
+
+# --------------------------------------------------------------------------- public branding, per address
+
+
+def check_public_address(request: Request, config: ServiceConfig, now_ms: int) -> None:
+    """Take one slot of the caller's public-branding window; raise 429 `rate_limited` when it is full (R28.8).
+
+    The two anonymous branding reads share one per-address window of their own (`svc:rl:public:`), so a
+    page that loads both uses two slots and a flood of these reads never uses up the sign-in window. The
+    limit is the per-customer request limit of the deployment (120 per 60 seconds by default), which is
+    generous for a page load. The address is taken as for sign-in (`client_address`); with no usable
+    address the limit is skipped, and a Redis failure allows the request, as for sign-in (R22.5).
+    """
+    peer = request.client.host if request.client else None
+    address = client_address(peer, request.headers, config)
+    if address is None:
+        return
+    result = rate_limit.take(
+        rate_limit.public_key(address),
+        config.request_rate_max,
+        config.request_rate_window_seconds * 1000,
         now_ms,
     )
     if not result.allowed:
