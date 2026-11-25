@@ -25,6 +25,8 @@ import type {
   CustomerListQuery,
   FormSettings,
   HistoryEntryBody,
+  ReportExportLang,
+  ReportExportQuery,
   ReportQuery,
   StaffCategory,
   StaffCustomer,
@@ -152,6 +154,22 @@ export function reportQuery(query: ReportQuery = {}): string {
     ['date_to', query.dateTo],
     ['city', query.city],
     ['category_id', query.categoryId],
+    ['part_filter', query.partFilter],
+  ]);
+}
+
+/**
+ * `GET /staff/reports/export` query: the report's filters (no page) and the language. The same names, in
+ * the same order, as `reportQuery`, so the file holds exactly what the screen shows.
+ */
+export function exportReportQuery(query: ReportExportQuery = {}, lang: ReportExportLang = 'he'): string {
+  return buildQuery([
+    ['date_from', query.dateFrom],
+    ['date_to', query.dateTo],
+    ['city', query.city],
+    ['category_id', query.categoryId],
+    ['part_filter', query.partFilter],
+    ['lang', lang],
   ]);
 }
 
@@ -327,6 +345,27 @@ export function resetCustomerPassword(customerId: string): Promise<void> {
 
 export function getReport(query: ReportQuery = {}, signal?: AbortSignal): Promise<StaffReport> {
   return staffJson<StaffReport>(`/reports${reportQuery(query)}`, signal ? { signal } : {});
+}
+
+/**
+ * `GET /staff/reports/export`: the `.xlsx` workbook of every ticket the filters match (R31.1). The staff
+ * bearer token is sent by `apiFetchBlob`. The result is the file as a Blob; save it through a temporary
+ * `URL.createObjectURL` link and revoke the URL after the click. A refusal is a `StaffApiError`: 422
+ * `export_too_large` (more than 10,000 tickets), `invalid_filter`, `invalid_date_range` and the usual
+ * 401 and 403 codes; a request that got no answer is `network`.
+ */
+export async function exportReport(
+  query: ReportExportQuery = {},
+  lang: ReportExportLang = 'he',
+  signal?: AbortSignal,
+): Promise<Blob> {
+  try {
+    const path = `${STAFF_PREFIX}/reports/export${exportReportQuery(query, lang)}`;
+    return await apiFetchBlob(path, signal ? { signal } : {});
+  } catch (caught) {
+    if (caught instanceof ApiError) throw new StaffApiError(caught.code ?? GENERIC_CODE);
+    throw new StaffApiError(signal?.aborted ? ABORTED_CODE : NETWORK_CODE);
+  }
 }
 
 // --- configuration (admin and operations_admin; a technician gets 403 `insufficient_role`) ---------

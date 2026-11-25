@@ -66,6 +66,7 @@ from app.service_tickets.error_codes import (
     CODE_DUPLICATE_CATEGORY,
     CODE_DUPLICATE_PART,
     CODE_DUPLICATE_SETTLEMENT,
+    CODE_EXPORT_TOO_LARGE,
     CODE_HISTORY_ENTRY_NOT_FOUND,
     CODE_INVALID_APARTMENT,
     CODE_INVALID_ASSIGNED_TECHNICIAN_NAME,
@@ -106,6 +107,7 @@ from app.service_tickets.grammars import (
     InvalidFilter,
     parse_date_range,
     parse_page,
+    parse_part_filter,
     parse_status_filter,
     parse_ticket_number_path,
     parse_ticket_search,
@@ -154,6 +156,8 @@ from app.service_tickets.schemas import (
     PartRef,
     PartUpdateRequest,
     ReportResponse,
+    ReportTicketPage,
+    ReportTicketRow,
     ServiceDashboardResponse,
     SettingsResponse,
     SettingsUpdateRequest,
@@ -167,7 +171,7 @@ from app.service_tickets.services import config_admin as config_service
 from app.service_tickets.services import customers as customer_service
 from app.service_tickets.services import dashboard as dashboard_service
 from app.service_tickets.services import history as history_service
-from app.service_tickets.services import lifecycle, ticket_queries
+from app.service_tickets.services import lifecycle, report_export, ticket_queries
 from app.service_tickets.services import reports as reports_service
 from app.service_tickets.services.config_admin import (
     ConfigError,
@@ -182,7 +186,8 @@ from app.service_tickets.services.customers import (
 from app.service_tickets.services.history import HistoryValidationError
 from app.service_tickets.services.lifecycle import LifecycleError, UnexpectedResolution
 from app.service_tickets.services.numbering import Allocator
-from app.service_tickets.services.reports import ReportTicketRow
+from app.service_tickets.services.report_export import ExportTooLarge
+from app.service_tickets.services.reports import ReportTicketRow as ReportRowView
 from app.service_tickets.services.resolution import Resolution, ResolutionValidationError
 from app.service_tickets.services.ticket_queries import (
     StaffTicketDetailView,
@@ -237,6 +242,7 @@ _ERROR_STATUS: dict[str, HTTPStatus] = {
     CODE_INVALID_TICKET_NUMBER: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_DATE_RANGE: HTTPStatus.UNPROCESSABLE_ENTITY,
     CODE_INVALID_FILTER: HTTPStatus.UNPROCESSABLE_ENTITY,
+    CODE_EXPORT_TOO_LARGE: HTTPStatus.UNPROCESSABLE_ENTITY,  # R31.4
     # configuration
     CODE_CATEGORY_NOT_FOUND: HTTPStatus.NOT_FOUND,
     CODE_DUPLICATE_CATEGORY: HTTPStatus.CONFLICT,
@@ -284,7 +290,14 @@ def _domain_errors(session: Session) -> Iterator[None]:
     """Answer a service or parser refusal with the package's envelope, after a rollback."""
     try:
         yield
-    except (LifecycleError, GrammarError, HistoryValidationError, CustomerError, ConfigError) as error:
+    except (
+        LifecycleError,
+        GrammarError,
+        HistoryValidationError,
+        CustomerError,
+        ConfigError,
+        ExportTooLarge,
+    ) as error:
         session.rollback()
         mapped = _http_error(error)
         if mapped is error:
@@ -816,8 +829,9 @@ def reset_customer_password(customer_id: str, session: ServiceSession) -> Respon
     return Response(status_code=HTTPStatus.NO_CONTENT)
 
 
-def _report_row_out(row: ReportTicketRow) -> StaffTicketRow:
-    return StaffTicketRow(
+def _report_row_out(row: ReportRowView) -> ReportTicketRow:
+    """A report table row: the staff list row plus the replaced parts (R29.7)."""
+    return ReportTicketRow(
         ticket_number=row.ticket_number,
         created_at=row.created_at,
         customer_name=row.customer_name,
@@ -828,6 +842,7 @@ def _report_row_out(row: ReportTicketRow) -> StaffTicketRow:
         assigned_technician_name=row.assigned_technician_name,
         urgent=row.urgent,
         locality=_locality_out(row.locality),
+        parts=[PartRef(id=part.id, name_he=part.name_he, name_en=part.name_en) for part in row.parts],
     )
 
 
@@ -840,8 +855,12 @@ def get_report(
     city: Annotated[str | None, Query()] = None,
     category_id: Annotated[str | None, Query()] = None,
     locality_id: Annotated[str | None, Query()] = None,
+    part_filter: Annotated[str | None, Query()] = None,
 ) -> ReportResponse:
-    """Counts per status and per category, and a page (25) of the matching tickets (R18.1 to R18.9)."""
+    """Counts per status and per category, and a page (25) of the matching tickets (R18.1 to R18.9).
+
+    `part_filter` (R29.8) is `any` (default), `yes`, `no` or a part id; the counts follow the filtered set.
+    """
     with _domain_errors(session):
         page_number = parse_page(page)
         start, end = parse_date_range(date_from, date_to)
@@ -852,6 +871,7 @@ def get_report(
             city=city,
             category_id=_category_filter(category_id),
             locality_id=_locality_filter(locality_id),
+            part_filter=parse_part_filter(part_filter),
             page=page_number,
         )
     return ReportResponse(
@@ -867,12 +887,57 @@ def get_report(
             )
             for item in report.by_category
         ],
-        tickets=StaffTicketPage(
+        tickets=ReportTicketPage(
             items=[_report_row_out(row) for row in report.tickets],
             page=report.page,
             page_size=report.page_size,
             total=report.total,
         ),
+    )
+
+
+@router.get(
+    "/reports/export",
+    response_class=Response,
+    responses={200: {"content": {report_export.XLSX_CONTENT_TYPE: {}}, "description": "The .xlsx workbook"}},
+)
+def export_report(
+    session: ServiceSession,
+    date_from: Annotated[str | None, Query()] = None,
+    date_to: Annotated[str | None, Query()] = None,
+    city: Annotated[str | None, Query()] = None,
+    category_id: Annotated[str | None, Query()] = None,
+    locality_id: Annotated[str | None, Query()] = None,
+    part_filter: Annotated[str | None, Query()] = None,
+    lang: Annotated[str | None, Query()] = None,
+) -> Response:
+    """The Excel workbook of every ticket the report filters match, not only a page (R31.1 to R31.5).
+
+    The filters are the report's, parsed and checked by the same code, so an invalid one is answered the
+    same way (422 `invalid_filter`, `invalid_date_range`). Like the report, an unknown query parameter is
+    ignored. More than 10,000 matches is 422 `export_too_large` and no file. The file name holds only the
+    Asia/Jerusalem date. `nosniff` comes from `SecurityHeadersMiddleware`, as for the photo.
+    """
+    with _domain_errors(session):
+        start, end = parse_date_range(date_from, date_to)
+        language = report_export.parse_lang(lang)
+        conditions = reports_service.matching_conditions(
+            session,
+            date_from=start,
+            date_to=end,
+            city=city,
+            category_id=_category_filter(category_id),
+            locality_id=_locality_filter(locality_id),
+            part_filter=parse_part_filter(part_filter),
+        )
+        content = report_export.build_workbook(session, conditions, language)
+    return Response(
+        content=content,
+        media_type=report_export.XLSX_CONTENT_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{report_export.export_filename()}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

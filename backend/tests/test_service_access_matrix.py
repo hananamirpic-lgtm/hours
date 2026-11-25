@@ -493,6 +493,7 @@ PROBES: tuple[Probe, ...] = (
     Probe("POST", "/staff/customers/{customer_id}/reactivate", TICKET_STAFF, 200),
     Probe("POST", "/staff/customers/{customer_id}/reset-password", TICKET_STAFF, 204),
     Probe("GET", "/staff/reports", TICKET_STAFF, 200),
+    Probe("GET", "/staff/reports/export", TICKET_STAFF, 200),
     Probe("GET", "/staff/categories", TICKET_STAFF, 200),
     # --- configuration staff
     Probe("POST", "/staff/categories", CONFIG_STAFF, 201, json={"name_he": "קירות", "name_en": "Walls"}),

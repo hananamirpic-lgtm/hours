@@ -8,6 +8,8 @@ import {
   createCustomer,
   customerListQuery,
   deleteCategory,
+  exportReport,
+  exportReportQuery,
   getDashboard,
   getStaffFormConfig,
   isErrorBody,
@@ -68,6 +70,34 @@ describe('query builders', () => {
   it('build the report query', () => {
     const params = new URLSearchParams(reportQuery({ dateFrom: '2025-02-01', city: 'Eilat', categoryId: 'x', page: 3 }));
     expect([...params.keys()].sort()).toEqual(['category_id', 'city', 'date_from', 'page']);
+  });
+
+  it('send the part filter of the report as part_filter, and nothing when it is unset or blank', () => {
+    expect(reportQuery({ partFilter: 'yes' })).toBe('?part_filter=yes');
+    expect(reportQuery({ partFilter: 'no', page: 2 })).toBe('?page=2&part_filter=no');
+    expect(reportQuery({ partFilter: '5f0c3d2e-8b1a-4c6e-9a7d-2e4f6a8b0c1d' })).toBe(
+      '?part_filter=5f0c3d2e-8b1a-4c6e-9a7d-2e4f6a8b0c1d',
+    );
+    expect(reportQuery({ partFilter: '' })).toBe('');
+  });
+
+  it('build the export query from the report filters, without a page, and with the language', () => {
+    const query = exportReportQuery(
+      { dateFrom: '2025-02-01', dateTo: '2025-02-28', city: 'Eilat', categoryId: 'c-1', partFilter: 'any' },
+      'en',
+    );
+    expect(query).toBe('?date_from=2025-02-01&date_to=2025-02-28&city=Eilat&category_id=c-1&part_filter=any&lang=en');
+    expect(exportReportQuery()).toBe('?lang=he');
+    expect(exportReportQuery({}, 'he')).toBe('?lang=he');
+    // A page in the report query object is not part of the export type, and never reaches the URL.
+    const withPage = { page: 4, city: 'Haifa' } as Parameters<typeof exportReportQuery>[0];
+    expect(new URLSearchParams(exportReportQuery(withPage, 'he')).has('page')).toBe(false);
+  });
+
+  it('encode filter text so that it cannot add parameters', () => {
+    const params = new URLSearchParams(exportReportQuery({ city: 'a&lang=fr#x' }, 'he'));
+    expect(params.get('city')).toBe('a&lang=fr#x');
+    expect(params.getAll('lang')).toEqual(['he']);
   });
 });
 
@@ -131,6 +161,59 @@ function lastCall(fetchMock: ReturnType<typeof stubFetch>): { url: string; init:
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('the report export', () => {
+  const workbook = new Uint8Array([0x50, 0x4b, 3, 4]);
+
+  it('GETs the export route with the filters and the language and resolves to the file as a Blob', async () => {
+    const fetchMock = stubFetch(
+      new Response(workbook, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      }),
+    );
+
+    const blob = await exportReport({ city: 'Haifa', partFilter: 'no' }, 'en');
+
+    const { url, init } = lastCall(fetchMock);
+    expect(url).toBe('/api/service/staff/reports/export?city=Haifa&part_filter=no&lang=en');
+    expect(init.method ?? 'GET').toBe('GET');
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBe(workbook.byteLength);
+  });
+
+  it('defaults to Hebrew and an empty filter set', async () => {
+    const fetchMock = stubFetch(new Response(workbook, { status: 200 }));
+
+    await exportReport();
+
+    expect(lastCall(fetchMock).url).toBe('/api/service/staff/reports/export?lang=he');
+  });
+
+  it('turns a coded refusal into a StaffApiError with that code', async () => {
+    stubFetch(answer(422, { detail: { error: { code: 'export_too_large' } } }));
+
+    await expect(exportReport({}, 'he')).rejects.toMatchObject({ name: 'StaffApiError', code: 'export_too_large' });
+  });
+
+  it('gives the code generic for an error answer without a readable body', async () => {
+    stubFetch(new Response('Bad Gateway', { status: 502 }));
+
+    await expect(exportReport()).rejects.toMatchObject({ code: 'generic' });
+  });
+
+  it('gives the code network when no answer arrives and aborted when the caller cancelled', async () => {
+    stubFetch(new TypeError('Failed to fetch'));
+    await expect(exportReport()).rejects.toMatchObject({ code: 'network' });
+
+    const controller = new AbortController();
+    controller.abort();
+    stubFetch(new DOMException('aborted', 'AbortError'));
+    await expect(exportReport({}, 'he', controller.signal)).rejects.toMatchObject({ code: 'aborted' });
+  });
 });
 
 describe('staff requests', () => {

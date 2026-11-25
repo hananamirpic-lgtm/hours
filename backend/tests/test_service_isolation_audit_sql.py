@@ -1406,6 +1406,48 @@ def _explicit_fixtures() -> dict[Key, list[Call]]:
             ),
             "invalid_date_range",
         ),
+        Call(
+            "part filter",
+            200,
+            lambda w: as_staff(w, w.admin, "/staff/reports", params={"part_filter": "yes"}),
+        ),
+        Call(
+            "unknown part filter",
+            422,
+            lambda w: as_staff(w, w.tech, "/staff/reports", params={"part_filter": "maybe"}),
+            "invalid_filter",
+        ),
+    )
+    add(
+        "GET",
+        "/staff/reports/export",
+        Call(
+            "export",
+            200,
+            lambda w: as_staff(
+                w,
+                w.admin,
+                "/staff/reports/export",
+                params={"date_from": "2025-01-01", "date_to": "2025-12-31", "city": "Haifa", "lang": "en"},
+            ),
+        ),
+        Call(
+            "unknown language",
+            422,
+            lambda w: as_staff(w, w.tech, "/staff/reports/export", params={"lang": "fr"}),
+            "invalid_filter",
+        ),
+        Call(
+            "inverted date range",
+            422,
+            lambda w: as_staff(
+                w,
+                w.tech,
+                "/staff/reports/export",
+                params={"date_from": "2025-03-10", "date_to": "2025-03-09"},
+            ),
+            "invalid_date_range",
+        ),
     )
 
     # ------------------------------------------------------------------ staff: configuration

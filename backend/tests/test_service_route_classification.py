@@ -123,6 +123,7 @@ ENDPOINT_TABLE: tuple[Endpoint, ...] = (
     E("POST", "/staff/customers/{customer_id}/reactivate", TICKET_STAFF),
     E("POST", "/staff/customers/{customer_id}/reset-password", TICKET_STAFF),
     E("GET", "/staff/reports", TICKET_STAFF),
+    E("GET", "/staff/reports/export", TICKET_STAFF),
     # --- staff: configuration. The category list is open to all ticket staff (R19.9); everything else
     # here, reads included, is configuration staff only (R1.10, R19.16).
     E("GET", "/staff/categories", TICKET_STAFF),

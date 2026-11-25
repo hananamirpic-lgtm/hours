@@ -184,6 +184,33 @@ def parse_status_filter(raw: str | Iterable[str] | None) -> tuple[str, ...]:
     return tuple(found)
 
 
+#: The three words of the "part replaced" report filter (R29.8). The fourth form is a part id.
+PART_FILTER_ANY = "any"
+PART_FILTER_YES = "yes"
+PART_FILTER_NO = "no"
+
+
+def parse_part_filter(raw: str | None) -> str | uuid.UUID:
+    """The "part replaced" filter of the report and the export (R29.8).
+
+    An absent or blank value is `any` (no filter). After trimming, `any`, `yes` and `no` are matched
+    exactly (lower case, like the status names); anything else must be a canonical UUID and is returned
+    as one. Every other value, a wrongly cased word included, raises `InvalidFilter`. Whether a UUID names
+    a part is the report service's check.
+    """
+    if raw is None:
+        return PART_FILTER_ANY
+    text = raw.strip()
+    if not text:
+        return PART_FILTER_ANY
+    if text in (PART_FILTER_ANY, PART_FILTER_YES, PART_FILTER_NO):
+        return text
+    part_id = parse_uuid_path(text)
+    if part_id is None:
+        raise InvalidFilter
+    return part_id
+
+
 def parse_ticket_number_path(raw: str) -> int | None:
     """The ticket number in a path segment, or `None` when it is not one.
 

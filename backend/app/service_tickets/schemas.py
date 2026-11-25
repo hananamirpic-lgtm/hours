@@ -597,6 +597,26 @@ class CategoryCount(_Response):
     count: int
 
 
+class ReportTicketRow(StaffTicketRow):
+    """A row of the report table (R29.7): the staff list row plus the names of the replaced parts.
+
+    `parts` exists on the report row only; `GET /staff/tickets` keeps `StaffTicketRow` unchanged.
+    """
+
+    #: The parts recorded by the last resolution, ordered by part sequence, with their current names,
+    #: active or not. Empty when there are none. Staff responses only (R29.9).
+    parts: list[PartRef] = Field(default_factory=list)
+
+
+class ReportTicketPage(_Response):
+    """The ticket table of `GET /staff/reports`: 25 per page."""
+
+    items: list[ReportTicketRow]
+    page: int
+    page_size: int
+    total: int
+
+
 class ReportResponse(_Response):
     """`GET /staff/reports` (R18). The per-status and per-category counts each sum to `total` (R18.8)."""
 
@@ -604,4 +624,4 @@ class ReportResponse(_Response):
     open: int
     by_status: StatusCounts
     by_category: list[CategoryCount]
-    tickets: StaffTicketPage
+    tickets: ReportTicketPage

@@ -133,13 +133,26 @@ export interface StaffCategoryCount {
   readonly count: number;
 }
 
+/**
+ * `ReportTicketRow`: the staff list row plus the parts replaced on the ticket (R29.7), ordered by part
+ * sequence with their current names. Optional here so that fixtures and older answers without it still type.
+ */
+export interface StaffReportRow extends StaffTicketRow {
+  readonly parts?: readonly StaffReplacedPart[];
+}
+
+/** `ReportTicketPage`: the report table, 25 per page. */
+export interface StaffReportTicketPage extends Omit<StaffTicketPage, 'items'> {
+  readonly items: readonly StaffReportRow[];
+}
+
 /** `ReportResponse`. */
 export interface StaffReport {
   readonly total: number;
   readonly open: number;
   readonly by_status: StaffStatusCounts;
   readonly by_category: readonly StaffCategoryCount[];
-  readonly tickets: StaffTicketPage;
+  readonly tickets: StaffReportTicketPage;
 }
 
 /** The labels of the seven form fields as `PUT /staff/labels` returns them. */
@@ -208,6 +221,12 @@ export interface CustomerListQuery {
   readonly active?: boolean;
 }
 
+/**
+ * The "part replaced" report filter (R29.8): `any` (no filter), `yes`, `no`, or the id of one part. Any
+ * other value is refused by the API with 422 `invalid_filter`.
+ */
+export type ReportPartFilter = string;
+
 /** The query of `GET /staff/reports`. */
 export interface ReportQuery {
   readonly page?: number;
@@ -215,4 +234,12 @@ export interface ReportQuery {
   readonly dateTo?: string;
   readonly city?: string;
   readonly categoryId?: string;
+  /** Absent or blank is `any`. */
+  readonly partFilter?: ReportPartFilter;
 }
+
+/** The language of the exported workbook (R31.2); the API default is `he`. */
+export type ReportExportLang = 'he' | 'en';
+
+/** The filters of `GET /staff/reports/export`: those of the report, without the page. */
+export type ReportExportQuery = Omit<ReportQuery, 'page'>;

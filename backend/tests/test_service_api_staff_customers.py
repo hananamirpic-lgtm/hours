@@ -563,8 +563,9 @@ def test_report_without_filters_covers_every_ticket(client: TestClient, headers,
     assert (page["page"], page["page_size"], page["total"], len(page["items"])) == (1, 25, 5, 5)
     assert set(page["items"][0]) == {
         "ticket_number", "created_at", "customer_name", "city", "apartment",
-        "category", "status", "assigned_technician_name", "urgent", "locality",
+        "category", "status", "assigned_technician_name", "urgent", "locality", "parts",
     }  # fmt: skip
+    assert page["items"][0]["parts"] == []
     assert "phone" not in page["items"][0] and "description" not in page["items"][0]
 
 

@@ -18,6 +18,13 @@ Filters (all optional, combined with AND; an absent filter restricts nothing, R1
   text that is not a UUID.
 * `locality_id`: one settlement (R30.7), combined with the city filter by AND. A settlement that does not
   exist raises `InvalidFilter`; the router raises it itself for text that is not a UUID.
+* `part_filter`: `any` (the default, no filter), `yes` (at least one recorded replaced part), `no` (none)
+  or a part id (that part is recorded, active or not), R29.8. The router parses the text with
+  `grammars.parse_part_filter`; an id that names no part raises `InvalidFilter`. The three real filters
+  are `EXISTS` subqueries on `svc_ticket_parts`, so a ticket with several parts is never counted twice.
+
+`matching_conditions` builds the one list of conditions that the counts, the table and the Excel export
+(`report_export`) all use, after checking the filters, so the three can never disagree about the set.
 
 Counts. One statement, `SELECT ... GROUP BY status UNION ALL SELECT ... GROUP BY category`, gives both
 sets from one snapshot, so each set sums to the same total (R18.8). The total is the sum of the status
@@ -27,7 +34,8 @@ inactive, oldest first (`seq`).
 
 The ticket table is a second statement: 25 rows a page, newest creation time first, ties by ticket
 number (R18.7). It is skipped when the requested page starts past the last row, so a page beyond the end
-costs no query and answers an empty list.
+costs no query and answers an empty list. The replaced parts of the page's tickets come from one more
+statement (`load_parts`), never one per ticket.
 
 The module only reads, never commits, and raises no HTTP errors. A failure is an exception carrying the
 API code (`InvalidDateRange`, `InvalidFilter`, `InvalidPage`, from `app.service_tickets.grammars`).
@@ -45,6 +53,7 @@ from sqlalchemy import (
     Text,
     Uuid,
     cast,
+    exists,
     func,
     literal_column,
     null,
@@ -54,6 +63,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from app.service_tickets.grammars import (
+    PART_FILTER_ANY,
+    PART_FILTER_NO,
+    PART_FILTER_YES,
     STAFF_PAGE_SIZE,
     STATUS_VALUES,
     InvalidDateRange,
@@ -61,7 +73,7 @@ from app.service_tickets.grammars import (
     InvalidPage,
     fold_key,
 )
-from app.service_tickets.models import Category, Customer, Locality, Ticket
+from app.service_tickets.models import Category, Customer, Locality, Part, Ticket, TicketPart
 
 _STATUS_KIND = "status"
 _CATEGORY_KIND = "category"
@@ -80,6 +92,15 @@ class ReportCategory:
 @dataclass(frozen=True, slots=True)
 class ReportLocality:
     """The settlement of a report row: id and the two names, active or not."""
+
+    id: uuid.UUID
+    name_he: str
+    name_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReportPart:
+    """A replaced part of a report row: id and the current names, active or not (R29.7)."""
 
     id: uuid.UUID
     name_he: str
@@ -107,6 +128,8 @@ class ReportTicketRow:
     urgent: bool
     #: The settlement with its current names (R30.5), or `None` for a ticket with a text city.
     locality: ReportLocality | None = None
+    #: The recorded replaced parts, ordered by part sequence (R29.7); empty when there are none.
+    parts: tuple[ReportPart, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +151,7 @@ def _conditions(
     city: str | None,
     category_id: uuid.UUID | None,
     locality_id: uuid.UUID | None = None,
+    part_filter: str | uuid.UUID = PART_FILTER_ANY,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = []
     if date_from is not None:
@@ -141,7 +165,56 @@ def _conditions(
         conditions.append(Ticket.category_id == category_id)
     if locality_id is not None:
         conditions.append(Ticket.locality_id == locality_id)
+    if part_filter == PART_FILTER_YES:
+        conditions.append(exists().where(TicketPart.ticket_id == Ticket.id).correlate(Ticket))
+    elif part_filter == PART_FILTER_NO:
+        conditions.append(~exists().where(TicketPart.ticket_id == Ticket.id).correlate(Ticket))
+    elif isinstance(part_filter, uuid.UUID):
+        has_part = exists().where(TicketPart.ticket_id == Ticket.id, TicketPart.part_id == part_filter)
+        conditions.append(has_part.correlate(Ticket))
     return conditions
+
+
+def matching_conditions(
+    session: Session,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    city: str | None = None,
+    category_id: uuid.UUID | None = None,
+    locality_id: uuid.UUID | None = None,
+    part_filter: str | uuid.UUID = PART_FILTER_ANY,
+) -> list[ColumnElement[bool]]:
+    """The conditions of the report filters, after checking them: the one builder behind the counts,
+    the table and the export. Raises `InvalidDateRange` or `InvalidFilter`; reads at most the rows named
+    by the id filters."""
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise InvalidDateRange
+    if category_id is not None and session.get(Category, category_id) is None:
+        raise InvalidFilter
+    if locality_id is not None and session.get(Locality, locality_id) is None:
+        raise InvalidFilter
+    if isinstance(part_filter, uuid.UUID):
+        if session.get(Part, part_filter) is None:
+            raise InvalidFilter
+    elif part_filter not in (PART_FILTER_ANY, PART_FILTER_YES, PART_FILTER_NO):
+        raise InvalidFilter
+    return _conditions(date_from, date_to, city, category_id, locality_id, part_filter)
+
+
+def load_parts(session: Session, *where: ColumnElement[bool]) -> dict[uuid.UUID, tuple[ReportPart, ...]]:
+    """The replaced parts of the tickets selected by `where` (a condition on `TicketPart`), in one
+    statement: ticket id to its parts ordered by part sequence. A ticket without parts has no key."""
+    query = (
+        select(TicketPart.ticket_id, Part.id, Part.name_he, Part.name_en)
+        .join(Part, Part.id == TicketPart.part_id)
+        .where(*where)
+        .order_by(Part.seq)
+    )
+    grouped: dict[uuid.UUID, list[ReportPart]] = {}
+    for ticket_id, part_id, name_he, name_en in session.execute(query):
+        grouped.setdefault(ticket_id, []).append(ReportPart(part_id, name_he, name_en))
+    return {ticket_id: tuple(parts) for ticket_id, parts in grouped.items()}
 
 
 def get_report(
@@ -152,6 +225,7 @@ def get_report(
     city: str | None = None,
     category_id: uuid.UUID | None = None,
     locality_id: uuid.UUID | None = None,
+    part_filter: str | uuid.UUID = PART_FILTER_ANY,
     page: int = 1,
 ) -> Report:
     """The report for the filters, with page `page` (1-based) of the ticket table. Never commits."""
@@ -159,12 +233,16 @@ def get_report(
         raise InvalidDateRange
     if isinstance(page, bool) or not isinstance(page, int) or page < 1:
         raise InvalidPage
-    if category_id is not None and session.get(Category, category_id) is None:
-        raise InvalidFilter
-    if locality_id is not None and session.get(Locality, locality_id) is None:
-        raise InvalidFilter
 
-    conditions = _conditions(date_from, date_to, city, category_id, locality_id)
+    conditions = matching_conditions(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        city=city,
+        category_id=category_id,
+        locality_id=locality_id,
+        part_filter=part_filter,
+    )
 
     by_status_query = (
         select(
@@ -224,7 +302,9 @@ def get_report(
             .limit(STAFF_PAGE_SIZE)
             .offset(offset)
         )
-        for ticket, customer_name, category, locality in session.execute(page_query):
+        page_rows = session.execute(page_query).all()
+        parts = load_parts(session, TicketPart.ticket_id.in_([row[0].id for row in page_rows]))
+        for ticket, customer_name, category, locality in page_rows:
             rows.append(
                 ReportTicketRow(
                     ticket_number=ticket.ticket_number,
@@ -243,6 +323,7 @@ def get_report(
                         if locality is None
                         else ReportLocality(locality.id, locality.name_he, locality.name_en)
                     ),
+                    parts=parts.get(ticket.id, ()),
                 )
             )
 

@@ -483,15 +483,18 @@ def test_report_has_all_four_statuses_and_the_staff_ticket_page() -> None:
         open=1,
         by_status=schemas.StatusCounts(received=0, in_progress=1, closed=0, cancelled=0),
         by_category=[schemas.CategoryCount(category=schemas.CategoryRef(**_category_ref_dict()), count=1)],
-        tickets=schemas.StaffTicketPage(
-            items=[schemas.StaffTicketRow(**_staff_row_values())], page=1, page_size=25, total=1
+        tickets=schemas.ReportTicketPage(
+            items=[schemas.ReportTicketRow(**_staff_row_values())], page=1, page_size=25, total=1
         ),
     )
-    assert report.model_dump(mode="json")["tickets"]["items"][0]["ticket_number"] == 10042
+    row = report.model_dump(mode="json")["tickets"]["items"][0]
+    assert row["ticket_number"] == 10042
+    assert row["parts"] == []  # the report row has the replaced parts; the staff list row does not
+    assert _fields(schemas.ReportTicketRow) == _fields(schemas.StaffTicketRow) | {"parts"}
 
 
 def test_page_envelopes_share_the_same_four_fields() -> None:
-    for name in ("CustomerTicketPage", "StaffTicketPage", "CustomerRecordPage"):
+    for name in ("CustomerTicketPage", "StaffTicketPage", "CustomerRecordPage", "ReportTicketPage"):
         assert _fields(_models()[name]) == {"items", "page", "page_size", "total"}
 
 
@@ -601,6 +604,8 @@ def test_the_module_defines_exactly_these_models() -> None:
         "PartRecord",
         "PartRef",
         "ReportResponse",
+        "ReportTicketPage",
+        "ReportTicketRow",
         "SettingsResponse",
         "StaffTicketDetail",
         "StaffTicketPage",
