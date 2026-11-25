@@ -47,6 +47,23 @@ from auth_support import DEFAULT_PASSWORD
 SIGN_IN_USERNAME = "corpus.signin"
 CODE_SERVICE_UNAVAILABLE = "service_unavailable"
 
+#: Every `svc_` table a database at head holds: seven from migration 0011 and four from 0013.
+SERVICE_TABLES: frozenset[str] = frozenset(
+    {
+        "svc_customers",
+        "svc_categories",
+        "svc_tickets",
+        "svc_history_entries",
+        "svc_settings",
+        "svc_field_labels",
+        "svc_signin_failures",
+        "svc_localities",
+        "svc_parts",
+        "svc_ticket_parts",
+        "svc_branding",
+    }
+)
+
 #: One read per Hours router, plus `/auth/me`. The audit reads are narrowed to the `clients` entity so that
 #: the audit rows written by the sign-in requests (entity `users`) cannot make two passes differ.
 HOURS_READS: tuple[str, ...] = (
@@ -322,8 +339,11 @@ def test_hours_unaffected_when_ticket_tables_are_dropped(world: World) -> None:
             .scalars()
             .all()
         )
-        assert len(names) == 7, names
+        assert set(names) == SERVICE_TABLES, sorted(set(names) ^ SERVICE_TABLES)
         connection.execute(sa.text("DROP TABLE " + ", ".join(sorted(names))))
+        # The identity sequences behind `svc_categories.seq`, `svc_localities.seq`, `svc_parts.seq` and
+        # `svc_signin_failures.id` are owned by their columns and go with the tables above; only the
+        # ticket-number sequence is a free-standing object.
         connection.execute(sa.text("DROP SEQUENCE svc_ticket_number_seq"))
     with world.engine.connect() as connection:
         assert connection.execute(sa.text("SELECT to_regclass('svc_tickets')")).scalar_one() is None
