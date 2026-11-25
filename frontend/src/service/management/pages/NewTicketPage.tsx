@@ -44,6 +44,8 @@ import {
   failureFromError,
   pickerQuery,
   pickerState,
+  settlementSelectOptions,
+  staffSettlementChoice,
   type NewTicketNotice,
 } from '../newTicketModel';
 import { ChosenCustomerView, CustomerPickerView, NEW_TICKET_IDS, NewTicketFormView } from '../newTicketView';
@@ -172,8 +174,13 @@ function NewTicketContainer({ customer, config, onChangeCustomer }: ContainerPro
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // Prefilled once, when the form opens, from the customer (R26.2). Nothing here is reset by a failure.
-  const [values, setValues] = useState<FormValues>(() => initialValues(customer));
+  // While a settlement list is active the City field is a choice from it (R30.2); with none it is free text (R30.3).
+  const choice = staffSettlementChoice(config);
+  const settlements = settlementSelectOptions(choice.localities, language);
+
+  // Prefilled once, when the form opens, from the customer (R26.2); the customer's settlement is preselected
+  // when it is in the active list (R30.6). Nothing here is reset by a failure.
+  const [values, setValues] = useState<FormValues>(() => initialValues(customer, choice));
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoInputKey, setPhotoInputKey] = useState(0);
   const [serverErrors, setServerErrors] = useState<FieldErrors>({});
@@ -238,7 +245,9 @@ function NewTicketContainer({ customer, config, onChangeCustomer }: ContainerPro
     setServerErrors({});
     void (async () => {
       try {
-        const created = await openTicketForCustomer(buildStaffFormData(customer.id, values, photo, config.settings));
+        const created = await openTicketForCustomer(
+          buildStaffFormData(customer.id, values, photo, config.settings, choice.required),
+        );
         queryClient.setQueryData(staffKeys.ticket(created.ticket_number), created);
         // The list, the dashboard and the reports changed; they reload when next shown.
         void queryClient.invalidateQueries({ queryKey: staffKeys.all, refetchType: 'none' });
@@ -270,6 +279,7 @@ function NewTicketContainer({ customer, config, onChangeCustomer }: ContainerPro
         categories={categories}
         labels={labels}
         settings={config.settings}
+        settlements={settlements}
         photo={photo === null ? null : { name: photo.name }}
         photoInputKey={photoInputKey}
         onChange={onChange}

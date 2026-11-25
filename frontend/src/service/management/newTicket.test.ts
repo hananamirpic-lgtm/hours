@@ -33,6 +33,8 @@ import {
   noticeKey,
   pickerQuery,
   pickerState,
+  settlementSelectOptions,
+  staffSettlementChoice,
 } from './newTicketModel';
 import {
   ChosenCustomerView,
@@ -224,6 +226,76 @@ describe('prefill and multipart body', () => {
   it('opens the new ticket detail after the 201', () => {
     expect(createdTicketPath({ ticket_number: 12345 })).toBe('/tickets/list/12345');
     expect(NEW_TICKET_PATH).toBe('/tickets/list/new');
+  });
+});
+
+// --- the settlement choice (R26.1, R30.2, R30.3, R30.6) --------------------------------------------
+
+const HAIFA = { id: 'l-1', name_he: 'חיפה', name_en: 'Haifa' };
+const ACRE = { id: 'l-2', name_he: 'עכו', name_en: 'Acre' };
+const LOCALITIES = [HAIFA, ACRE];
+const ACTIVE = { required: true, localities: LOCALITIES };
+
+describe('settlement choice of the staff form', () => {
+  it('is active only with a non-empty list and settlements_required', () => {
+    expect(staffSettlementChoice({ localities: LOCALITIES, settlements_required: true })).toEqual(ACTIVE);
+    expect(staffSettlementChoice({ localities: [], settlements_required: true })).toEqual({ required: false, localities: [] });
+    expect(staffSettlementChoice({ localities: LOCALITIES, settlements_required: false })).toEqual({ required: false, localities: [] });
+    expect(staffSettlementChoice({})).toEqual({ required: false, localities: [] });
+  });
+
+  it('names the options in the current language, with the other language for a blank name', () => {
+    expect(settlementSelectOptions(LOCALITIES, 'en')).toEqual([
+      { id: 'l-1', name: 'Haifa' },
+      { id: 'l-2', name: 'Acre' },
+    ]);
+    expect(settlementSelectOptions(LOCALITIES, 'he').map((option) => option.name)).toEqual(['חיפה', 'עכו']);
+    expect(settlementSelectOptions([{ id: 'l-3', name_he: ' ', name_en: 'Safed' }], 'he')).toEqual([{ id: 'l-3', name: 'Safed' }]);
+  });
+
+  it("preselects the customer's settlement when it is in the list, else nothing, and ignores the text city", () => {
+    expect(initialValues(customer({ locality: ACRE }), ACTIVE)).toMatchObject({ city: '', localityId: 'l-2' });
+    expect(initialValues(customer({ locality: { id: 'l-9', name_he: 'ישן', name_en: 'Old' } }), ACTIVE)).toMatchObject({ localityId: '' });
+    expect(initialValues(customer({ locality: null }), ACTIVE)).toMatchObject({ city: '', localityId: '' });
+    // With no active list the free-text city is prefilled as before.
+    const free = initialValues(customer(), { required: false, localities: [] });
+    expect(free.city).toBe('Haifa');
+    expect(free.localityId).toBeUndefined();
+  });
+
+  const values: FormValues = {
+    city: '',
+    localityId: 'l-2',
+    apartment: '12',
+    phone: '0509999999',
+    categoryId: 'c1',
+    description: 'The tap leaks',
+    urgent: false,
+  };
+
+  it('sends locality_id and no city part while the list is active', () => {
+    const body = buildStaffFormData('cust-1', values, null, SETTINGS, true);
+    expect(Object.fromEntries(body.entries())).toEqual({
+      locality_id: 'l-2',
+      apartment: '12',
+      phone: '0509999999',
+      category_id: 'c1',
+      description: 'The tap leaks',
+      urgent: 'false',
+      customer_id: 'cust-1',
+    });
+    expect(body.has('city')).toBe(false);
+  });
+
+  it('sends the city text and no locality_id with an empty list', () => {
+    const body = buildStaffFormData('cust-1', { ...values, city: 'Haifa' }, null, SETTINGS);
+    expect(body.get('city')).toBe('Haifa');
+    expect(body.has('locality_id')).toBe(false);
+  });
+
+  it('shows invalid_settlement beside the city field and keeps the other fields clean', () => {
+    const failure = failureFromError(new StaffApiError('invalid_settlement', { city: 'invalid_settlement' }));
+    expect(failure).toEqual({ fieldErrors: { city: 'invalid_settlement' }, notice: null });
   });
 });
 
@@ -465,6 +537,68 @@ describe('NewTicketFormView markup', () => {
     expect(markup).toMatch(/<option value="c2" selected="">/);
   });
 
+  describe('with an active settlement list', () => {
+    const withList = (language: 'he' | 'en', overrides: Partial<NewTicketFormViewProps> = {}): string =>
+      render(
+        language,
+        createElement(
+          NewTicketFormView,
+          formProps(language, {
+            values: initialValues(customer({ locality: ACRE }), ACTIVE),
+            settlements: settlementSelectOptions(LOCALITIES, language),
+            ...overrides,
+          }),
+        ),
+      );
+
+    it.each(LANGUAGES)('shows the City field as a labelled select with the placeholder, in %s', (language) => {
+      const markup = withList(language);
+      expectNoMissingKeys(markup);
+      expect(markup).toMatch(/<select[^>]*id="ticket-form-city"/);
+      expect(markup).not.toMatch(/<input[^>]*id="ticket-form-city"/);
+      expect(markup).toMatch(/<label[^>]*for="ticket-form-city"/);
+      expect(tag(markup, 'ticket-form-city')).toContain('aria-required="true"');
+      expect(markup).toContain(`<option value="">${texts[language].portal.form.settlementPlaceholder}</option>`);
+      // The ids of the form's controls are unchanged, so focus and the summary links still find the field.
+      expect(controlIds(markup)).toContain('ticket-form-city');
+      expect(controlIds(markup)).toHaveLength(7);
+    });
+
+    it.each(LANGUAGES)("lists the settlements in the language and preselects the customer's, in %s", (language) => {
+      const markup = withList(language);
+      const names = language === 'en' ? ['Haifa', 'Acre'] : ['חיפה', 'עכו'];
+      expect(markup).toContain(`<option value="l-1">${names[0]}</option>`);
+      expect(markup).toMatch(new RegExp(`<option value="l-2" selected="">${names[1]}</option>`));
+    });
+
+    it('selects nothing when the customer has no settlement in the list', () => {
+      const markup = withList('en', { values: initialValues(customer({ locality: null }), ACTIVE) });
+      expect(markup).not.toMatch(/<option value="l-\d" selected="">/);
+      expect(markup).toMatch(/<option value="" selected="">/);
+    });
+
+    it.each(LANGUAGES)('ties an invalid_settlement refusal to the select, in %s', (language) => {
+      const markup = withList(language, { fieldErrors: { city: 'invalid_settlement' } });
+      expectNoMissingKeys(markup);
+      expect(tag(markup, 'ticket-form-city')).toContain('aria-invalid="true"');
+      expect(tag(markup, 'ticket-form-city')).toContain('aria-describedby="ticket-form-city-error"');
+      expect(markup).toContain('id="ticket-form-city-error"');
+      expect(markup).toContain(texts[language].errors.invalid_settlement);
+      expect(markup).toContain('href="#ticket-form-city"');
+    });
+  });
+
+  it('keeps the free-text City field when no settlements are passed or the list is empty', () => {
+    for (const markup of [
+      render('en', createElement(NewTicketFormView, formProps('en'))),
+      render('en', createElement(NewTicketFormView, formProps('en', { settlements: [] }))),
+    ]) {
+      expect(markup).toMatch(/<input[^>]*id="ticket-form-city"/);
+      expect(markup).not.toMatch(/<select[^>]*id="ticket-form-city"/);
+      expect(tag(markup, 'ticket-form-city')).toContain('value="Haifa"');
+    }
+  });
+
   it('shows no summary and no error state while there are no errors', () => {
     const markup = render('en', createElement(NewTicketFormView, formProps('en')));
     expect(markup).not.toContain('aria-invalid');
@@ -583,7 +717,13 @@ describe('sources', () => {
       const specifiers = Array.from(read(file).matchAll(/(?:from|import)\s+['"]([^'"]+)['"]/g), (match) => match[1] as string);
       const portal = specifiers.filter((spec) => /(^|\/)portal\//.test(spec));
       for (const spec of portal) {
-        expect(['../portal/formErrors', '../portal/screens/ticketFormModel', '../../portal/formErrors', '../../portal/screens/ticketFormModel']).toContain(spec);
+        expect([
+          '../portal/formErrors',
+          '../portal/screens/ticketFormModel',
+          '../portal/screens/settlementModel',
+          '../../portal/formErrors',
+          '../../portal/screens/ticketFormModel',
+        ]).toContain(spec);
       }
     }
   });

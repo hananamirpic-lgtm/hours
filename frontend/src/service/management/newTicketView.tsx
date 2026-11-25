@@ -34,7 +34,15 @@ import {
   type ResolvedLabels,
 } from '../portal/screens/ticketFormModel';
 import { SERVICE_NAMESPACE } from './namespace';
-import { SEARCH_MAX_LENGTH, customerPlace, hasMoreMatches, noticeKey, type NewTicketNotice, type PickerState } from './newTicketModel';
+import {
+  SEARCH_MAX_LENGTH,
+  customerPlace,
+  hasMoreMatches,
+  noticeKey,
+  type NewTicketNotice,
+  type PickerState,
+  type SettlementSelectOption,
+} from './newTicketModel';
 import { errorKeyOf } from './ticketDetailModel';
 import { TICKET_LIST_PATH } from './dashboardModel';
 import './newTicket.css';
@@ -207,6 +215,11 @@ export interface NewTicketFormViewProps {
   /** The current Field_Labels of the language (from `GET /staff/form-config`). */
   readonly labels: ResolvedLabels;
   readonly settings: FormSettings;
+  /**
+   * The active settlements in the current language. When the list has entries the City field is a select
+   * of them (`values.localityId` is the choice); when it is empty or absent the field is free text (R30.2, R30.3).
+   */
+  readonly settlements?: readonly SettlementSelectOption[];
   readonly photo: SelectedPhoto | null;
   /** Changes when the photo is removed, so the browser's file input starts empty again. */
   readonly photoInputKey: number;
@@ -230,6 +243,7 @@ export function NewTicketFormView({
   categories,
   labels,
   settings,
+  settlements = [],
   photo,
   photoInputKey,
   onChange,
@@ -319,17 +333,37 @@ export function NewTicketFormView({
             {labels.city}
             {mark('required')}
           </label>
-          <input
-            id={fieldId('city')}
-            name="city"
-            className="input"
-            type="text"
-            dir="auto"
-            value={values.city}
-            aria-required="true"
-            {...aria('city')}
-            onChange={(event) => onChange({ city: event.target.value })}
-          />
+          {settlements.length > 0 ? (
+            <select
+              id={fieldId('city')}
+              name="locality_id"
+              className="select"
+              dir="auto"
+              value={values.localityId ?? ''}
+              aria-required="true"
+              {...aria('city')}
+              onChange={(event) => onChange({ localityId: event.target.value })}
+            >
+              <option value="">{t('portal.form.settlementPlaceholder')}</option>
+              {settlements.map((settlement) => (
+                <option key={settlement.id} value={settlement.id}>
+                  {settlement.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id={fieldId('city')}
+              name="city"
+              className="input"
+              type="text"
+              dir="auto"
+              value={values.city}
+              aria-required="true"
+              {...aria('city')}
+              onChange={(event) => onChange({ city: event.target.value })}
+            />
+          )}
           {error('city')}
         </div>
 

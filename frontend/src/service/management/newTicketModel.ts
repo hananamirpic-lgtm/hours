@@ -8,8 +8,9 @@
 // maps) are the pure helpers of the portal form model, reused here instead of copied; only the staff-specific
 // parts (the picker, the `customer_id` part and the failure mapping) are written in this file.
 import { errorTextKey, type FieldErrors } from '../portal/formErrors';
+import { settlementChoice, settlementName, type SettlementChoice, type SettlementLanguage } from '../portal/screens/settlementModel';
 import { FORM_FIELD_ORDER, buildFormData, type FormValues } from '../portal/screens/ticketFormModel';
-import type { FormSettings } from '../api/formTypes';
+import type { FormConfig, FormLocality, FormSettings } from '../api/formTypes';
 import { isStaffApiError } from '../api/staff';
 import type { CustomerListQuery, StaffCustomer } from '../api/staffTypes';
 import { SEARCH_MAX_LENGTH } from './customersModel';
@@ -67,16 +68,44 @@ export function customerPlace(customer: Pick<StaffCustomer, 'city' | 'apartment'
 // --- step 2: the form (R26.2) -----------------------------------------------------------------------
 
 /**
+ * The settlement choice of the staff form (R30.2, R30.3, R30.6). It is active only while the form-config
+ * lists at least one active settlement and says `settlements_required`; otherwise the City field stays free
+ * text exactly as before. The result feeds `initialValues` and `buildStaffFormData`.
+ */
+export function staffSettlementChoice(config: Pick<FormConfig, 'localities' | 'settlements_required'>): SettlementChoice {
+  const choice = settlementChoice(config);
+  return choice.required && choice.localities.length > 0 ? choice : { required: false, localities: [] };
+}
+
+/** One entry of the settlement select: the id and the name in the current language. */
+export interface SettlementSelectOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The select entries in `language`, in the order the server sent them (a blank name falls back to the other language). */
+export function settlementSelectOptions(
+  localities: readonly FormLocality[],
+  language: SettlementLanguage,
+): readonly SettlementSelectOption[] {
+  return localities.map((locality) => ({ id: locality.id, name: settlementName(locality, language) }));
+}
+
+/**
  * The multipart body: the customer form parts exactly as the portal sends them (`buildFormData`: the photo
  * part only when a photo is chosen and uploads are on) plus the `customer_id` part.
+ *
+ * With `settlementsRequired` the body carries `locality_id` and no `city` part, as the customer submission
+ * does (R30.2); without it, `city` and no `locality_id` (R30.3).
  */
 export function buildStaffFormData(
   customerId: string,
   values: FormValues,
   photo: File | null,
   settings: FormSettings,
+  settlementsRequired = false,
 ): FormData {
-  const body = buildFormData(values, photo, settings);
+  const body = buildFormData(values, photo, settings, settlementsRequired);
   body.append('customer_id', customerId);
   return body;
 }
