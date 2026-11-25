@@ -4,7 +4,7 @@
 // behavior that needs a browser (focus return, Escape, the focus trap, object URLs) is covered by the
 // pure functions it calls and by `useFocusTrap`'s own tests and the Playwright suite of task 28.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createElement, type ReactElement } from 'react';
+import { Fragment, createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
 import { StaticRouter } from 'react-router-dom/server';
@@ -450,8 +450,18 @@ describe('locale keys of the settlement choice', () => {
 // --- markup: the branding header -------------------------------------------------------------------
 
 describe('branding header markup', () => {
+  // The branding is no longer part of the form frame: GatedLayout renders it above the routed screen.
+  // This is that arrangement: the branding, then the screen's own frame with its one h1.
   function frame(language: PortalLanguage, branding: BrandingView | null): string {
-    return render(language, createElement(TicketFormFrame, { branding, children: null }));
+    return render(
+      language,
+      createElement(
+        Fragment,
+        null,
+        createElement(BrandingHeader, { view: branding }),
+        createElement(TicketFormFrame, { children: null }),
+      ),
+    );
   }
 
   for (const language of ['he', 'en'] as const) {
@@ -464,7 +474,8 @@ describe('branding header markup', () => {
         expect(html).not.toContain('<img');
         expect(countOf(html, /<h1[ >]/g)).toBe(1);
         expect(html.indexOf('portal-branding')).toBeLessThan(html.indexOf('<h1'));
-        expect(html).toContain(`<section class="portal-ticket-form" lang="${language}" dir="${dir}"><div class="portal-branding">`);
+        expect(html).toMatch(/^<div class="portal-branding">/);
+        expect(html).toContain(`</div><section class="portal-ticket-form" lang="${language}" dir="${dir}"><h1 `);
       });
 
       it('shows the logo with the name as its alt text', () => {
@@ -781,10 +792,11 @@ describe('TicketFormScreen with branding and settlements', () => {
     );
   }
 
-  it('shows the company name above the title and the settlement control, with nothing preselected for a text city', () => {
+  it('shows the settlement control, with nothing preselected for a text city, and no branding of its own', () => {
     const html = renderScreen('en', { config, me: ME });
-    expect(html).toContain('<p class="portal-branding-name" dir="auto">Acme Ltd</p>');
-    expect(html.indexOf('portal-branding')).toBeLessThan(html.indexOf('<h1'));
+    // The branding is the layout's (task 30.15): the screen alone must not show it, or /new would show it twice.
+    expect(html).not.toContain('portal-branding');
+    expect(html).not.toContain('Acme Ltd');
     expect(countOf(html, /<h1[ >]/g)).toBe(1);
     expect(tagWithId(html, 'ticket-form-city')).toMatch(/^<button /);
     expect(html).toContain('>Choose a settlement</span>');
@@ -801,12 +813,6 @@ describe('TicketFormScreen with branding and settlements', () => {
     const html = renderScreen('en', { config, me });
     expect(html).toContain('>Choose a settlement</span>');
     expect(html).not.toContain('>Lod</span>');
-  });
-
-  it('does not render a logo before it is fetched, and still shows the name', () => {
-    const html = renderScreen('en', { config: { ...config, branding: { company_name: 'Acme Ltd', has_logo: true } }, me: ME });
-    expect(html).not.toContain('<img');
-    expect(html).toContain('Acme Ltd</p>');
   });
 
   it('renders no branding element for an answer without branding or with neither member', () => {

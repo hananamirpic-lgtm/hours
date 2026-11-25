@@ -18,12 +18,16 @@
 // survives both (R6.2). `/new/done` is not in the design's route table; it is the one addition, so the
 // confirmation survives a reload without a second submit.
 //
+// Behind the session gate `GatedLayout` renders the company branding (logo and name) once, above the
+// routed screen, so every signed-in screen shows it (R28.3). The sign-in screen does not (no token).
+//
 // `FlagGate` wraps everything, outside the session gate, so with the flag off or unknown no sign-in
 // screen can render (R8.2, R21.5). The two live regions are above `FlagGate`. With the flag off, the gate
 // shows `PortalNotAvailable` (same text as the shared page, but with the portal `PageHeading`).
 import { Outlet, Route, Routes } from 'react-router-dom';
 import { FlagGate } from '../gates/FlagGate';
 import { PortalAnnouncerProvider } from './Announcer';
+import { PortalBranding } from './PortalBranding';
 import { PortalNotAvailable } from './PortalNotAvailable';
 import { PortalSessionGate } from './PortalSessionGate';
 import { PortalShell } from './PortalShell';
@@ -34,10 +38,14 @@ import { TicketDetailScreen } from './screens/TicketDetailScreen';
 import { TicketFormScreen } from './screens/TicketFormScreen';
 import { TicketListScreen } from './screens/TicketListScreen';
 
-/** Layout route: every child renders behind the session gate. */
-function GatedLayout() {
+/**
+ * Layout route: every child renders behind the session gate, under the company branding (R28.3). The
+ * branding is a child of the gate, so it shows only for a signed-in customer and once per screen.
+ */
+export function GatedLayout() {
   return (
     <PortalSessionGate>
+      <PortalBranding />
       <Outlet />
     </PortalSessionGate>
   );

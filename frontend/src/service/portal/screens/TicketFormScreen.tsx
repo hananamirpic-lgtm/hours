@@ -17,11 +17,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FORM_LABEL_KEYS, type FormConfig, type FormSettings } from '../../api/formTypes';
-import { brandingLogoKey, createTicket, formConfigKey, getBrandingLogo, getFormConfig, getMe } from '../../api/ticketCreate';
+import { createTicket, getMe } from '../../api/ticketCreate';
 import { ticketKeys } from '../../api/tickets';
 import { useAnnouncer } from '../Announcer';
 import type { FieldErrors } from '../formErrors';
 import { PageHeading } from '../PageHeading';
+import { useFormConfig } from '../PortalBranding';
 import { directionOf, getLanguage, usePortalTranslation } from '../portalI18n';
 import { portalKeys } from '../session';
 import {
@@ -57,9 +58,8 @@ import {
   type ResolvedLabels,
   type TextRef,
 } from './ticketFormModel';
-import { BrandingHeader } from './BrandingHeader';
 import { SettlementControl } from './SettlementField';
-import { brandingView, settlementChoice, type BrandingView, type SettlementChoice } from './settlementModel';
+import { settlementChoice, type SettlementChoice } from './settlementModel';
 import './ticketForm.css';
 
 // --- presentational --------------------------------------------------------------------------------
@@ -119,13 +119,15 @@ function FieldError({ field, text }: { field: string; text: string | null }) {
   );
 }
 
-/** The one `<h1>` of the screen and its language and direction. Stays mounted while the form loads. */
-export function TicketFormFrame({ children, branding = null }: { children: ReactNode; branding?: BrandingView | null }) {
+/**
+ * The one `<h1>` of the screen and its language and direction. Stays mounted while the form loads. The
+ * company branding is not here: `GatedLayout` shows it once above every signed-in screen (task 30.15).
+ */
+export function TicketFormFrame({ children }: { children: ReactNode }) {
   const { t, i18n } = usePortalTranslation();
   const language = getLanguage(i18n);
   return (
     <section className="portal-ticket-form" lang={language} dir={directionOf(language)}>
-      <BrandingHeader view={branding} />
       <PageHeading pageKey="newTicket">{t('portal.form.title')}</PageHeading>
       {children}
     </section>
@@ -529,10 +531,6 @@ function TicketFormContainer({ config, me }: ContainerProps) {
   );
 }
 
-function useFormConfig() {
-  return useQuery({ queryKey: formConfigKey, queryFn: ({ signal }) => getFormConfig(signal) });
-}
-
 function useMe() {
   // The key the session gate uses, so the record is usually already cached.
   return useQuery({ queryKey: portalKeys.me, queryFn: ({ signal }) => getMe(signal) });
@@ -560,44 +558,10 @@ function TicketFormLoader() {
   return <TicketFormContainer config={config.data} me={me.data} />;
 }
 
-/**
- * An object URL for the logo, fetched with the bearer header only when the configuration says there is
- * one. Revoked when the logo changes and on unmount. Null until it exists and after a failed fetch: a logo
- * that cannot be loaded is simply not shown, and the form is never blocked by it (R28.3).
- */
-function useBrandingLogoUrl(hasLogo: boolean): string | null {
-  const logo = useQuery({
-    queryKey: brandingLogoKey,
-    queryFn: ({ signal }) => getBrandingLogo(signal),
-    enabled: hasLogo,
-    retry: false,
-    refetchOnWindowFocus: false,
-    staleTime: 5 * 60_000,
-  });
-  const blob = hasLogo && logo.data !== undefined ? logo.data : null;
-  const [object, setObject] = useState<{ blob: Blob; url: string } | null>(null);
-  useEffect(() => {
-    if (blob === null || typeof URL.createObjectURL !== 'function') {
-      setObject(null);
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-    setObject({ blob, url });
-    return () => {
-      URL.revokeObjectURL(url);
-    };
-  }, [blob]);
-  return object !== null && object.blob === blob ? object.url : null;
-}
-
 /** Route `/new`. */
 export function TicketFormScreen() {
-  // The same query as the loader below: one request, shared through the cache.
-  const config = useFormConfig();
-  const branding = config.data?.branding;
-  const logoUrl = useBrandingLogoUrl(branding?.has_logo === true);
   return (
-    <TicketFormFrame branding={brandingView(branding, logoUrl)}>
+    <TicketFormFrame>
       <TicketFormLoader />
     </TicketFormFrame>
   );

@@ -70,7 +70,7 @@ Portal screens are under `/service`. Management screens are under `/tickets`.
 | P4 | New ticket form | `/service/new` | "New ticket" / "קריאה חדשה". |
 | P4e | New ticket form with validation errors | `/service/new` | Press "Send ticket" / "שליחת הקריאה" with the required fields empty. |
 | P4s | Settlement selection dialog | `/service/new` | Activate the City / ישוב control while at least one settlement is active. |
-| P4b | Branding header above the form title | `/service/new` | Open the form with branding set (and in the other branding states). |
+| P4b | Branding header above the page content | `/service`, `/service/new`, `/service/new/done`, `/service/tickets/<number>` | Sign in and open each screen with branding set (and in the other branding states). It does not show on the sign-in screen. |
 | P5 | Submission confirmation | `/service/new/done` | Send a valid ticket. |
 | P6 | Ticket detail with photo | `/service/tickets/<number>` | Open a ticket with a photo. |
 | P6n | Ticket detail without photo | same | Open a ticket with no photo. |
@@ -321,18 +321,19 @@ Common: A, B, C5, D, E, F6, G, H, I. Requirement R30.8.
 - [ ] Touch targets (G): the City button, the search box, every option row and "Cancel" are at least 44 px high. With 200 % text (F6) the dialog fits the window, the list scrolls inside the dialog, and the title and Cancel stay reachable.
 - [ ] A name with a quote or an ampersand is shown literally and is read correctly.
 
-### P4b. Branding header (`/service/new`)
+### P4b. Branding header (every signed-in screen)
 
-Common: A, B, E, F, H. Requirements R28.3, R28.4, R28.7.
+Common: A, B, E, F, H. Requirements R28.3, R28.4, R28.7. Check it on the ticket list (`/service`), the new-ticket page (`/service/new`), the confirmation (`/service/new/done`) and a ticket detail, not only on the form.
 
-- [ ] **Name and logo set.** Above the page title ("New service ticket") the logo and the company name show. The logo is an image whose **text alternative equals the company name** (check in the developer tools, Accessibility panel, or with the screen reader: the image is read as the company name). The name below or beside it is visible text.
+- [ ] **Name and logo set.** Above the page content, and above the page title (for example "My tickets" or "New service ticket"), the logo and the company name show, **once** on each screen (on the new-ticket page too, not twice). Moving between the list, the form and a detail does not make the logo flash or reload. The logo is an image whose **text alternative equals the company name** (check in the developer tools, Accessibility panel, or with the screen reader: the image is read as the company name). The name below or beside it is visible text.
 - [ ] **Name only.** The name shows as text and nothing else (no empty image, no broken image icon).
 - [ ] **Logo only.** The logo shows and its text alternative is **empty** (the screen reader skips it and does not read a file name or "image").
 - [ ] **Neither set.** Nothing is rendered for the branding: no heading, no placeholder, no broken image and no empty gap above the title. The first thing in the main area is the page title. Compare the screen with a state where the branding was removed and confirm the title position is the same as before the feature.
 - [ ] **Plain text.** With the test name `<b>Test</b> & Co` the characters are shown literally (the tags are visible, nothing is bold) and the screen reader reads them as text.
 - [ ] The company name is **not a heading** (the headings list still has one level 1 heading, the page title), and the order in the reading flow is branding first, then the page title.
 - [ ] A long company name wraps and does not overflow at 320 px and at 200 % text (F). A name in Hebrew shows right to left and a name in English left to right (dir auto), whatever the page language.
-- [ ] The logo is loaded with the sign-in (it does not load for a signed-out visitor). If the logo cannot be loaded, the page still works and shows the name only, without an error that blocks the form.
+- [ ] **Sign-in screen.** The sign-in screen shows no logo and no company name (the logo is loaded only after the sign-in; it does not load for a signed-out visitor). The forced change-password screen shows none either.
+- [ ] If the logo cannot be loaded (block `/api/service/branding/logo` in the developer tools), every screen still works and shows the name only, without an error. If the form configuration cannot be loaded, the screens show no branding and no error of their own.
 - [ ] The logo and the name meet contrast (H) and the logo does not carry information that appears nowhere else (the name is the text alternative).
 
 ### P5. Submission confirmation (`/service/new/done`)

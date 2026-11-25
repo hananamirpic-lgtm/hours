@@ -79,28 +79,6 @@
   margin-block-start: 1rem;
 }
 
-/* --- the branding header above the page title (R28.3) --- */
-.portal-branding {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  margin-block-end: 1rem;
-}
-.portal-branding-logo {
-  /* The server keeps the logo within 400 by 200 pixels. */
-  max-inline-size: min(100%, 25rem);
-  max-block-size: 12.5rem;
-  inline-size: auto;
-  block-size: auto;
-}
-.portal-branding-name {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
 /* --- the settlement control and its dialog (R30.2, R30.8) --- */
 .settlement-control {
   inline-size: 100%;
