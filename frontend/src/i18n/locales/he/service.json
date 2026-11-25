@@ -108,7 +108,8 @@
       "cancel": "ביטול וחזרה לרשימה",
       "submitFailed": "לא ניתן היה לאשר את שליחת הקריאה. בדקו ברשימת הקריאות לפני שתשלחו שוב.",
       "loadError": "לא ניתן לטעון את הטופס כרגע.",
-      "retry": "נסו שוב"
+      "retry": "נסו שוב",
+      "settlementPlaceholder": "בחרו ישוב"
     },
     "confirmation": {
       "title": "הקריאה נשלחה",
@@ -156,6 +157,15 @@
     "session": {
       "loadError": "לא ניתן לטעון את פרטי החשבון כרגע.",
       "retry": "נסו שוב"
+    },
+    "settlementDialog": {
+      "title": "בחירת ישוב",
+      "searchLabel": "חיפוש ישוב",
+      "matches_one": "נמצא ישוב אחד.",
+      "matches_two": "נמצאו שני ישובים.",
+      "matches_other": "נמצאו {{count}} ישובים.",
+      "noMatches": "לא נמצאו ישובים תואמים.",
+      "cancel": "ביטול"
     }
   },
   "management": {
@@ -170,7 +180,10 @@
       "categories": "קטגוריות תקלה",
       "labels": "תוויות שדות",
       "options": "אפשרויות הטופס",
-      "signOut": "התנתקות"
+      "signOut": "התנתקות",
+      "localities": "ישובים",
+      "parts": "חלקים להחלפה",
+      "branding": "לוגו ושם החברה"
     },
     "common": {
       "loading": "טוען…",
@@ -254,7 +267,8 @@
         "toInProgress": "העברה לטיפול",
         "close": "סימון כטופלה",
         "reopen": "פתיחה מחדש",
-        "none": "אין פעולות"
+        "none": "אין פעולות",
+        "resolveLink": "סימון כטופלה…"
       },
       "statusChangeFailed": "הפעולה \"{{action}}\" בקריאה {{number}} נכשלה.",
       "actionLabel": "{{action}}, קריאה {{number}}"
@@ -310,6 +324,33 @@
         "created": "נוצרה {{when}}",
         "edited": "נערכה {{when}}",
         "by": "טכנאי: {{name}}"
+      },
+      "partsReplaced": {
+        "heading": "חלקים שהוחלפו"
+      },
+      "resolve": {
+        "title": "סימון הקריאה כטופלה",
+        "intro": "תעדו מה בוצע לפני שמסמנים את הקריאה כטופלה.",
+        "historyText": "היסטוריית טיפול",
+        "historyHint": "מה בוצע בקריאה, 1 עד 2000 תווים.",
+        "technicianName": "שם הטכנאי",
+        "partsReplaced": "חלק הוחלף",
+        "chooseParts": "בחירת חלקים…",
+        "changeParts": "שינוי",
+        "chosenParts": "חלקים שנבחרו:",
+        "noPartsChosen": "טרם נבחרו חלקים.",
+        "submit": "סימון כטופלה",
+        "failed": "לא ניתן היה לסמן את הקריאה כטופלה.",
+        "success": "קריאה {{number}} סומנה כטופלה.",
+        "parts": {
+          "title": "בחירת חלקים",
+          "legend": "חלקים שהוחלפו",
+          "loading": "טוען את החלקים…",
+          "loadError": "לא ניתן לטעון את רשימת החלקים.",
+          "empty": "אין חלקים פעילים. חלקים מוסיפים במסך החלקים להחלפה.",
+          "count": "נבחרו: {{selected}} (עד {{max}})",
+          "done": "סיום"
+        }
       }
     },
     "newTicket": {
@@ -381,7 +422,12 @@
         "updated": "פרטי הדייר נשמרו.",
         "fullNameHint": "1 עד 100 תווים",
         "cityHint": "עד 100 תווים",
-        "apartmentHint": "עד 20 תווים"
+        "apartmentHint": "עד 20 תווים",
+        "settlementHint": "לא חובה. בחרו ישוב מהרשימה.",
+        "settlementNone": "ללא ישוב",
+        "settlementInactive": "{{name}} (לא פעיל)",
+        "settlementCurrentText": "ישוב נוכחי: {{city}}",
+        "settlementLoading": "טוענים את רשימת הישובים…"
       },
       "deactivate": "השבתה",
       "deactivateTitle": "השבתת דייר",
@@ -417,7 +463,21 @@
       "loadError": "לא ניתן לטעון את הדוח.",
       "filtersLabel": "מסנני הדוח",
       "summary": "סיכומים",
-      "noCategories": "אין קטגוריית תקלה עם קריאה בדוח."
+      "noCategories": "אין קטגוריית תקלה עם קריאה בדוח.",
+      "partFilterLabel": "חלק הוחלף",
+      "partFilterAny": "הכול",
+      "partFilterYes": "כן",
+      "partFilterNo": "לא",
+      "partFilterInactive": "{{name}} (לא פעיל)",
+      "settlementLabel": "ישוב",
+      "settlementAll": "כל הישובים",
+      "exportButton": "ייצוא ל-Excel",
+      "exportPreparing": "מכינים את הקובץ…",
+      "exportDone": "הקובץ הורד.",
+      "exportError": "לא ניתן היה להכין את הקובץ. נסו שוב.",
+      "columns": {
+        "parts": "חלקים שהוחלפו"
+      }
     },
     "settings": {
       "categories": {
@@ -468,6 +528,91 @@
         "photoUploadHelp": "כשהאפשרות כבויה, תמונות שכבר צורפו נשארות גלויות.",
         "saved": "ההגדרות נשמרו.",
         "loadError": "לא ניתן לטעון את ההגדרות."
+      },
+      "localities": {
+        "title": "ישובים",
+        "subtitle": "הישובים שהדיירים בוחרים מהם בטופס הקריאה.",
+        "add": "הוספת ישוב",
+        "nameHe": "שם בעברית",
+        "nameEn": "שם באנגלית",
+        "nameHint": "1 עד 100 תווים",
+        "state": "מצב",
+        "active": "פעיל",
+        "inactive": "לא פעיל",
+        "created": "הישוב נוסף.",
+        "updated": "הישוב נשמר.",
+        "deactivate": "השבתה",
+        "reactivate": "הפעלה מחדש",
+        "delete": "מחיקה",
+        "deleteTitle": "מחיקת ישוב",
+        "deletePrompt": "למחוק את הישוב \"{{name}}\"? אם יש קריאות או דיירים שמשתמשים בו, הוא יושבת ולא יימחק.",
+        "removed": "הישוב נמחק.",
+        "deactivated": "הישוב הושבת ולא נמחק, כי יש קריאות או דיירים שמשתמשים בו.",
+        "empty": "אין ישובים.",
+        "loadError": "לא ניתן לטעון את הישובים.",
+        "createTitle": "הוספת ישוב",
+        "editTitle": "עריכת ישוב",
+        "rowAction": "{{action}}: {{name}}",
+        "rowError": "{{name}}: {{message}}",
+        "working": "מבצע…",
+        "deactivateDone": "הישוב הושבת.",
+        "reactivateDone": "הישוב הופעל מחדש."
+      },
+      "parts": {
+        "title": "חלקים להחלפה",
+        "subtitle": "החלקים שהטכנאים יכולים לסמן כמוחלפים כשהם מסמנים קריאה כטופלה.",
+        "add": "הוספת חלק",
+        "nameHe": "שם בעברית",
+        "nameEn": "שם באנגלית",
+        "nameHint": "1 עד 60 תווים",
+        "state": "מצב",
+        "active": "פעיל",
+        "inactive": "לא פעיל",
+        "created": "החלק נוסף.",
+        "updated": "החלק נשמר.",
+        "deactivate": "השבתה",
+        "reactivate": "הפעלה מחדש",
+        "delete": "מחיקה",
+        "deleteTitle": "מחיקת חלק",
+        "deletePrompt": "למחוק את החלק \"{{name}}\"? אם יש קריאות שמשתמשות בו, הוא יושבת ולא יימחק.",
+        "removed": "החלק נמחק.",
+        "deactivated": "החלק הושבת ולא נמחק, כי יש קריאות שמשתמשות בו.",
+        "empty": "אין חלקים.",
+        "loadError": "לא ניתן לטעון את החלקים.",
+        "createTitle": "הוספת חלק",
+        "editTitle": "עריכת חלק",
+        "rowAction": "{{action}}: {{name}}",
+        "rowError": "{{name}}: {{message}}",
+        "working": "מבצע…",
+        "deactivateDone": "החלק הושבת.",
+        "reactivateDone": "החלק הופעל מחדש."
+      },
+      "branding": {
+        "title": "לוגו ושם החברה",
+        "subtitle": "שם החברה והלוגו שהדיירים רואים מעל כותרת טופס הקריאה. שניהם אופציונליים.",
+        "companyName": "שם החברה",
+        "companyNameHint": "1 עד 100 תווים. השם מוצג כטקסט רגיל.",
+        "removeName": "הסרת השם",
+        "nameWillBeRemoved": "השם יוסר בעת השמירה.",
+        "logo": "לוגו",
+        "logoHint": "תמונת JPEG, PNG או WebP עד 1 MB. התמונה תוקטן כך שתיכנס ב-400 על 200 פיקסלים.",
+        "logoTooLarge": "הקובץ גדול מ-1 MB. סביר שהשירות ידחה אותו.",
+        "logoWrongType": "הקובץ אינו תמונת JPEG, PNG או WebP. סביר שהשירות ידחה אותו.",
+        "chosenLogo": "הקובץ שנבחר",
+        "chosenLogoAlt": "תצוגה מקדימה של הלוגו שנבחר",
+        "fileSummary": "{{name}} ({{size}})",
+        "currentLogo": "הלוגו הנוכחי",
+        "currentLogoAlt": "הלוגו הנוכחי",
+        "noLogo": "לא הוגדר לוגו.",
+        "logoLoading": "טוען את הלוגו…",
+        "logoLoadError": "לא ניתן לטעון את הלוגו הנוכחי.",
+        "clearFile": "ביטול הקובץ שנבחר",
+        "removeLogo": "הסרת הלוגו",
+        "keepLogo": "השארת הלוגו הנוכחי",
+        "logoWillBeRemoved": "הלוגו יוסר בעת השמירה.",
+        "saved": "הלוגו והשם נשמרו.",
+        "noChanges": "אין שינויים לשמירה.",
+        "loadError": "לא ניתן לטעון את הגדרות הלוגו והשם."
       }
     }
   },

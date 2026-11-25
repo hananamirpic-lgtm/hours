@@ -8,6 +8,7 @@ import type { TicketStatus, TicketStatusEntry } from '../../types';
 import { diffStatuses, type StatusAnnouncement } from '../announcements';
 import { errorTextKey } from '../formErrors';
 import type { PortalLanguage } from '../portalI18n';
+import { placeText } from './settlementModel';
 
 /** Text for a locale key, in the current language. The screen passes `(key) => t(key)`. */
 export type Translate = (key: string) => string;
@@ -135,7 +136,8 @@ export function buildDetailRows(
   rows.push(
     { key: 'created', label: translate('portal.detail.created'), value: { kind: 'ltr', text: formatCreatedDate(ticket.created_date) } },
     { key: 'category', label: label('category'), value: { kind: 'plain', text: categoryName(ticket.category, language) } },
-    { key: 'city', label: label('city'), value: { kind: 'plain', text: ticket.city } },
+    // The settlement in the current language when the ticket has one, else the stored city text (R30.5).
+    { key: 'city', label: label('city'), value: { kind: 'plain', text: placeText(ticket.locality, ticket.city, language) } },
     { key: 'apartment', label: label('apartment'), value: { kind: 'plain', text: ticket.apartment } },
     { key: 'phone', label: label('phone'), value: { kind: 'ltr', text: ticket.phone } },
     {

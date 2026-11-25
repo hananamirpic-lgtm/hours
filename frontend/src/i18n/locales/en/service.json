@@ -108,7 +108,8 @@
       "cancel": "Cancel and return to the list",
       "submitFailed": "We could not confirm that the ticket was sent. Check your ticket list before you send it again.",
       "loadError": "Could not load the form right now.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "settlementPlaceholder": "Choose a settlement"
     },
     "confirmation": {
       "title": "Ticket sent",
@@ -156,6 +157,15 @@
     "session": {
       "loadError": "Could not load your account details right now.",
       "retry": "Try again"
+    },
+    "settlementDialog": {
+      "title": "Choose a settlement",
+      "searchLabel": "Search for a settlement",
+      "matches_one": "1 settlement found.",
+      "matches_two": "2 settlements found.",
+      "matches_other": "{{count}} settlements found.",
+      "noMatches": "No settlements match.",
+      "cancel": "Cancel"
     }
   },
   "management": {
@@ -170,7 +180,10 @@
       "categories": "Issue categories",
       "labels": "Field labels",
       "options": "Form options",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "localities": "Settlements",
+      "parts": "Replaceable parts",
+      "branding": "Branding"
     },
     "common": {
       "loading": "Loading…",
@@ -254,7 +267,8 @@
         "toInProgress": "Move to in progress",
         "close": "Mark as resolved",
         "reopen": "Reopen",
-        "none": "No actions"
+        "none": "No actions",
+        "resolveLink": "Resolve…"
       },
       "statusChangeFailed": "The action \"{{action}}\" on ticket {{number}} failed.",
       "actionLabel": "{{action}}, ticket {{number}}"
@@ -310,6 +324,33 @@
         "created": "Created {{when}}",
         "edited": "Edited {{when}}",
         "by": "Technician: {{name}}"
+      },
+      "partsReplaced": {
+        "heading": "Parts replaced"
+      },
+      "resolve": {
+        "title": "Mark the ticket as resolved",
+        "intro": "Record what was done before you mark the ticket as resolved.",
+        "historyText": "Service history",
+        "historyHint": "What was done on this ticket, 1 to 2000 characters.",
+        "technicianName": "Technician name",
+        "partsReplaced": "Part replaced",
+        "chooseParts": "Choose parts…",
+        "changeParts": "Change",
+        "chosenParts": "Chosen parts:",
+        "noPartsChosen": "No parts chosen yet.",
+        "submit": "Mark as resolved",
+        "failed": "The ticket could not be marked as resolved.",
+        "success": "Ticket {{number}} was marked as resolved.",
+        "parts": {
+          "title": "Choose the replaced parts",
+          "legend": "Parts replaced",
+          "loading": "Loading the parts…",
+          "loadError": "Could not load the list of parts.",
+          "empty": "There are no active parts. Parts are added on the Replaceable parts screen.",
+          "count": "Selected: {{selected}} (up to {{max}})",
+          "done": "Done"
+        }
       }
     },
     "newTicket": {
@@ -381,7 +422,12 @@
         "updated": "The customer details were saved.",
         "fullNameHint": "1 to 100 characters",
         "cityHint": "Up to 100 characters",
-        "apartmentHint": "Up to 20 characters"
+        "apartmentHint": "Up to 20 characters",
+        "settlementHint": "Optional. Choose a settlement from the list.",
+        "settlementNone": "No settlement",
+        "settlementInactive": "{{name}} (inactive)",
+        "settlementCurrentText": "Current city: {{city}}",
+        "settlementLoading": "Loading the settlement list…"
       },
       "deactivate": "Deactivate",
       "deactivateTitle": "Deactivate customer",
@@ -417,7 +463,21 @@
       "loadError": "Could not load the report.",
       "filtersLabel": "Report filters",
       "summary": "Totals",
-      "noCategories": "No issue category has a ticket in this report."
+      "noCategories": "No issue category has a ticket in this report.",
+      "partFilterLabel": "Part replaced",
+      "partFilterAny": "Any",
+      "partFilterYes": "Yes",
+      "partFilterNo": "No",
+      "partFilterInactive": "{{name}} (inactive)",
+      "settlementLabel": "Settlement",
+      "settlementAll": "All settlements",
+      "exportButton": "Export to Excel",
+      "exportPreparing": "Preparing the file…",
+      "exportDone": "The file was downloaded.",
+      "exportError": "Could not prepare the file. Try again.",
+      "columns": {
+        "parts": "Parts replaced"
+      }
     },
     "settings": {
       "categories": {
@@ -468,6 +528,91 @@
         "photoUploadHelp": "When this is off, photos already attached stay visible.",
         "saved": "The settings were saved.",
         "loadError": "Could not load the settings."
+      },
+      "localities": {
+        "title": "Settlements",
+        "subtitle": "The settlements that residents choose from in the ticket form.",
+        "add": "Add settlement",
+        "nameHe": "Name in Hebrew",
+        "nameEn": "Name in English",
+        "nameHint": "1 to 100 characters",
+        "state": "State",
+        "active": "Active",
+        "inactive": "Inactive",
+        "created": "The settlement was added.",
+        "updated": "The settlement was saved.",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate",
+        "delete": "Delete",
+        "deleteTitle": "Delete settlement",
+        "deletePrompt": "Delete the settlement \"{{name}}\"? If tickets or residents use it, it is deactivated instead of deleted.",
+        "removed": "The settlement was deleted.",
+        "deactivated": "The settlement was deactivated, not deleted, because tickets or residents use it.",
+        "empty": "There are no settlements.",
+        "loadError": "Could not load the settlements.",
+        "createTitle": "Add settlement",
+        "editTitle": "Edit settlement",
+        "rowAction": "{{action}}: {{name}}",
+        "rowError": "{{name}}: {{message}}",
+        "working": "Working…",
+        "deactivateDone": "The settlement was deactivated.",
+        "reactivateDone": "The settlement was reactivated."
+      },
+      "parts": {
+        "title": "Replaceable parts",
+        "subtitle": "The parts that technicians can record as replaced when they resolve a ticket.",
+        "add": "Add part",
+        "nameHe": "Name in Hebrew",
+        "nameEn": "Name in English",
+        "nameHint": "1 to 60 characters",
+        "state": "State",
+        "active": "Active",
+        "inactive": "Inactive",
+        "created": "The part was added.",
+        "updated": "The part was saved.",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate",
+        "delete": "Delete",
+        "deleteTitle": "Delete part",
+        "deletePrompt": "Delete the part \"{{name}}\"? If tickets use it, it is deactivated instead of deleted.",
+        "removed": "The part was deleted.",
+        "deactivated": "The part was deactivated, not deleted, because tickets use it.",
+        "empty": "There are no parts.",
+        "loadError": "Could not load the parts.",
+        "createTitle": "Add part",
+        "editTitle": "Edit part",
+        "rowAction": "{{action}}: {{name}}",
+        "rowError": "{{name}}: {{message}}",
+        "working": "Working…",
+        "deactivateDone": "The part was deactivated.",
+        "reactivateDone": "The part was reactivated."
+      },
+      "branding": {
+        "title": "Branding",
+        "subtitle": "The company name and logo that residents see above the title of the ticket form. Both are optional.",
+        "companyName": "Company name",
+        "companyNameHint": "1 to 100 characters. It is shown as plain text.",
+        "removeName": "Remove the name",
+        "nameWillBeRemoved": "The name will be removed when you save.",
+        "logo": "Logo",
+        "logoHint": "A JPEG, PNG or WebP image of up to 1 MB. It is resized to fit 400 by 200 pixels.",
+        "logoTooLarge": "This file is larger than 1 MB. The service will probably refuse it.",
+        "logoWrongType": "This file is not a JPEG, PNG or WebP image. The service will probably refuse it.",
+        "chosenLogo": "Chosen file",
+        "chosenLogoAlt": "Preview of the chosen logo",
+        "fileSummary": "{{name}} ({{size}})",
+        "currentLogo": "Current logo",
+        "currentLogoAlt": "The current logo",
+        "noLogo": "No logo is set.",
+        "logoLoading": "Loading the logo…",
+        "logoLoadError": "Could not load the current logo.",
+        "clearFile": "Clear the chosen file",
+        "removeLogo": "Remove the logo",
+        "keepLogo": "Keep the current logo",
+        "logoWillBeRemoved": "The logo will be removed when you save.",
+        "saved": "The branding was saved.",
+        "noChanges": "There are no changes to save.",
+        "loadError": "Could not load the branding."
       }
     }
   },

@@ -17,7 +17,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FORM_LABEL_KEYS, type FormConfig, type FormSettings } from '../../api/formTypes';
-import { createTicket, formConfigKey, getFormConfig, getMe } from '../../api/ticketCreate';
+import { brandingLogoKey, createTicket, formConfigKey, getBrandingLogo, getFormConfig, getMe } from '../../api/ticketCreate';
 import { ticketKeys } from '../../api/tickets';
 import { useAnnouncer } from '../Announcer';
 import type { FieldErrors } from '../formErrors';
@@ -57,6 +57,9 @@ import {
   type ResolvedLabels,
   type TextRef,
 } from './ticketFormModel';
+import { BrandingHeader } from './BrandingHeader';
+import { SettlementControl } from './SettlementField';
+import { brandingView, settlementChoice, type BrandingView, type SettlementChoice } from './settlementModel';
 import './ticketForm.css';
 
 // --- presentational --------------------------------------------------------------------------------
@@ -78,6 +81,8 @@ export interface TicketFormProps {
   readonly categories: readonly CategoryOption[];
   readonly labels: ResolvedLabels;
   readonly settings: FormSettings;
+  /** The settlement list while it is active (R30.2); absent or not required means the City field is free text (R30.3). */
+  readonly settlements?: SettlementChoice;
   readonly photo: PhotoView | null;
   /** Changes when the photo is removed, so the browser's file input starts empty again. */
   readonly photoInputKey: number;
@@ -93,9 +98,12 @@ interface AriaProps {
   'aria-describedby'?: string;
 }
 
-function FieldLabel({ htmlFor, text, mark }: { htmlFor: string; text: string; mark: string }) {
+/** The id of the City label while the field is the settlement control, which the control is named by. */
+const CITY_LABEL_ID = 'ticket-form-city-label';
+
+function FieldLabel({ htmlFor, text, mark, id }: { htmlFor: string; text: string; mark: string; id?: string }) {
   return (
-    <label htmlFor={htmlFor}>
+    <label htmlFor={htmlFor} {...(id !== undefined ? { id } : {})}>
       {text}
       {mark !== '' && <span className="portal-field-mark">{mark}</span>}
     </label>
@@ -112,11 +120,12 @@ function FieldError({ field, text }: { field: string; text: string | null }) {
 }
 
 /** The one `<h1>` of the screen and its language and direction. Stays mounted while the form loads. */
-export function TicketFormFrame({ children }: { children: ReactNode }) {
+export function TicketFormFrame({ children, branding = null }: { children: ReactNode; branding?: BrandingView | null }) {
   const { t, i18n } = usePortalTranslation();
   const language = getLanguage(i18n);
   return (
     <section className="portal-ticket-form" lang={language} dir={directionOf(language)}>
+      <BrandingHeader view={branding} />
       <PageHeading pageKey="newTicket">{t('portal.form.title')}</PageHeading>
       {children}
     </section>
@@ -131,6 +140,7 @@ export function TicketForm({
   categories,
   labels,
   settings,
+  settlements,
   photo,
   photoInputKey,
   onChange,
@@ -206,17 +216,34 @@ export function TicketForm({
         }}
       >
         <div className="portal-field">
-          <FieldLabel htmlFor={fieldId('city')} text={labels.city} mark={required} />
-          <input
-            id={fieldId('city')}
-            name="city"
-            type="text"
-            dir="auto"
-            value={values.city}
-            aria-required="true"
-            {...aria('city')}
-            onChange={(event) => onChange({ city: event.target.value })}
-          />
+          {settlements?.required === true ? (
+            <>
+              <FieldLabel htmlFor={fieldId('city')} text={labels.city} mark={required} id={CITY_LABEL_ID} />
+              <SettlementControl
+                localities={settlements.localities}
+                language={language}
+                value={values.localityId ?? ''}
+                labelId={CITY_LABEL_ID}
+                invalid={fieldErrorKey(fieldErrors, 'city') !== null}
+                describedBy={describedBy('city', fieldErrorKey(fieldErrors, 'city') !== null, false)}
+                onChange={(id) => onChange({ localityId: id })}
+              />
+            </>
+          ) : (
+            <>
+              <FieldLabel htmlFor={fieldId('city')} text={labels.city} mark={required} />
+              <input
+                id={fieldId('city')}
+                name="city"
+                type="text"
+                dir="auto"
+                value={values.city}
+                aria-required="true"
+                {...aria('city')}
+                onChange={(event) => onChange({ city: event.target.value })}
+              />
+            </>
+          )}
           <FieldError field="city" text={errorText('city')} />
         </div>
 
@@ -388,7 +415,8 @@ function TicketFormContainer({ config, me }: ContainerProps) {
   const { announce, alert } = useAnnouncer();
 
   // Prefilled once, when the form opens. Nothing here is reset by a failure.
-  const [values, setValues] = useState<FormValues>(() => initialValues(me));
+  const settlements = settlementChoice(config);
+  const [values, setValues] = useState<FormValues>(() => initialValues(me, settlements));
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoInputKey, setPhotoInputKey] = useState(0);
   const [serverErrors, setServerErrors] = useState<FieldErrors>({});
@@ -453,7 +481,7 @@ function TicketFormContainer({ config, me }: ContainerProps) {
     setServerErrors({});
     void (async () => {
       try {
-        const ticketNumber = await createTicket(buildFormData(values, photo, config.settings));
+        const ticketNumber = await createTicket(buildFormData(values, photo, config.settings, settlements.required));
         void queryClient.invalidateQueries({ queryKey: ticketKeys.all });
         announce(String(i18n.t('a11y.live.ticketSubmitted', { number: ticketNumber })));
         if (mounted.current) navigate(CONFIRMATION_PATH, { replace: true, state: confirmationState(ticketNumber) });
@@ -490,6 +518,7 @@ function TicketFormContainer({ config, me }: ContainerProps) {
       categories={categories}
       labels={labels}
       settings={config.settings}
+      settlements={settlements}
       photo={photo === null ? null : { name: photo.name, previewUrl }}
       photoInputKey={photoInputKey}
       onChange={onChange}
@@ -531,10 +560,44 @@ function TicketFormLoader() {
   return <TicketFormContainer config={config.data} me={me.data} />;
 }
 
+/**
+ * An object URL for the logo, fetched with the bearer header only when the configuration says there is
+ * one. Revoked when the logo changes and on unmount. Null until it exists and after a failed fetch: a logo
+ * that cannot be loaded is simply not shown, and the form is never blocked by it (R28.3).
+ */
+function useBrandingLogoUrl(hasLogo: boolean): string | null {
+  const logo = useQuery({
+    queryKey: brandingLogoKey,
+    queryFn: ({ signal }) => getBrandingLogo(signal),
+    enabled: hasLogo,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60_000,
+  });
+  const blob = hasLogo && logo.data !== undefined ? logo.data : null;
+  const [object, setObject] = useState<{ blob: Blob; url: string } | null>(null);
+  useEffect(() => {
+    if (blob === null || typeof URL.createObjectURL !== 'function') {
+      setObject(null);
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    setObject({ blob, url });
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [blob]);
+  return object !== null && object.blob === blob ? object.url : null;
+}
+
 /** Route `/new`. */
 export function TicketFormScreen() {
+  // The same query as the loader below: one request, shared through the cache.
+  const config = useFormConfig();
+  const branding = config.data?.branding;
+  const logoUrl = useBrandingLogoUrl(branding?.has_logo === true);
   return (
-    <TicketFormFrame>
+    <TicketFormFrame branding={brandingView(branding, logoUrl)}>
       <TicketFormLoader />
     </TicketFormFrame>
   );

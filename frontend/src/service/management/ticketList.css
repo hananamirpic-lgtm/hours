@@ -113,6 +113,13 @@
   gap: calc(var(--space) / 2);
 }
 
+/* The "Resolve…" action is a link styled as a button (task 30.9): centre its text and drop the underline. */
+.ticket-list__actions a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 /* An urgent open ticket: its own background and a bar on the inline-start edge. */
 .table tbody tr.ticket-list__row--urgent-open {
   background: #fdecea;

@@ -3,7 +3,7 @@
  * language toggle and sign-out, and an outlet for the page. It reuses the console shell's classes, so
  * layout, the mobile drawer and right-to-left mirroring come from the same stylesheet.
  *
- * Configuration entries (categories, labels, options) are listed only for Config_Staff (R19.1); a
+ * Configuration entries (categories, settlements, parts, labels, options, branding) are listed only for Config_Staff (R19.1); a
  * technician's navigation has the four ticket entries and nothing else. The entries come from
  * `managementNav`, which is tested.
  */

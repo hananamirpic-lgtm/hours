@@ -96,16 +96,32 @@ describe('managementNav', () => {
     }
   });
 
-  it.each(['admin', 'operations_admin'] as const)('%s also gets the three configuration entries (R19.1)', (role) => {
-    expect(paths(managementNav(role).configuration)).toEqual([
-      '/tickets/settings/categories',
-      '/tickets/settings/labels',
-      '/tickets/settings/options',
-    ]);
+  it.each(['admin', 'operations_admin'] as const)(
+    '%s also gets the six configuration entries, settlements, parts and branding included (R19.1, R28.1, R29.6, R30.1)',
+    (role) => {
+      expect(paths(managementNav(role).configuration)).toEqual([
+        '/tickets/settings/categories',
+        '/tickets/settings/localities',
+        '/tickets/settings/parts',
+        '/tickets/settings/labels',
+        '/tickets/settings/options',
+        '/tickets/settings/branding',
+      ]);
+    },
+  );
+
+  it('labels the new entries with their own nav keys', () => {
+    const labels = Object.fromEntries(CONFIG_NAV.map((entry) => [entry.to, entry.labelKey]));
+    expect(labels['/tickets/settings/localities']).toBe('management.nav.localities');
+    expect(labels['/tickets/settings/parts']).toBe('management.nav.parts');
+    expect(labels['/tickets/settings/branding']).toBe('management.nav.branding');
   });
 
-  it('gives the technician no configuration entry', () => {
+  it('gives the technician no configuration entry, and so no link to the new screens', () => {
     expect(managementNav('technician').configuration).toEqual([]);
+    for (const role of ALL_ROLES.filter((candidate) => !isConfigStaffRole(candidate))) {
+      expect(managementNav(role).configuration).toEqual([]);
+    }
   });
 
   it('only the dashboard entry matches its own path exactly, so it is not active on every page', () => {

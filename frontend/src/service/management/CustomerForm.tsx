@@ -9,24 +9,34 @@
 // field codes the Ticket_API answers with: `invalid_phone` and `phone_already_registered` on the phone,
 // `invalid_full_name`, `invalid_city` and `invalid_apartment` on their fields. No password, hash or initial
 // password value is read from any answer (R3.12); a new customer's initial password is named by the text only.
+//
+// Settlements (R30.6). While the active settlement list from `GET /staff/form-config` is not empty, the City
+// field is a select of the active settlements ("No settlement" is the empty choice), the customer's current
+// settlement stays selectable when it was deactivated, and a text city with no settlement is shown as read-only
+// help. With an empty list the field is the free-text input.
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createCustomer, isStaffApiError, staffKeys, updateCustomer, type StaffCustomer } from '../api/staff';
+import { useActiveSettlements } from '../api/staffFormConfig';
 import { CustomerDialog } from './CustomerDialog';
 import {
   EMPTY_FORM_VALUES,
   NO_FORM_ERRORS,
+  currentCityText,
   customerFormErrors,
   firstFailingField,
   formValuesFromCustomer,
   isCustomerGone,
+  settlementOptions,
   toCustomerBody,
   type CustomerFieldName,
   type CustomerFormErrors,
   type CustomerFormValues,
+  type SettlementOption,
 } from './customersModel';
 import { SERVICE_NAMESPACE } from './namespace';
+import { listLanguage } from './ticketListModel';
 import './customers.css';
 
 export const CUSTOMER_FORM_IDS = {
@@ -105,20 +115,49 @@ export interface CustomerFormViewProps {
   readonly values: CustomerFormValues;
   readonly errors: CustomerFormErrors;
   readonly pending: boolean;
+  /**
+   * The settlement choices. Non-empty: the City field is a select of them. Empty (the default): the free-text
+   * input.
+   */
+  readonly settlements?: readonly SettlementOption[];
+  /** True while the settlement list is being read: the City field and Save wait for it. */
+  readonly settlementsLoading?: boolean;
   readonly onChange: (valueKey: ValueKey, value: string) => void;
   readonly onSubmit: (event: FormEvent) => void;
   readonly onCancel: () => void;
 }
 
-export function CustomerFormView({ mode, values, errors, pending, onChange, onSubmit, onCancel }: CustomerFormViewProps) {
+export function CustomerFormView({
+  mode,
+  values,
+  errors,
+  pending,
+  settlements = [],
+  settlementsLoading = false,
+  onChange,
+  onSubmit,
+  onCancel,
+}: CustomerFormViewProps) {
   const { t } = useTranslation(SERVICE_NAMESPACE);
+  const settlementMode = settlements.length > 0;
+  const currentCity = settlementMode ? currentCityText(values) : null;
   const formErrorText = errors.form === null ? null : `${t('a11y.errorPrefix')} ${t(errors.form)}`;
   return (
     <form id={CUSTOMER_FORM_IDS.form} className="form customers-form" noValidate onSubmit={onSubmit}>
       {FIELD_SPECS.map((spec) => {
         const errorKey = errors.fields[spec.field];
         const message = errorKey === undefined ? null : `${t('a11y.errorPrefix')} ${t(errorKey)}`;
-        const describedBy = message === null ? hintId(spec.field) : `${hintId(spec.field)} ${errorId(spec.field)}`;
+        const settlementField = spec.field === 'city' && settlementMode;
+        const hintKey = settlementField
+          ? 'management.customers.form.settlementHint'
+          : spec.field === 'city' && settlementsLoading
+            ? 'management.customers.form.settlementLoading'
+            : spec.hintKey;
+        const currentId = `${fieldInputId('city')}-current`;
+        const ids = [hintId(spec.field)];
+        if (settlementField && currentCity !== null) ids.push(currentId);
+        if (message !== null) ids.push(errorId(spec.field));
+        const describedBy = ids.join(' ');
         // The marker carries its own leading space so the label reads "Phone number (required)".
         const marker = ` ${t(spec.required ? 'a11y.required' : 'a11y.optional')}`;
         return (
@@ -127,23 +166,49 @@ export function CustomerFormView({ mode, values, errors, pending, onChange, onSu
               {t(spec.labelKey)}
               <span className="customers-marker">{marker}</span>
             </label>
-            <input
-              id={fieldInputId(spec.field)}
-              name={spec.field}
-              className="input"
-              type={spec.phone ? 'tel' : 'text'}
-              {...(spec.phone ? { inputMode: 'numeric' as const, dir: 'ltr' } : {})}
-              autoComplete="off"
-              value={values[spec.valueKey]}
-              aria-required={spec.required}
-              aria-invalid={message !== null}
-              aria-describedby={describedBy}
-              disabled={pending}
-              onChange={(event) => onChange(spec.valueKey, event.target.value)}
-            />
+            {settlementField ? (
+              <select
+                id={fieldInputId('city')}
+                name="locality_id"
+                className="select"
+                value={values.localityId}
+                aria-required={false}
+                aria-invalid={message !== null}
+                aria-describedby={describedBy}
+                disabled={pending}
+                onChange={(event) => onChange('localityId', event.target.value)}
+              >
+                <option value="">{t('management.customers.form.settlementNone')}</option>
+                {settlements.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.inactive ? t('management.customers.form.settlementInactive', { name: option.name }) : option.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id={fieldInputId(spec.field)}
+                name={spec.field}
+                className="input"
+                type={spec.phone ? 'tel' : 'text'}
+                {...(spec.phone ? { inputMode: 'numeric' as const, dir: 'ltr' } : {})}
+                autoComplete="off"
+                value={values[spec.valueKey]}
+                aria-required={spec.required}
+                aria-invalid={message !== null}
+                aria-describedby={describedBy}
+                disabled={pending || (spec.field === 'city' && settlementsLoading)}
+                onChange={(event) => onChange(spec.valueKey, event.target.value)}
+              />
+            )}
             <p id={hintId(spec.field)} className="field__hint">
-              {t(spec.hintKey)}
+              {t(hintKey)}
             </p>
+            {settlementField && currentCity !== null ? (
+              <p id={currentId} className="field__hint">
+                {t('management.customers.form.settlementCurrentText', { city: currentCity })}
+              </p>
+            ) : null}
             {message === null ? null : (
               <p id={errorId(spec.field)} className="form__error">
                 {message}
@@ -166,7 +231,7 @@ export function CustomerFormView({ mode, values, errors, pending, onChange, onSu
         <button type="button" className="button" disabled={pending} onClick={onCancel}>
           {t('management.common.cancel')}
         </button>
-        <button type="submit" className="button button--primary" disabled={pending}>
+        <button type="submit" className="button button--primary" disabled={pending || settlementsLoading}>
           {pending ? t('management.common.saving') : t('management.common.save')}
         </button>
       </div>
@@ -183,13 +248,19 @@ export interface CustomerFormProps {
 }
 
 export function CustomerForm({ customer, onSaved, onCancel }: CustomerFormProps) {
-  const { t } = useTranslation(SERVICE_NAMESPACE);
+  const { t, i18n } = useTranslation(SERVICE_NAMESPACE);
   const queryClient = useQueryClient();
   const mode = customer === undefined ? 'create' : 'edit';
   const [values, setValues] = useState<CustomerFormValues>(
     customer === undefined ? EMPTY_FORM_VALUES : formValuesFromCustomer(customer),
   );
   const [errors, setErrors] = useState<CustomerFormErrors>(NO_FORM_ERRORS);
+  const { settlements: active, loading: settlementsLoading } = useActiveSettlements();
+  const options = useMemo(
+    () => (active.length === 0 ? [] : settlementOptions(active, customer?.locality, listLanguage(i18n.language))),
+    [active, customer?.locality, i18n.language],
+  );
+  const settlementList = options.length > 0;
 
   const mutation = useMutation({
     mutationFn: (body: ReturnType<typeof toCustomerBody>): Promise<StaffCustomer> =>
@@ -217,7 +288,8 @@ export function CustomerForm({ customer, onSaved, onCancel }: CustomerFormProps)
   const onChange = (valueKey: ValueKey, value: string): void => {
     setValues((previous) => ({ ...previous, [valueKey]: value }));
     // An edited field is no longer the refused value, so its message goes away.
-    const field = FIELD_SPECS.find((spec) => spec.valueKey === valueKey)?.field;
+    // The settlement select belongs to the City field.
+    const field = valueKey === 'localityId' ? 'city' : FIELD_SPECS.find((spec) => spec.valueKey === valueKey)?.field;
     if (field !== undefined && errors.fields[field] !== undefined) {
       const rest = { ...errors.fields };
       delete rest[field];
@@ -229,7 +301,7 @@ export function CustomerForm({ customer, onSaved, onCancel }: CustomerFormProps)
     event.preventDefault();
     if (mutation.isPending) return;
     setErrors(NO_FORM_ERRORS);
-    mutation.mutate(toCustomerBody(values));
+    mutation.mutate(toCustomerBody(values, settlementList));
   };
 
   return (
@@ -244,6 +316,8 @@ export function CustomerForm({ customer, onSaved, onCancel }: CustomerFormProps)
         values={values}
         errors={errors}
         pending={mutation.isPending}
+        settlements={options}
+        settlementsLoading={settlementsLoading}
         onChange={onChange}
         onSubmit={onSubmit}
         onCancel={onCancel}

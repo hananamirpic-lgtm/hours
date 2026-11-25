@@ -332,6 +332,11 @@ export function categoryName(category: { name_he: string; name_en: string }, lan
 }
 
 /** The path of a ticket's detail page (R15.2 row link). */
+/** True for the move to Resolved: the list does not send it, it links to the detail page's Resolve form (R29.5). */
+export function isResolveTarget(target: TicketStatus): boolean {
+  return target === 'closed';
+}
+
 export function ticketDetailPath(ticketNumber: number): string {
   return `/tickets/list/${ticketNumber}`;
 }

@@ -72,11 +72,14 @@ export const TICKET_NAV: readonly ManagementNavEntry[] = [
   { to: '/tickets/reports', labelKey: 'management.nav.reports', end: false },
 ];
 
-/** The configuration entries, shown to Config_Staff only (R19.1). */
+/** The configuration entries, shown to Config_Staff only (R19.1, R28.1, R29.6, R30.1). */
 export const CONFIG_NAV: readonly ManagementNavEntry[] = [
   { to: '/tickets/settings/categories', labelKey: 'management.nav.categories', end: false },
+  { to: '/tickets/settings/localities', labelKey: 'management.nav.localities', end: false },
+  { to: '/tickets/settings/parts', labelKey: 'management.nav.parts', end: false },
   { to: '/tickets/settings/labels', labelKey: 'management.nav.labels', end: false },
   { to: '/tickets/settings/options', labelKey: 'management.nav.options', end: false },
+  { to: '/tickets/settings/branding', labelKey: 'management.nav.branding', end: false },
 ];
 
 export interface ManagementNav {

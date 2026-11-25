@@ -9,9 +9,10 @@ import {
   PORTAL_SUBMIT_TIMEOUT_MS,
   PortalApiError,
   portalFetch,
+  portalFetchBlob,
   type PortalRequestOptions,
 } from './portalFetch';
-import type { FormConfig, TicketCreated } from './formTypes';
+import { normalizeFormConfig, type FormConfig, type TicketCreated } from './formTypes';
 
 /** Under the `['portal']` root, so signing out drops it with every other portal query. */
 export const formConfigKey = ['portal', 'form-config'] as const;
@@ -21,8 +22,26 @@ function withSignal(signal: AbortSignal | undefined): PortalRequestOptions {
 }
 
 /** `GET /service/form-config`: active categories, the field labels and the two options. */
-export function getFormConfig(signal?: AbortSignal): Promise<FormConfig> {
-  return portalFetch<FormConfig>('/form-config', withSignal(signal));
+export async function getFormConfig(signal?: AbortSignal): Promise<FormConfig> {
+  return normalizeFormConfig(await portalFetch<FormConfig>('/form-config', withSignal(signal)));
+}
+
+/** Under the `['portal']` root, so signing out drops the logo with every other portal query. */
+export const brandingLogoKey = ['portal', 'branding-logo'] as const;
+
+/**
+ * `GET /service/branding/logo` as a Blob, fetched with the bearer header (R28.3, R28.5). Ask for it only
+ * when the form configuration says `has_logo`; the server answers 404 with an empty body otherwise. A body
+ * that is not an image is the `generic` error, so a proxy page is never handed to `URL.createObjectURL`.
+ */
+export async function getBrandingLogo(
+  signal?: AbortSignal,
+  /** Tests inject a token store; the portal uses the customer token store. */
+  tokens?: PortalRequestOptions['tokens'],
+): Promise<Blob> {
+  const blob = await portalFetchBlob('/branding/logo', { ...withSignal(signal), ...(tokens ? { tokens } : {}) });
+  if (blob.size === 0 || !blob.type.toLowerCase().startsWith('image/')) throw new PortalApiError(200, GENERIC_CODE);
+  return blob;
 }
 
 /** `GET /service/auth/me`: the Customer_Record the form prefills from (R9.2). Same shape the session gate reads. */

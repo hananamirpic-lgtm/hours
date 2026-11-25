@@ -36,10 +36,13 @@ import {
   AssignedTechnicianEditor,
   HistoryEntryFormView,
   HistorySection,
+  PartsReplacedSection,
   PhotoSection,
   StatusActions,
   TicketFields,
 } from './ticketDetailSections';
+
+const locales = { en, he };
 
 // --- fixtures --------------------------------------------------------------------------------------
 
@@ -445,6 +448,65 @@ describe('StatusActions markup', () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain(language === 'en' ? en.management.tickets.actions.close : he.management.tickets.actions.close);
     expect(markup).toContain(language === 'en' ? en.errors.ticket_status_changed : he.errors.ticket_status_changed);
+  });
+});
+
+describe('StatusActions live region and heading (R29.4, R23.12)', () => {
+  const base = {
+    ticketNumber: 12345,
+    status: 'closed' as TicketStatus,
+    pending: null,
+    technicianName: '',
+    onTechnicianNameChange: noop,
+    onChange: noop,
+    failure: null,
+  };
+
+  it.each(LANGUAGES)('announces the success message in a polite live region and makes the heading focusable, in %s', (language) => {
+    const message = locales[language].management.ticket.resolve.success.replace('{{number}}', '12345');
+    const markup = render(language, createElement(StatusActions, { ...base, notice: message }));
+    expectNoMissingKeys(markup);
+    expect(markup).toMatch(/<div[^>]*role="status"[^>]*aria-live="polite"[^>]*>/);
+    expect(markup).toContain(message);
+    expect(markup).toMatch(/<h2[^>]*tabindex="-1"/);
+  });
+
+  it('keeps an empty live region while there is no message, and none when the page gives no notice prop', () => {
+    const empty = render('en', createElement(StatusActions, { ...base, notice: null }));
+    expect(empty).toMatch(/<div[^>]*role="status"[^>]*><\/div>/);
+    expect(empty).not.toContain('feedback--success');
+    expect(render('en', createElement(StatusActions, base))).not.toContain('role="status"');
+  });
+});
+
+describe('PartsReplacedSection markup (R29.7)', () => {
+  const replaced = [
+    { id: 'p1', name_he: 'אטם', name_en: 'Washer' },
+    { id: 'p2', name_he: 'ברז', name_en: 'Tap' },
+  ];
+
+  it.each(LANGUAGES)('lists the replaced parts in the current language under its heading, in %s', (language) => {
+    const markup = render(language, createElement(PartsReplacedSection, { parts: replaced, language }));
+    expectNoMissingKeys(markup);
+    expect(markup).toContain(locales[language].management.ticket.partsReplaced.heading);
+    const names = language === 'en' ? ['Washer', 'Tap'] : ['אטם', 'ברז'];
+    expect(markup.indexOf(names[0] ?? '')).toBeGreaterThan(-1);
+    expect(markup.indexOf(names[0] ?? '')).toBeLessThan(markup.indexOf(names[1] ?? ''));
+    expect(markup).toMatch(/<section[^>]*aria-labelledby="([^"]+)"/);
+  });
+
+  it('shows nothing for a ticket with no replaced part, absent or empty', () => {
+    expect(render('en', createElement(PartsReplacedSection, { parts: undefined, language: 'en' }))).toBe('');
+    expect(render('en', createElement(PartsReplacedSection, { parts: [], language: 'en' }))).toBe('');
+  });
+
+  it('shows a part name as plain text', () => {
+    const markup = render(
+      'en',
+      createElement(PartsReplacedSection, { parts: [{ id: 'p9', name_he: '<b>x</b>', name_en: '<img src=x onerror=alert(1)>' }], language: 'en' }),
+    );
+    expect(markup).not.toContain('<img');
+    expect(markup).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 });
 

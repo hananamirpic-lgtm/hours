@@ -8,14 +8,21 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import type { FormLocality } from '../api/staffFormConfig';
+import type { PartOption } from '../api/staffReportsExtra';
 import type { StaffCategory, StaffReport } from '../api/staffTypes';
 import { SERVICE_NAMESPACE } from './namespace';
 import {
   categoryCountEntries,
+  exportErrorKey,
   isEmptyReport,
+  partFilterOptions,
+  partsCellText,
   reportErrorField,
   reportErrorKey,
+  settlementCellText,
   statusCountEntries,
+  type ExportState,
   type ReportFilters,
 } from './reportsModel';
 import {
@@ -38,6 +45,15 @@ export interface ReportsViewProps {
   readonly onClear: () => void;
   /** Every category, active and inactive (R18.6). */
   readonly categories: readonly StaffCategory[];
+  /** The active settlements. While there are some, the settlement filter is a select; else a text input. */
+  readonly settlements: readonly FormLocality[];
+  /** The parts the "Part replaced" filter lists (all of them for Config_Staff, else the active ones). */
+  readonly parts: readonly PartOption[];
+  /** The state of the Excel export: its status and error messages, and whether the button is busy. */
+  readonly exportState: ExportState;
+  /** True when a report is on screen and no file is being prepared. */
+  readonly canExport: boolean;
+  readonly onExport: () => void;
   /** The report to show, or null while loading and after a failure. */
   readonly report: StaffReport | null;
   /** True while a request is running. */
@@ -47,6 +63,12 @@ export interface ReportsViewProps {
   readonly onRetry: () => void;
   readonly onPageChange: (page: number) => void;
 }
+
+const PART_FILTER_TEXT_KEYS = {
+  any: 'management.reports.partFilterAny',
+  yes: 'management.reports.partFilterYes',
+  no: 'management.reports.partFilterNo',
+} as const;
 
 /** The SOS_Indicator: an icon that assistive technology skips, and the text (R15.2, R23.12). */
 function SosIndicator({ text }: { text: string }) {
@@ -62,8 +84,24 @@ function SosIndicator({ text }: { text: string }) {
 
 export function ReportsView(props: ReportsViewProps) {
   const { t } = useTranslation(SERVICE_NAMESPACE);
-  const { language, draft, onDraftChange, onSubmit, onClear, categories, report, busy, errorCode, onRetry, onPageChange } =
-    props;
+  const {
+    language,
+    draft,
+    onDraftChange,
+    onSubmit,
+    onClear,
+    categories,
+    settlements,
+    parts,
+    exportState,
+    canExport,
+    onExport,
+    report,
+    busy,
+    errorCode,
+    onRetry,
+    onPageChange,
+  } = props;
 
   const uid = useId();
   const id = (name: string): string => `${uid}-${name}`;
@@ -77,6 +115,8 @@ export function ReportsView(props: ReportsViewProps) {
   const statuses = report === null ? [] : statusCountEntries(report.by_status);
   const categoryCounts = report === null ? [] : categoryCountEntries(report.by_category, language);
   const info = report === null ? null : pageInfo(report.tickets.page, report.tickets.total);
+  const exporting = exportState.kind === 'preparing';
+  const exportStatusId = id('export-status');
 
   return (
     <section className="page-body reports" aria-labelledby={id('title')}>
@@ -127,19 +167,42 @@ export function ReportsView(props: ReportsViewProps) {
             />
           </div>
 
-          <div className="field">
-            <label className="field__label" htmlFor={id('city')}>
-              {t('management.reports.city')}
-            </label>
-            <input
-              id={id('city')}
-              className="input"
-              type="text"
-              autoComplete="off"
-              value={draft.city}
-              onChange={(event) => set({ city: event.target.value })}
-            />
-          </div>
+          {settlements.length > 0 ? (
+            <div className="field">
+              <label className="field__label" htmlFor={id('settlement')}>
+                {t('management.reports.settlementLabel')}
+              </label>
+              <select
+                id={id('settlement')}
+                className="select"
+                value={draft.localityId}
+                aria-invalid={errorField === 'filters' ? true : undefined}
+                aria-describedby={describedBy('filters')}
+                onChange={(event) => set({ localityId: event.target.value })}
+              >
+                <option value="">{t('management.reports.settlementAll')}</option>
+                {settlements.map((settlement) => (
+                  <option key={settlement.id} value={settlement.id}>
+                    {categoryName(settlement, language)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="field">
+              <label className="field__label" htmlFor={id('city')}>
+                {t('management.reports.city')}
+              </label>
+              <input
+                id={id('city')}
+                className="input"
+                type="text"
+                autoComplete="off"
+                value={draft.city}
+                onChange={(event) => set({ city: event.target.value })}
+              />
+            </div>
+          )}
 
           <div className="field">
             <label className="field__label" htmlFor={id('category')}>
@@ -164,6 +227,35 @@ export function ReportsView(props: ReportsViewProps) {
               })}
             </select>
           </div>
+
+          <div className="field">
+            <label className="field__label" htmlFor={id('part')}>
+              {t('management.reports.partFilterLabel')}
+            </label>
+            <select
+              id={id('part')}
+              className="select"
+              value={draft.partFilter}
+              aria-invalid={errorField === 'filters' ? true : undefined}
+              aria-describedby={describedBy('filters')}
+              onChange={(event) => set({ partFilter: event.target.value })}
+            >
+              {partFilterOptions(parts, language).map((option) => {
+                if (option.kind === 'part') {
+                  return (
+                    <option key={option.value} value={option.value}>
+                      {option.inactive ? t('management.reports.partFilterInactive', { name: option.name }) : option.name}
+                    </option>
+                  );
+                }
+                return (
+                  <option key={option.value} value={option.value}>
+                    {t(PART_FILTER_TEXT_KEYS[option.kind])}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
         </div>
 
         <div className="reports__buttons">
@@ -173,8 +265,28 @@ export function ReportsView(props: ReportsViewProps) {
           <button type="button" className="button" onClick={onClear}>
             {t('management.common.clearFilters')}
           </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!canExport}
+            aria-busy={exporting}
+            aria-describedby={exportStatusId}
+            onClick={onExport}
+          >
+            {t('management.reports.exportButton')}
+          </button>
         </div>
       </form>
+
+      <div id={exportStatusId} className="reports__export-status" role="status">
+        {exportState.kind === 'preparing' ? t('management.reports.exportPreparing') : null}
+        {exportState.kind === 'done' ? t('management.reports.exportDone') : null}
+      </div>
+      {exportState.kind === 'failed' && (
+        <div className="feedback feedback--error reports__alert" role="alert">
+          <p>{t(exportErrorKey(exportState.code))}</p>
+        </div>
+      )}
 
       {errorCode !== null && (
         <div className="feedback feedback--error reports__alert" role="alert" id={errorId}>
@@ -250,6 +362,7 @@ export function ReportsView(props: ReportsViewProps) {
                     <th scope="col">{t('management.tickets.columns.city')}</th>
                     <th scope="col">{t('management.tickets.columns.apartment')}</th>
                     <th scope="col">{t('management.tickets.columns.category')}</th>
+                    <th scope="col">{t('management.reports.columns.parts')}</th>
                     <th scope="col">{t('management.tickets.columns.status')}</th>
                     <th scope="col">{t('management.tickets.columns.technician')}</th>
                     <th scope="col">{t('management.tickets.columns.sos')}</th>
@@ -274,13 +387,16 @@ export function ReportsView(props: ReportsViewProps) {
                         <bdi>{row.customer_name}</bdi>
                       </td>
                       <td>
-                        <bdi>{row.city}</bdi>
+                        <bdi>{settlementCellText(row, language)}</bdi>
                       </td>
                       <td>
                         <bdi>{row.apartment}</bdi>
                       </td>
                       <td>
                         <bdi>{categoryName(row.category, language)}</bdi>
+                      </td>
+                      <td>
+                        <bdi>{partsCellText(row, language)}</bdi>
                       </td>
                       <td>
                         <span className={statusBadgeClass(row.status)}>{t(statusTextKey(row.status))}</span>

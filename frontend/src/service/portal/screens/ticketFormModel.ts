@@ -5,9 +5,17 @@
 // submission means for the screen. `TicketFormScreen.tsx` holds the state and renders; this file holds
 // the rules, so they are testable without a DOM.
 import { PortalApiError } from '../../api/portalFetch';
-import { FORM_LABEL_KEYS, type FormCategory, type FormConfig, type FormLabelKey, type FormSettings } from '../../api/formTypes';
+import {
+  FORM_LABEL_KEYS,
+  type FormCategory,
+  type FormConfig,
+  type FormLabelKey,
+  type FormLocality,
+  type FormSettings,
+} from '../../api/formTypes';
 import { errorTextKey, firstFailingField, fieldsToMessages, type ErrorTextKey, type FieldErrors, type FieldMessage } from '../formErrors';
 import { waitTimeMessage, type WaitTime } from '../waitTime';
+import { prefillLocalityId } from './settlementModel';
 
 // --- constants -------------------------------------------------------------------------------------
 
@@ -117,7 +125,14 @@ export function categoryOptions(categories: readonly FormCategory[], language: '
 // --- values ----------------------------------------------------------------------------------------
 
 export interface FormValues {
+  /** The free-text city. Used while no settlement list is active (R30.3). */
   readonly city: string;
+  /**
+   * The chosen settlement id while the list is active (R30.2), '' while none is chosen. Optional so that
+   * code that builds a form without settlements (the staff new-ticket page) needs no change. Kept by id,
+   * so the language switch only re-labels it (R30.5).
+   */
+  readonly localityId?: string;
   readonly apartment: string;
   readonly phone: string;
   /** The chosen category id, or '' while none is chosen. */
@@ -131,15 +146,26 @@ export interface PrefillSource {
   readonly city: string | null;
   readonly apartment: string | null;
   readonly phone: string;
+  /** The customer's settlement (R30.6); null or absent when the city is only text. */
+  readonly locality?: { readonly id: string } | null;
 }
 
 /**
  * The values the form opens with: City, Apartment number and Phone number from the Customer_Record
  * (empty where the record holds none), and nothing else. No category is chosen and Urgent is off.
+ *
+ * While the settlement list is active (`settlements.required`), the City field is the settlement choice:
+ * the customer's settlement is preselected when it is in the list, otherwise nothing is (R30.6), and the
+ * free-text city is not used.
  */
-export function initialValues(me: PrefillSource): FormValues {
+export function initialValues(
+  me: PrefillSource,
+  settlements?: { readonly required: boolean; readonly localities: readonly FormLocality[] },
+): FormValues {
+  const choice = settlements?.required === true;
   return {
-    city: me.city ?? '',
+    city: choice ? '' : (me.city ?? ''),
+    ...(choice ? { localityId: prefillLocalityId(me.locality, settlements.localities) } : {}),
     apartment: me.apartment ?? '',
     phone: me.phone,
     categoryId: '',
@@ -148,9 +174,11 @@ export function initialValues(me: PrefillSource): FormValues {
   };
 }
 
-/** The error-map name of a value key: the server names the category field `category_id`. */
+/** The error-map name of a value key: the server names the category field `category_id`, and the settlement `city`. */
 export function errorFieldOf(key: keyof FormValues): FormFieldName {
-  return key === 'categoryId' ? 'category_id' : key;
+  if (key === 'categoryId') return 'category_id';
+  if (key === 'localityId') return 'city';
+  return key;
 }
 
 /** The three-way state of the Description field (R9.5, R23.1). */
@@ -181,10 +209,20 @@ export function clientPhotoError(file: { readonly size: number } | null): 'photo
  * The multipart body of the submission. Values go as typed (the server trims). The `photo` part is
  * present only when a photo is chosen and uploads are on; with no photo the part is left out entirely,
  * because an empty file part is rejected as an invalid image (R11.3).
+ *
+ * While the settlement list is active (`settlementsRequired`) the body carries `locality_id` and no `city`
+ * part; otherwise it carries `city` and no `locality_id`. The server accepts exactly one of the two forms
+ * (R30.2, R30.3).
  */
-export function buildFormData(values: FormValues, photo: File | null, settings: FormSettings): FormData {
+export function buildFormData(
+  values: FormValues,
+  photo: File | null,
+  settings: FormSettings,
+  settlementsRequired = false,
+): FormData {
   const body = new FormData();
-  body.append('city', values.city);
+  if (settlementsRequired) body.append('locality_id', values.localityId ?? '');
+  else body.append('city', values.city);
   body.append('apartment', values.apartment);
   body.append('phone', values.phone);
   body.append('category_id', values.categoryId);

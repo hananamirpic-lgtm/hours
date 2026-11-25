@@ -11,6 +11,7 @@ import { createPortalI18n, type PortalLanguage } from '../portal/portalI18n';
 import en from '@/i18n/locales/en/service.json';
 import he from '@/i18n/locales/he/service.json';
 import { dashboardListFilters, dashboardListTarget } from './dashboardModel';
+import { resolveLinkPath } from './resolveModel';
 import {
   EMPTY_FILTERS,
   INITIAL_LIST,
@@ -21,6 +22,7 @@ import {
   displayedPage,
   formatJerusalemMinute,
   hasActiveFilters,
+  isResolveTarget,
   isUrgentOpen,
   listErrorField,
   listErrorKey,
@@ -39,6 +41,8 @@ import {
   type TicketListFilters,
 } from './ticketListModel';
 import { TicketListView, type TicketListViewProps } from './ticketListView';
+
+const locales = { en, he };
 
 const STATUSES: TicketStatus[] = ['received', 'in_progress', 'closed', 'cancelled'];
 
@@ -415,8 +419,8 @@ describe('TicketListView', () => {
 
   it('offers only the allowed targets per row, and nothing for a cancelled ticket (R15.9, R15.11)', () => {
     expect(rowHtml(html, 10001)).toContain('Move to in progress');
-    expect(rowHtml(html, 10001)).not.toContain('Mark as resolved');
-    expect(rowHtml(html, 10002)).toContain('Mark as resolved');
+    expect(rowHtml(html, 10001)).not.toContain('Resolve…');
+    expect(rowHtml(html, 10002)).toContain('Resolve…');
     expect(rowHtml(html, 10002)).not.toContain('Move to in progress');
     expect(rowHtml(html, 10003)).toContain('Reopen');
     const cancelled = rowHtml(html, 10004);
@@ -426,10 +430,11 @@ describe('TicketListView', () => {
   });
 
   it('gives each action button an accessible name with the ticket number and disables a pending ticket', () => {
-    expect(html).toContain('aria-label="Mark as resolved, ticket 10002"');
-    const pending = render('en', createElement(TicketListView, view({ page: page(items), pendingTickets: new Set([10002]) })));
-    expect(rowHtml(pending, 10002)).toMatch(/<button[^>]*disabled/);
-    expect(rowHtml(pending, 10001)).not.toMatch(/<button[^>]*disabled/);
+    expect(html).toContain('aria-label="Move to in progress, ticket 10001"');
+    expect(html).toContain('aria-label="Resolve…, ticket 10002"');
+    const pending = render('en', createElement(TicketListView, view({ page: page(items), pendingTickets: new Set([10001]) })));
+    expect(rowHtml(pending, 10001)).toMatch(/<button[^>]*disabled/);
+    expect(rowHtml(pending, 10003)).not.toMatch(/<button[^>]*disabled/);
   });
 
   it('labels every input and offers inactive categories (R15.5, R23.12)', () => {
@@ -496,6 +501,49 @@ describe('TicketListView', () => {
     expect(paged).toContain('26–29 of 60');
     expect(paged).toContain('Previous');
     expect(paged).toContain('Next');
+  });
+});
+
+describe('the Resolve… action of the list (R29.5)', () => {
+  const items = [row(10001, 'received'), row(10002, 'in_progress'), row(10003, 'closed')];
+
+  it('is the move to Resolved only, and its address opens the Resolve form of that ticket', () => {
+    expect(isResolveTarget('closed')).toBe(true);
+    expect(isResolveTarget('in_progress')).toBe(false);
+    expect(isResolveTarget('cancelled')).toBe(false);
+    expect(resolveLinkPath(12345)).toBe('/tickets/list/12345?resolve=1');
+  });
+
+  it.each(['en', 'he'] as const)('is a link to the detail page, not a button, and calls nothing, in %s', (language) => {
+    const calls: Array<[number, TicketStatus]> = [];
+    const html = render(
+      language,
+      createElement(
+        TicketListView,
+        view({ language, page: page(items), onChangeStatus: (changed, target) => calls.push([changed.ticket_number, target]) }),
+      ),
+    );
+    const resolving = rowHtml(html, 10002);
+    expect(resolving).toContain('href="/tickets/list/10002?resolve=1"');
+    expect(resolving).toContain(`>${locales[language].management.tickets.actions.resolveLink}</a>`);
+    expect(resolving).not.toContain('<button');
+    expect(resolving).toContain(`aria-label="${locales[language].management.tickets.actions.resolveLink}`);
+    expect(calls).toEqual([]);
+  });
+
+  it('leaves the other actions as buttons and shows the link for no other ticket', () => {
+    const html = render('en', createElement(TicketListView, view({ page: page(items) })));
+    expect(rowHtml(html, 10001)).toMatch(/<button[^>]*>Move to in progress<\/button>/);
+    expect(rowHtml(html, 10003)).toMatch(/<button[^>]*>Reopen<\/button>/);
+    expect(html.match(/\?resolve=1/g)).toHaveLength(1);
+  });
+
+  it('keeps the plain link to the detail page and the list filters of the address', () => {
+    const html = render('en', createElement(TicketListView, view({ page: page(items) })));
+    expect(rowHtml(html, 10002)).toContain('href="/tickets/list/10002"');
+    expect(listStateFromParams(new URLSearchParams('status=in_progress&resolve=1')).applied.filters.statuses).toEqual([
+      'in_progress',
+    ]);
   });
 });
 

@@ -6,10 +6,11 @@
  * Every input has a visible label tied to it with `htmlFor` (R23.12). A field error is tied to its field with
  * `aria-describedby`. Status and urgency are text, never colour alone. Ticket text is rendered as text only.
  */
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { StaffHistoryEntry, StaffTicketDetail, TicketStatus } from '../api/staffTypes';
+import type { StaffHistoryEntry, StaffReplacedPart, StaffTicketDetail, TicketStatus } from '../api/staffTypes';
 import { SERVICE_NAMESPACE } from './namespace';
+import { replacedPartNames } from './resolveModel';
 import {
   ENTRY_FIELDS,
   ENTRY_TECHNICIAN_FIELD,
@@ -152,6 +153,13 @@ export interface StatusActionsProps {
   onTechnicianNameChange: (value: string) => void;
   onChange: (target: TicketStatus) => void;
   failure: StatusFailure | null;
+  /** Receives the section heading, which takes focus after a ticket is resolved (R23.12). */
+  headingRef?: Ref<HTMLHeadingElement>;
+  /**
+   * The text of the success message, or null for none. The live region is on the page whenever this prop is
+   * given (also while empty), so a screen reader announces the text when it appears.
+   */
+  notice?: string | null;
 }
 
 export function StatusActions({
@@ -162,6 +170,8 @@ export function StatusActions({
   onTechnicianNameChange,
   onChange,
   failure,
+  headingRef,
+  notice,
 }: StatusActionsProps) {
   const { t } = useTranslation(SERVICE_NAMESPACE);
   const id = useId();
@@ -169,9 +179,14 @@ export function StatusActions({
   const asksName = targets.some((target) => isApproval(status, target));
   return (
     <section className="card ticket-detail-section" aria-labelledby={`${id}-heading`}>
-      <h2 id={`${id}-heading`} className="card__title">
+      <h2 id={`${id}-heading`} ref={headingRef} tabIndex={-1} className="card__title">
         {t('management.ticket.statusSection.title')}
       </h2>
+      {notice !== undefined && (
+        <div role="status" aria-live="polite" className="ticket-detail-notice">
+          {notice !== null && <p className="feedback feedback--success">{notice}</p>}
+        </div>
+      )}
       {targets.length === 0 ? (
         // A Cancelled ticket has no action that changes the status (R15.11).
         <p>{t('management.tickets.actions.none')}</p>
@@ -226,6 +241,37 @@ export function StatusActions({
           <p>{t(errorKeyOf(failure.code))}</p>
         </div>
       )}
+    </section>
+  );
+}
+
+// --- the replaced parts (R29.7) --------------------------------------------------------------------
+
+export interface PartsReplacedSectionProps {
+  /** `parts_replaced` of the ticket detail. Absent or empty: nothing is shown. */
+  parts: readonly StaffReplacedPart[] | undefined;
+  language: DetailLanguage;
+}
+
+/** The parts recorded by the last resolution, names in the current language, as plain text. Also shown after a reopen. */
+export function PartsReplacedSection({ parts, language }: PartsReplacedSectionProps) {
+  const { t } = useTranslation(SERVICE_NAMESPACE);
+  const id = useId();
+  const names = replacedPartNames(parts, language);
+  if (names.length === 0) return null;
+  return (
+    <section className="card ticket-detail-section" aria-labelledby={`${id}-heading`}>
+      <h2 id={`${id}-heading`} className="card__title">
+        {t('management.ticket.partsReplaced.heading')}
+      </h2>
+      <ul className="ticket-detail-parts">
+        {names.map((name, index) => (
+          // The same name can be listed twice only if two parts share it; the position keeps the keys apart.
+          <li key={`${index}-${name}`}>
+            <bdi>{name}</bdi>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

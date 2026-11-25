@@ -535,6 +535,31 @@ describe('TicketDetailView markup', () => {
     expect(viewOf('en')).toContain('Received');
   });
 
+  it('shows the settlement in the current language, else the stored city text (R30.5)', () => {
+    const locality = { id: 'l1', name_he: 'חיפה', name_en: 'Haifa City' };
+    const withLocality = ticketOf({ city: 'חיפה', locality });
+    expect(viewOf('he', { ticket: withLocality })).toContain('<dd>חיפה</dd>');
+    expect(viewOf('en', { ticket: withLocality })).toContain('<dd>Haifa City</dd>');
+    // No settlement (a ticket from before the list, or while it was empty): the stored text, in both languages.
+    for (const language of ['he', 'en'] as const) {
+      for (const none of [undefined, null]) {
+        expect(viewOf(language, { ticket: ticketOf({ city: 'Old Town', ...(none === undefined ? {} : { locality: none }) }) })).toContain(
+          '<dd>Old Town</dd>',
+        );
+      }
+    }
+    // A blank name in the current language falls back to the other one.
+    expect(viewOf('en', { ticket: ticketOf({ locality: { id: 'l2', name_he: 'עכו', name_en: ' ' } }) })).toContain('<dd>עכו</dd>');
+  });
+
+  it('keeps the settlement of a detail answer and drops a malformed one', () => {
+    const locality = { id: 'l1', name_he: 'חיפה', name_en: 'Haifa City' };
+    expect(parseTicketDetail({ ...ticketOf(), locality }).locality).toEqual(locality);
+    expect(parseTicketDetail(ticketOf()).locality).toBeNull();
+    expect(parseTicketDetail({ ...ticketOf(), locality: 'Haifa' }).locality).toBeNull();
+    expect(parseTicketDetail({ ...ticketOf(), locality: { id: 'l1', name_he: 1 } }).locality).toBeNull();
+  });
+
   it('shows urgency as an icon plus text only when the flag is set', () => {
     const urgent = viewOf('en', { ticket: ticketOf({ urgent: true }) });
     expect(urgent).toContain('aria-hidden="true"');

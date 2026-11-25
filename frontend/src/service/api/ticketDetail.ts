@@ -96,7 +96,17 @@ export function parseTicketDetail(raw: unknown): CustomerTicketDetail {
   ) {
     throw new PortalApiError(200, GENERIC_CODE);
   }
-  return raw as unknown as CustomerTicketDetail;
+  // The settlement is optional (R30.5): a member that is not `{id, name_he, name_en}` is no settlement, and
+  // the stored city text shows instead.
+  const rawLocality = raw.locality;
+  const locality =
+    isRecord(rawLocality) &&
+    typeof rawLocality.id === 'string' &&
+    typeof rawLocality.name_he === 'string' &&
+    typeof rawLocality.name_en === 'string'
+      ? { id: rawLocality.id, name_he: rawLocality.name_he, name_en: rawLocality.name_en }
+      : null;
+  return { ...(raw as unknown as CustomerTicketDetail), locality };
 }
 
 /** The label texts of a form-config answer; entries that are not `{he, en}` strings are left out. */

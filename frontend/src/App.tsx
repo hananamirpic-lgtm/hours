@@ -41,12 +41,15 @@ import { LoginScreen } from '@/auth/LoginScreen';
 import { FlagGate } from '@/service/gates/FlagGate';
 import { TechnicianGate } from '@/service/gates/TechnicianGate';
 import { ManagementLayout } from '@/service/management/ManagementLayout';
+import { BrandingPage } from '@/service/management/pages/BrandingPage';
 import { CategoriesPage } from '@/service/management/pages/CategoriesPage';
 import { CustomersPage as TicketCustomersPage } from '@/service/management/pages/CustomersPage';
 import { DashboardPage as TicketDashboardPage } from '@/service/management/pages/DashboardPage';
 import { LabelsPage } from '@/service/management/pages/LabelsPage';
+import { LocalitiesPage } from '@/service/management/pages/LocalitiesPage';
 import { NewTicketPage } from '@/service/management/pages/NewTicketPage';
 import { OptionsPage } from '@/service/management/pages/OptionsPage';
+import { PartsPage } from '@/service/management/pages/PartsPage';
 import { ReportsPage as TicketReportsPage } from '@/service/management/pages/ReportsPage';
 import { TicketDetailPage } from '@/service/management/pages/TicketDetailPage';
 import { TicketListPage } from '@/service/management/pages/TicketListPage';
@@ -89,7 +92,7 @@ export default function App() {
         off or unknown no sign-in or ticket screen renders at any /tickets path. Inside it, RequireTicketStaff
         sends a visitor with no staff session to /login and shows a not-authorized page to any other role or
         to a customer token. The forced password change and the 2FA enrolment come before any screen, as in
-        the console. The three configuration screens add RequireConfigStaff (a technician sees "not available").
+        the console. The configuration screens add RequireConfigStaff (a technician sees "not available").
       */}
       <Route
         path="/tickets"
@@ -121,6 +124,22 @@ export default function App() {
           }
         />
         <Route
+          path="settings/localities"
+          element={
+            <RequireConfigStaff>
+              <LocalitiesPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/parts"
+          element={
+            <RequireConfigStaff>
+              <PartsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
           path="settings/labels"
           element={
             <RequireConfigStaff>
@@ -133,6 +152,14 @@ export default function App() {
           element={
             <RequireConfigStaff>
               <OptionsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/branding"
+          element={
+            <RequireConfigStaff>
+              <BrandingPage />
             </RequireConfigStaff>
           }
         />

@@ -118,6 +118,17 @@
   inline-size: calc(var(--space) * 2);
 }
 
+/* The replaced parts (task 30.9, R29.7): a plain list of names, shown only when there are parts. */
+.ticket-detail-parts {
+  margin: 0;
+  padding-inline-start: calc(var(--space) * 3);
+}
+
+/* The live region of the status section: no space while it is empty. */
+.ticket-detail-notice:empty {
+  display: none;
+}
+
 /* "Opened by staff: <username>" (task 29.5, R26.7): a plain line under the fields, shown only for such tickets. */
 .ticket-detail-opened-by {
   margin-block: calc(var(--space) * 2) 0;

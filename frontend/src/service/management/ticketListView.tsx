@@ -11,10 +11,12 @@ import { Link } from 'react-router-dom';
 import type { StaffCategory, StaffTicketPage, StaffTicketRow, TicketStatus } from '../api/staffTypes';
 import { SERVICE_NAMESPACE } from './namespace';
 import { NEW_TICKET_PATH } from './newTicketModel';
+import { resolveLinkPath } from './resolveModel';
 import {
   STATUS_ORDER,
   categoryName,
   formatJerusalemMinute,
+  isResolveTarget,
   listErrorField,
   listErrorKey,
   pageInfo,
@@ -355,21 +357,37 @@ export function TicketListView(props: TicketListViewProps) {
                             <span className="ticket-list__hint">{t('management.tickets.actions.none')}</span>
                           ) : (
                             <div className="ticket-list__actions">
-                              {actions.map((action) => (
-                                <button
-                                  key={action.target}
-                                  type="button"
-                                  className="button"
-                                  disabled={pending}
-                                  aria-label={t('management.tickets.actionLabel', {
-                                    action: t(action.labelKey),
-                                    number: row.ticket_number,
-                                  })}
-                                  onClick={() => onChangeStatus(row, action.target)}
-                                >
-                                  {t(action.labelKey)}
-                                </button>
-                              ))}
+                              {actions.map((action) =>
+                                isResolveTarget(action.target) ? (
+                                  // Resolving needs the service history, so the list only opens the Resolve form
+                                  // on the detail page. It sends nothing (R29.5).
+                                  <Link
+                                    key={action.target}
+                                    to={resolveLinkPath(row.ticket_number)}
+                                    className="button"
+                                    aria-label={t('management.tickets.actionLabel', {
+                                      action: t('management.tickets.actions.resolveLink'),
+                                      number: row.ticket_number,
+                                    })}
+                                  >
+                                    {t('management.tickets.actions.resolveLink')}
+                                  </Link>
+                                ) : (
+                                  <button
+                                    key={action.target}
+                                    type="button"
+                                    className="button"
+                                    disabled={pending}
+                                    aria-label={t('management.tickets.actionLabel', {
+                                      action: t(action.labelKey),
+                                      number: row.ticket_number,
+                                    })}
+                                    onClick={() => onChangeStatus(row, action.target)}
+                                  >
+                                    {t(action.labelKey)}
+                                  </button>
+                                ),
+                              )}
                             </div>
                           )}
                         </td>

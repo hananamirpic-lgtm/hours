@@ -13,11 +13,15 @@
  *  - An add or edit that fails leaves the form open with the typed values and shows the message beside each
  *    failing field (R16.6). The form component holds the values, so a reload of the ticket never clears them.
  *  - The ticket is loaded once and refreshed after each change. There is no polling: staff act on the data.
+ *  - Resolving (R29.4, R29.5, R29.7): the action to Resolved opens the Resolve form under the status section and
+ *    sends nothing. The form sends the status change with its resolution; a failure keeps the form and its values
+ *    (the form component holds them) and, when the status change itself failed, reloads the ticket. `?resolve=1`
+ *    opens the form on load for a ticket in progress and is then removed from the address.
  */
 import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import {
   addHistoryEntry,
@@ -28,9 +32,21 @@ import {
   setAssignedTechnician,
   staffKeys,
 } from '../../api/staff';
+import { activePartsKey, listActiveParts } from '../../api/staffParts';
 import type { StaffTicketDetail, TicketStatus } from '../../api/staffTypes';
 import '../i18n';
 import { SERVICE_NAMESPACE } from '../namespace';
+import {
+  partsView,
+  reloadsTicket,
+  resolveFailureOf,
+  resolveInitialValues,
+  resolveStatusBody,
+  resolveUrlDecision,
+  type ResolveFailure,
+  type ResolveValues,
+} from '../resolveModel';
+import { ResolvePanel } from '../resolveSections';
 import {
   categoryName,
   codeOf,
@@ -52,6 +68,7 @@ import {
 import {
   AssignedTechnicianEditor,
   HistorySection,
+  PartsReplacedSection,
   PhotoSection,
   StatusActions,
   TicketFields,
@@ -148,6 +165,7 @@ function TicketDetail({ rawNumber }: { rawNumber: string | undefined }) {
     statusBusy.current = true;
     setStatusPending(target);
     setStatusFailure(null);
+    setResolvedNotice(false);
     try {
       const updated = await changeTicketStatus(number, statusChangeBody(from, target, approvalName));
       remember(() => updated);
@@ -159,6 +177,57 @@ function TicketDetail({ rawNumber }: { rawNumber: string | undefined }) {
     } finally {
       statusBusy.current = false;
       setStatusPending(null);
+    }
+  }
+
+  // Resolve (R29.4, R29.5). The status action that moves a ticket to Resolved opens a form on the page; the form
+  // sends the change, with its resolution, in one request. The parts of the picker load while the form is open.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolvedNotice, setResolvedNotice] = useState(false);
+  /** Counts the requests to put focus on the status heading (after a success or a cancel). */
+  const [statusFocus, setStatusFocus] = useState(0);
+  const statusHeadingRef = useRef<HTMLHeadingElement>(null);
+  const activeParts = useQuery({
+    queryKey: activePartsKey,
+    queryFn: ({ signal }) => listActiveParts(signal),
+    enabled: resolveOpen,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (statusFocus > 0) statusHeadingRef.current?.focus();
+  }, [statusFocus]);
+
+  // `?resolve=1` (the list's "Resolve…" action) opens the form once the ticket is loaded, only for a ticket that is
+  // in progress, and the parameter is then removed from the address (R29.5). Wait for a running reload, so a
+  // ticket shown from the cache with an old status is not judged.
+  const urlHandled = useRef(false);
+  useEffect(() => {
+    if (urlHandled.current || ticket === undefined || detail.isFetching) return;
+    const decision = resolveUrlDecision(location.search, ticket.status);
+    if (decision.nextSearch === null) return;
+    urlHandled.current = true;
+    if (decision.open) setResolveOpen(true);
+    navigate({ pathname: location.pathname, search: decision.nextSearch }, { replace: true });
+  }, [ticket, detail.isFetching, location.pathname, location.search, navigate]);
+
+  async function submitResolve(values: ResolveValues): Promise<ResolveFailure | null> {
+    if (number === null || ticket === undefined) return null;
+    try {
+      const updated = await changeTicketStatus(number, resolveStatusBody(ticket.status, values));
+      remember(() => updated);
+      setResolveOpen(false);
+      setResolvedNotice(true);
+      setStatusFocus((count) => count + 1);
+      return null;
+    } catch (error) {
+      const failure = resolveFailureOf(error);
+      // A failure of the status change itself: show the current status of the ticket (R15.10). The form stays open.
+      if (reloadsTicket(failure)) void detail.refetch();
+      return failure;
     }
   }
 
@@ -277,14 +346,37 @@ function TicketDetail({ rawNumber }: { rawNumber: string | undefined }) {
       <StatusActions
         ticketNumber={ticket.ticket_number}
         status={ticket.status}
-        pending={statusPending}
+        // While the Resolve form is open, the action that opened it is off.
+        pending={statusPending ?? (resolveOpen && ticket.status === 'in_progress' ? 'closed' : null)}
         technicianName={approvalName}
         onTechnicianNameChange={setApprovalName}
         onChange={(target) => {
-          void changeStatus(target);
+          // Resolving never sends from here: the form collects the resolution first (R29.4).
+          if (target === 'closed') setResolveOpen(true);
+          else void changeStatus(target);
         }}
         failure={statusFailure}
+        headingRef={statusHeadingRef}
+        notice={resolvedNotice ? t('management.ticket.resolve.success', { number: ltrIsolate(String(ticket.ticket_number)) }) : null}
       />
+
+      {resolveOpen && (
+        <ResolvePanel
+          language={language}
+          initial={resolveInitialValues(ticket.assigned_technician_name, user?.username)}
+          partsView={partsView({ status: activeParts.status, data: activeParts.data, error: activeParts.error })}
+          onRetryParts={() => {
+            void activeParts.refetch();
+          }}
+          onSubmit={submitResolve}
+          onCancel={() => {
+            setResolveOpen(false);
+            setStatusFocus((count) => count + 1);
+          }}
+        />
+      )}
+
+      <PartsReplacedSection parts={ticket.parts_replaced} language={language} />
 
       <AssignedTechnicianEditor
         value={draft ?? ticket.assigned_technician_name}

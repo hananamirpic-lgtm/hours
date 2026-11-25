@@ -22,7 +22,9 @@ import {
   actionTexts,
   availableActions,
   cellText,
+  currentCityText,
   customerFormErrors,
+  customerSettlementText,
   errorTextKey,
   firstFailingField,
   formValuesFromCustomer,
@@ -36,6 +38,7 @@ import {
   parseActiveFilter,
   parsePage,
   pastTheEndPage,
+  settlementOptions,
   stateKey,
   toCustomerBody,
   withActive,
@@ -237,17 +240,27 @@ describe('row actions (R3.7, R3.8, R3.9)', () => {
 
 describe('form values and body (R3.2)', () => {
   it('builds the edit values from the customer, with blank text for an absent city or apartment', () => {
-    expect(formValuesFromCustomer(dana)).toEqual({ phone: '0501234567', fullName: 'Dana Levi', city: 'Haifa', apartment: '' });
+    expect(formValuesFromCustomer(dana)).toEqual({
+      phone: '0501234567',
+      fullName: 'Dana Levi',
+      city: 'Haifa',
+      apartment: '',
+      localityId: '',
+    });
   });
 
   it('sends the phone and name as typed, and a blank city or apartment as null', () => {
-    expect(toCustomerBody({ phone: '050-123 4567', fullName: ' Dana ', city: '  ', apartment: '' })).toEqual({
+    expect(
+      toCustomerBody({ phone: '050-123 4567', fullName: ' Dana ', city: '  ', apartment: '', localityId: '' }),
+    ).toEqual({
       phone: '050-123 4567',
       full_name: ' Dana ',
       city: null,
       apartment: null,
     });
-    expect(toCustomerBody({ phone: '0501234567', fullName: 'Dana', city: 'Haifa', apartment: '4B' })).toMatchObject({
+    expect(
+      toCustomerBody({ phone: '0501234567', fullName: 'Dana', city: 'Haifa', apartment: '4B', localityId: '' }),
+    ).toMatchObject({
       city: 'Haifa',
       apartment: '4B',
     });
@@ -580,5 +593,149 @@ describe('CustomersPage', () => {
   it('keeps the success notice region in the page for a screen reader', () => {
     const html = renderPage('en', '/tickets/customers', page(2));
     expect(html).toContain('role="status" aria-live="polite"');
+  });
+});
+
+// --- settlements (R30.5, R30.6; task 30.10) ---------------------------------------------------------
+
+const HAIFA = { id: 'l-1', name_he: 'חיפה', name_en: 'Haifa' };
+const ACRE = { id: 'l-2', name_he: 'עכו', name_en: 'Acre' };
+const OLD_TOWN = { id: 'l-9', name_he: 'עיר ישנה', name_en: 'Old Town' };
+
+describe('settlement choices and the request body (R30.6)', () => {
+  it('lists the active settlements in the language, and the current inactive one last, marked', () => {
+    expect(settlementOptions([HAIFA, ACRE], null, 'en')).toEqual([
+      { id: 'l-1', name: 'Haifa', inactive: false },
+      { id: 'l-2', name: 'Acre', inactive: false },
+    ]);
+    expect(settlementOptions([HAIFA, ACRE], OLD_TOWN, 'he')).toEqual([
+      { id: 'l-1', name: 'חיפה', inactive: false },
+      { id: 'l-2', name: 'עכו', inactive: false },
+      { id: 'l-9', name: 'עיר ישנה', inactive: true },
+    ]);
+    // A current settlement that is still active is not added twice.
+    expect(settlementOptions([HAIFA, ACRE], ACRE, 'en')).toHaveLength(2);
+  });
+
+  it('reads the settlement of a customer into the form values', () => {
+    expect(formValuesFromCustomer({ ...dana, locality: HAIFA }).localityId).toBe('l-1');
+    expect(formValuesFromCustomer({ ...dana, locality: null }).localityId).toBe('');
+  });
+
+  it('with a settlement list sends locality_id (the id, or null) and no city text', () => {
+    const values = { phone: '0501234567', fullName: 'Dana', city: 'Haifa', apartment: '', localityId: 'l-2' };
+    const chosen = toCustomerBody(values, true);
+    expect(chosen).toEqual({ phone: '0501234567', full_name: 'Dana', apartment: null, locality_id: 'l-2' });
+    expect('city' in chosen).toBe(false);
+    const none = toCustomerBody({ ...values, localityId: '' }, true);
+    expect(none).toEqual({ phone: '0501234567', full_name: 'Dana', apartment: null, locality_id: null });
+    expect('city' in none).toBe(false);
+  });
+
+  it('without a settlement list sends the city text and leaves locality_id out', () => {
+    const body = toCustomerBody({ phone: '0501234567', fullName: 'Dana', city: ' Haifa ', apartment: '4', localityId: 'l-1' });
+    expect(body).toEqual({ phone: '0501234567', full_name: 'Dana', city: ' Haifa ', apartment: '4' });
+    expect('locality_id' in body).toBe(false);
+  });
+
+  it('shows the current text city as help only while no settlement is chosen', () => {
+    expect(currentCityText({ city: ' Haifa ', localityId: '' })).toBe('Haifa');
+    expect(currentCityText({ city: 'Haifa', localityId: 'l-1' })).toBeNull();
+    expect(currentCityText({ city: '  ', localityId: '' })).toBeNull();
+  });
+
+  it('shows the localized settlement in the table text, else the city text, else the dash', () => {
+    expect(customerSettlementText({ ...dana, locality: HAIFA }, 'he')).toBe('חיפה');
+    expect(customerSettlementText({ ...dana, locality: HAIFA }, 'en')).toBe('Haifa');
+    expect(customerSettlementText(dana, 'en')).toBe('Haifa');
+    expect(customerSettlementText({ city: null, locality: null }, 'en')).toBe(NO_VALUE);
+  });
+
+  it('maps invalid_settlement to the City field', () => {
+    expect(customerFormErrors('invalid_settlement').fields.city).toBe('errors.invalid_settlement');
+  });
+});
+
+describe('the settlement field of CustomerFormView and the table (R30.5, R30.6)', () => {
+  const formHtml = (
+    language: PortalLanguage,
+    values: Partial<typeof EMPTY_FORM_VALUES>,
+    settlements: ReturnType<typeof settlementOptions>,
+    extra: { settlementsLoading?: boolean; errors?: CustomerFormErrors } = {},
+  ): string =>
+    render(
+      language,
+      createElement(CustomerFormView, {
+        mode: 'edit',
+        values: { ...EMPTY_FORM_VALUES, ...values },
+        errors: extra.errors ?? NO_FORM_ERRORS,
+        pending: false,
+        settlements,
+        settlementsLoading: extra.settlementsLoading ?? false,
+        onChange: noop,
+        onSubmit: noop,
+        onCancel: noop,
+      }),
+    );
+
+  it.each(LANGUAGES)('shows the City field as a select with the "No settlement" choice in %s', (language) => {
+    const html = formHtml(language, { localityId: 'l-2' }, settlementOptions([HAIFA, ACRE], null, language));
+    expectNoRawKeys(html);
+    expect(html).toMatch(/<select[^>]*id="customer-form-city"/);
+    expect(html).not.toMatch(/<input[^>]*id="customer-form-city"/);
+    expect(html).toContain('for="customer-form-city"');
+    expect(html).toContain(language === 'en' ? '>No settlement<' : '>ללא ישוב<');
+    expect(html).toContain(language === 'en' ? '>Haifa<' : '>חיפה<');
+    expect(html).toMatch(/<option value="l-2" selected/);
+    expect(html).not.toContain('customer-form-city-current');
+  });
+
+  it('keeps a deactivated current settlement selected and marked inactive, in both languages', () => {
+    const en = formHtml('en', { localityId: 'l-9' }, settlementOptions([HAIFA], OLD_TOWN, 'en'));
+    expect(en).toMatch(/<option value="l-9" selected="">Old Town \(inactive\)<\/option>/);
+    const he = formHtml('he', { localityId: 'l-9' }, settlementOptions([HAIFA], OLD_TOWN, 'he'));
+    expect(he).toMatch(/<option value="l-9" selected="">עיר ישנה \(לא פעיל\)<\/option>/);
+  });
+
+  it.each(LANGUAGES)('shows a text-only city as read-only help with the select empty in %s', (language) => {
+    const html = formHtml(language, { city: 'Kfar Test', localityId: '' }, settlementOptions([HAIFA], null, language));
+    expectNoRawKeys(html);
+    expect(html).toContain(language === 'en' ? 'Current city: Kfar Test' : 'ישוב נוכחי: Kfar Test');
+    expect(html).toMatch(/<option value="" selected/);
+    expect(html).toContain('aria-describedby="customer-form-city-hint customer-form-city-current"');
+    expect(html).not.toContain('value="Kfar Test"');
+  });
+
+  it('keeps the free-text input when the settlement list is empty', () => {
+    const html = formHtml('en', { city: 'Haifa' }, []);
+    expect(html).toMatch(/<input[^>]*id="customer-form-city"/);
+    expect(html).toContain('value="Haifa"');
+    expect(html).not.toContain('<select');
+    expect(html).not.toContain('No settlement');
+  });
+
+  it('waits for the list: the city field and Save are disabled while it loads', () => {
+    const html = formHtml('en', {}, [], { settlementsLoading: true });
+    expect(html).toContain('Loading the settlement list…');
+    expect(html).toMatch(/<input[^>]*id="customer-form-city"[^>]*disabled/);
+    expect(html).toMatch(/<button type="submit"[^>]*disabled/);
+  });
+
+  it('ties an invalid_settlement refusal to the select', () => {
+    const html = formHtml('en', {}, settlementOptions([HAIFA], null, 'en'), {
+      errors: customerFormErrors('invalid_settlement', { city: 'invalid_settlement' }),
+    });
+    expect(html).toContain('Choose a settlement from the list.');
+    expect(html).toContain('aria-describedby="customer-form-city-hint customer-form-city-error"');
+  });
+
+  it('shows the localized settlement name in the table, else the city text', () => {
+    const rows: StaffCustomer[] = [{ ...dana, locality: { id: 'l-1', name_he: 'חיפה', name_en: 'Haifa Bay' } }, sivan];
+    const en = render('en', createElement(CustomersTable, { rows, onEdit: noop, onAction: noop }));
+    expect(en).toContain('<td>Haifa Bay</td>');
+    const he = render('he', createElement(CustomersTable, { rows, onEdit: noop, onAction: noop }));
+    expect(he).toContain('<td>חיפה</td>');
+    const textOnly = render('en', createElement(CustomersTable, { rows: [dana], onEdit: noop, onAction: noop }));
+    expect(textOnly).toContain('<td>Haifa</td>');
   });
 });

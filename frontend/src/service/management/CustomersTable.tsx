@@ -1,11 +1,12 @@
-// The customers table (task 24.5; R3.10, R3.1, R23.12): per row the full name, the normalised phone, the city,
+// The customers table (task 24.5; R3.10, R3.1, R23.12): per row the full name, the normalised phone, the settlement (its name in the current language when the customer has one, else the city text),
 // the apartment number and the state, then the row actions. The state is text ("Active", "Inactive"), never
 // colour alone. Every row button names the customer in its accessible name, so a screen reader user can tell
 // fifty "Edit" buttons apart. The phone is isolated left to right so its digits keep their order in Hebrew.
 import { useTranslation } from 'react-i18next';
 import type { StaffCustomer } from '../api/staffTypes';
-import { actionTexts, availableActions, cellText, stateKey, type CustomerAction } from './customersModel';
+import { actionTexts, availableActions, cellText, customerSettlementText, stateKey, type CustomerAction } from './customersModel';
 import { SERVICE_NAMESPACE } from './namespace';
+import { listLanguage } from './ticketListModel';
 import './customers.css';
 
 export interface CustomersTableProps {
@@ -15,7 +16,8 @@ export interface CustomersTableProps {
 }
 
 export function CustomersTable({ rows, onEdit, onAction }: CustomersTableProps) {
-  const { t } = useTranslation(SERVICE_NAMESPACE);
+  const { t, i18n } = useTranslation(SERVICE_NAMESPACE);
+  const language = listLanguage(i18n.language);
   const rowLabel = (actionLabel: string, name: string): string =>
     t('management.customers.rowAction', { action: actionLabel, name });
   return (
@@ -41,7 +43,7 @@ export function CustomersTable({ rows, onEdit, onAction }: CustomersTableProps) 
               <td>
                 <bdi dir="ltr">{customer.phone}</bdi>
               </td>
-              <td>{cellText(customer.city)}</td>
+              <td>{customerSettlementText(customer, language)}</td>
               <td>{cellText(customer.apartment)}</td>
               <td>
                 <span className={customer.is_active ? 'pill pill--active' : 'pill pill--muted'}>

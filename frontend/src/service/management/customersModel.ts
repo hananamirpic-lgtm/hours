@@ -6,7 +6,8 @@
 // per-field messages. The server stays the authority for every rule (phone normalisation, length limits,
 // uniqueness); nothing here repeats a rule except to choose which field a code belongs to.
 import { isErrorCode, type ErrorCode } from '../api/errorCodes';
-import type { CustomerBody, CustomerListQuery, StaffCustomer } from '../api/staffTypes';
+import type { CustomerBody, CustomerListQuery, StaffCustomer, StaffLocalityRef } from '../api/staffTypes';
+import { categoryName, type ListLanguage } from './ticketListModel';
 
 // --- list state in the address (R3.10) --------------------------------------------------------------
 
@@ -210,11 +211,14 @@ export const CUSTOMER_FORM_ORDER: readonly CustomerFieldName[] = ['phone', 'full
 export interface CustomerFormValues {
   readonly phone: string;
   readonly fullName: string;
+  /** The city text: the free-text field while there is no settlement list, else the text the customer has. */
   readonly city: string;
   readonly apartment: string;
+  /** The chosen settlement id while a settlement list exists; blank is "No settlement" (R30.6). */
+  readonly localityId: string;
 }
 
-export const EMPTY_FORM_VALUES: CustomerFormValues = { phone: '', fullName: '', city: '', apartment: '' };
+export const EMPTY_FORM_VALUES: CustomerFormValues = { phone: '', fullName: '', city: '', apartment: '', localityId: '' };
 
 /** The values of the edit form. The phone is the stored, normalised one. */
 export function formValuesFromCustomer(customer: StaffCustomer): CustomerFormValues {
@@ -223,21 +227,87 @@ export function formValuesFromCustomer(customer: StaffCustomer): CustomerFormVal
     fullName: customer.full_name,
     city: customer.city ?? '',
     apartment: customer.apartment ?? '',
+    localityId: customer.locality?.id ?? '',
   };
+}
+
+/** `CustomerBody` with the optional settlement of `POST` and `PUT /staff/customers` (R30.6). */
+export interface CustomerBodyWithSettlement extends CustomerBody {
+  /** A settlement id, or null to have none. With the key absent on a `PUT` the stored settlement stays. */
+  readonly locality_id?: string | null;
 }
 
 /**
  * The body of a create or an edit. The phone and the name go as typed: the server removes the allowed phone
  * separators and trims the name (R3.2, R4), and answers with the field codes when they fail. A blank city or
  * apartment goes as null, which the server stores as absent.
+ *
+ * With a settlement list (`settlementList` true) the city text is not sent. `locality_id` is always sent, the
+ * id or null: the server then sets the city to the settlement's Hebrew name for an id, and for null clears the
+ * id and keeps the stored text, so a customer with only a text city does not lose it. Without a list the city
+ * text is sent as before and `locality_id` is left out, which keeps the stored settlement while the text is
+ * unchanged.
  */
-export function toCustomerBody(values: CustomerFormValues): CustomerBody {
+export function toCustomerBody(values: CustomerFormValues, settlementList = false): CustomerBodyWithSettlement {
+  const apartment = values.apartment.trim() === '' ? null : values.apartment;
+  if (settlementList) {
+    return {
+      phone: values.phone,
+      full_name: values.fullName,
+      apartment,
+      locality_id: values.localityId === '' ? null : values.localityId,
+    };
+  }
   return {
     phone: values.phone,
     full_name: values.fullName,
     city: values.city.trim() === '' ? null : values.city,
-    apartment: values.apartment.trim() === '' ? null : values.apartment,
+    apartment,
   };
+}
+
+// --- settlements (R30.5, R30.6) ---------------------------------------------------------------------
+
+/** One option of the settlement select. */
+export interface SettlementOption {
+  readonly id: string;
+  /** The name in the current language. */
+  readonly name: string;
+  /** True for the customer's current settlement when it is no longer in the active list. */
+  readonly inactive: boolean;
+}
+
+/**
+ * The options of the settlement select: the active settlements in the order given, and, when the customer's
+ * current settlement is not among them (it was deactivated), that one last and marked inactive, so that saving
+ * the form does not lose it.
+ */
+export function settlementOptions(
+  active: readonly StaffLocalityRef[],
+  current: StaffLocalityRef | null | undefined,
+  language: ListLanguage,
+): readonly SettlementOption[] {
+  const options = active.map((item) => ({ id: item.id, name: categoryName(item, language), inactive: false }));
+  if (current && !active.some((item) => item.id === current.id)) {
+    options.push({ id: current.id, name: categoryName(current, language), inactive: true });
+  }
+  return options;
+}
+
+/** The settlement of a customer row: the localized name when it has one, else the stored city text. */
+export function customerSettlementText(
+  customer: Pick<StaffCustomer, 'locality' | 'city'>,
+  language: ListLanguage,
+): string {
+  return customer.locality ? categoryName(customer.locality, language) : cellText(customer.city);
+}
+
+/**
+ * The city text shown as read-only help under the settlement select: only for a customer who has a text and
+ * no settlement chosen, so staff see what the record holds while the select is empty (R30.6).
+ */
+export function currentCityText(values: Pick<CustomerFormValues, 'city' | 'localityId'>): string | null {
+  return values.localityId === '' && values.city.trim() !== '' ? values.city.trim() : null;
 }
 
 /** `errors.<code>` for a code the API defines, `errors.generic` for anything else. */
@@ -262,6 +332,7 @@ const CODE_FIELD: Readonly<Record<string, CustomerFieldName>> = {
   phone_already_registered: 'phone',
   invalid_full_name: 'full_name',
   invalid_city: 'city',
+  invalid_settlement: 'city',
   invalid_apartment: 'apartment',
 };
 
