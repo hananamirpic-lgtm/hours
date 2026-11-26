@@ -5,6 +5,9 @@
 # tokens never travel in plaintext.
 #
 # Routing:
+#   /api/service/tickets -> api:8000 (same, with a 13 MiB request-body cap)
+#   /api/service/staff/tickets -> api:8000 (same, with a 13 MiB request-body cap)
+#   /api/service/staff/branding -> api:8000 (same, with a 3 MiB request-body cap)
 #   /api/*  -> api:8000   (dynamic, authenticated; never cached here)
 #   /*      -> web:80     (the nginx-served built SPA)
 #
@@ -29,6 +32,38 @@
 # security group (only CloudFront's IP ranges reach :80 — locked down in RUNBOOK.md).
 :80 {
 encode gzip
+
+# Service-ticket submission (exact path only): the one request that carries a photo.
+# Caddy caps the body at 13 MiB (13,631,488 bytes), above the app's own 12 MiB limit,
+# so bodies between 12 and 13 MiB still reach the API and get its coded 413
+# (request_too_large); only larger ones get Caddy's plain 413. Every other path,
+# including the rest of /api/service/*, falls through to the /api/* block unchanged.
+# Must stay before `handle /api/*` (handle blocks with path matchers are tried
+# most-specific first, and this keeps the order explicit for readers).
+handle /api/service/tickets {
+request_body {
+max_size 13MiB
+}
+reverse_proxy api:8000
+}
+# Staff submission on a customer's behalf (exact path only): the same photo-carrying request,
+# so it gets the same 13 MiB cap and the same coded 413 from the API between 12 and 13 MiB.
+handle /api/service/staff/tickets {
+request_body {
+max_size 13MiB
+}
+reverse_proxy api:8000
+}
+# Company name and logo (exact path only): the other request that carries an image, at most 1 MiB.
+# Caddy caps the body at 3 MiB (3,145,728 bytes), above the app's own 2 MiB limit, so bodies between
+# 2 and 3 MiB still reach the API and get its coded 413 (request_too_large); only larger ones get
+# Caddy's plain 413.
+handle /api/service/staff/branding {
+request_body {
+max_size 3MiB
+}
+reverse_proxy api:8000
+}
 
 # API path: strip nothing, forward to the FastAPI container. No caching at the proxy.
 handle /api/* {

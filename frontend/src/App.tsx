@@ -38,6 +38,23 @@ import { NotFoundPage } from '@/app/NotFoundPage';
 import { PlaceholderPage } from '@/app/PlaceholderPage';
 import { RedirectIfAuthenticated, RequireAuth } from '@/app/guards';
 import { LoginScreen } from '@/auth/LoginScreen';
+import { FlagGate } from '@/service/gates/FlagGate';
+import { TechnicianGate } from '@/service/gates/TechnicianGate';
+import { ManagementLayout } from '@/service/management/ManagementLayout';
+import { BrandingPage } from '@/service/management/pages/BrandingPage';
+import { CategoriesPage } from '@/service/management/pages/CategoriesPage';
+import { CustomersPage as TicketCustomersPage } from '@/service/management/pages/CustomersPage';
+import { DashboardPage as TicketDashboardPage } from '@/service/management/pages/DashboardPage';
+import { LabelsPage } from '@/service/management/pages/LabelsPage';
+import { LocalitiesPage } from '@/service/management/pages/LocalitiesPage';
+import { NewTicketPage } from '@/service/management/pages/NewTicketPage';
+import { OptionsPage } from '@/service/management/pages/OptionsPage';
+import { PartsPage } from '@/service/management/pages/PartsPage';
+import { ReportsPage as TicketReportsPage } from '@/service/management/pages/ReportsPage';
+import { TicketDetailPage } from '@/service/management/pages/TicketDetailPage';
+import { TicketListPage } from '@/service/management/pages/TicketListPage';
+import { RequireConfigStaff } from '@/service/management/RequireConfigStaff';
+import { RequireTicketStaff } from '@/service/management/RequireTicketStaff';
 
 export default function App() {
   return (
@@ -70,15 +87,96 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
 
+      {/*
+        Service-ticket management interface (design "Routes"). The flag gate is outermost, so with the flag
+        off or unknown no sign-in or ticket screen renders at any /tickets path. Inside it, RequireTicketStaff
+        sends a visitor with no staff session to /login and shows a not-authorized page to any other role or
+        to a customer token. The forced password change and the 2FA enrolment come before any screen, as in
+        the console. The configuration screens add RequireConfigStaff (a technician sees "not available").
+      */}
+      <Route
+        path="/tickets"
+        element={
+          <FlagGate>
+            <RequireTicketStaff>
+              <ChangePasswordGate>
+                <TwoFactorGate>
+                  <ManagementLayout />
+                </TwoFactorGate>
+              </ChangePasswordGate>
+            </RequireTicketStaff>
+          </FlagGate>
+        }
+      >
+        <Route index element={<TicketDashboardPage />} />
+        <Route path="list" element={<TicketListPage />} />
+        {/* Declared before `list/:ticketNumber`, so "new" is never read as a ticket number. */}
+        <Route path="list/new" element={<NewTicketPage />} />
+        <Route path="list/:ticketNumber" element={<TicketDetailPage />} />
+        <Route path="customers" element={<TicketCustomersPage />} />
+        <Route path="reports" element={<TicketReportsPage />} />
+        <Route
+          path="settings/categories"
+          element={
+            <RequireConfigStaff>
+              <CategoriesPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/localities"
+          element={
+            <RequireConfigStaff>
+              <LocalitiesPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/parts"
+          element={
+            <RequireConfigStaff>
+              <PartsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/labels"
+          element={
+            <RequireConfigStaff>
+              <LabelsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/options"
+          element={
+            <RequireConfigStaff>
+              <OptionsPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route
+          path="settings/branding"
+          element={
+            <RequireConfigStaff>
+              <BrandingPage />
+            </RequireConfigStaff>
+          }
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+
       {/* Management console tree */}
       <Route
         path="/"
         element={
           <RequireAuth tree="console">
             <ChangePasswordGate>
-              <TwoFactorGate>
-                <ConsoleShell />
-              </TwoFactorGate>
+              <TechnicianGate>
+                <TwoFactorGate>
+                  <ConsoleShell />
+                </TwoFactorGate>
+              </TechnicianGate>
             </ChangePasswordGate>
           </RequireAuth>
         }

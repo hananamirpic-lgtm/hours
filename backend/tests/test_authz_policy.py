@@ -41,7 +41,7 @@ ALL_ROLES = list(UserRole)
 # --------------------------------------------------------------------------- the four roles
 
 
-def test_there_are_exactly_five_roles():
+def test_there_are_exactly_six_roles():
     """Requirement 2.1 plus the operations-admin feature, asserted so that adding another role is a
     deliberate decision and not an accident. `operations_admin` is the full operational administrator
     with no financial visibility."""
@@ -51,6 +51,7 @@ def test_there_are_exactly_five_roles():
         "site_manager",
         "accounting",
         "employee",
+        "technician",
     }
 
 

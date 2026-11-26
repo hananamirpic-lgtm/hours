@@ -1,0 +1,40 @@
+/*
+ * The Resolve form and the parts selection dialog of the management ticket detail page (task 30.9).
+ * Imported by resolveSections.tsx. Logical properties only, so one sheet serves Hebrew and English.
+ */
+.resolve-panel .form {
+  max-inline-size: 640px;
+}
+
+/* The "Choose parts…" button, the chosen parts as text beside it, and the message below. */
+.resolve-parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space) calc(var(--space) * 2);
+  margin-block-start: var(--space);
+  padding-inline-start: calc(var(--space) * 3);
+}
+
+.resolve-parts-text {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.resolve-parts .form__error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* The list of parts in the dialog: one checkbox per row, scrolling inside the dialog when it is long. */
+.resolve-parts-list {
+  display: grid;
+  gap: var(--space);
+  min-inline-size: 0;
+  max-block-size: 50vh;
+  margin: 0 0 var(--space);
+  padding: var(--space);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}

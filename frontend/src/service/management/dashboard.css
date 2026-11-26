@@ -1,0 +1,53 @@
+/*
+ * Management dashboard (task 24.2). Logical properties only, tokens from global.css, 44 px targets.
+ * Every state is also text (the stale label, the error sentence, the warning sentence), so colour only
+ * reinforces it (R23.12).
+ */
+.dashboard-counts {
+  margin-inline: 0;
+  padding: 0;
+  list-style: none;
+}
+.dashboard-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--space) / 2);
+}
+.dashboard-count__label {
+  margin: 0;
+  font-size: 1rem;
+}
+.dashboard-count__value {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.dashboard-count__link {
+  display: inline-flex;
+  align-items: center;
+  margin-block-start: var(--space);
+  text-decoration: none;
+}
+.dashboard-warning,
+.dashboard-stale,
+.dashboard-error {
+  margin-block: 0 calc(var(--space) * 2);
+  padding: var(--space) calc(var(--space) * 2);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.dashboard-warning {
+  border-color: var(--color-down);
+  font-weight: 600;
+}
+.dashboard-error {
+  border-color: var(--color-down);
+  font-size: 1rem;
+}
+.dashboard-stale {
+  color: var(--color-muted);
+  font-weight: 600;
+}

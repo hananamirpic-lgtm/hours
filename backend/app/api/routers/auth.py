@@ -13,11 +13,13 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, Response
 
 from app.api.deps import (
+    CODE_CUSTOMER_TOKEN_NOT_ACCEPTED,
     AuthenticatedContext,
     CurrentUser,
     DbSession,
     RequestContext,
     api_error,
+    forbidden,
     unauthorized,
 )
 from app.core.rate_limit import rate_limit_auth
@@ -31,6 +33,7 @@ from app.schemas.auth import (
     TotpSetupResponse,
     TotpVerifyRequest,
 )
+from app.service_tickets import customer_token
 from app.services import auth as auth_service
 
 # Every endpoint in this router takes `CurrentUser` rather than `EnrolledUser`, so a caller still owing
@@ -124,6 +127,8 @@ def refresh(
     try:
         pair = auth_service.refresh(session, refresh_token=payload.refresh_token, context=context)
     except auth_service.AuthError as error:
+        if customer_token.is_valid_customer_token(payload.refresh_token):
+            raise forbidden(CODE_CUSTOMER_TOKEN_NOT_ACCEPTED) from error
         raise unauthorized(error.code) from error
     return TokenResponse(**asdict(pair))
 

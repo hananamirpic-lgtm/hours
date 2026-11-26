@@ -1,0 +1,107 @@
+/* The Customers screen (task 24.5). It builds on the console's classes (.page-body, .toolbar, .table, .button,
+ * .field, .input, .pill, .pagination, .feedback), so the page, the table and the controls look like the rest of
+ * the staff app. Only what the console has no class for is here. Logical properties throughout, so Hebrew
+ * mirrors from the same rules. */
+
+.customers-sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.customers-toolbar {
+  align-items: flex-end;
+}
+
+.customers-toolbar__search {
+  flex: 1 1 220px;
+  min-inline-size: 180px;
+}
+
+.customers-toolbar__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+}
+
+.customers-total {
+  margin-block: 0 var(--space);
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.customers-notice:empty {
+  display: none;
+}
+
+.customers-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: calc(var(--space) * 2);
+}
+
+.customers-load-error p {
+  margin: 0;
+}
+
+/* The table's first column is a row header: keep it looking like a cell, not a column heading. */
+.customers-table__name {
+  font-weight: 600;
+  text-align: start;
+}
+
+.customers-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) / 2);
+}
+
+.customers-marker {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+/* The dialog: a centred panel over a dimmed page. It scrolls inside itself, so a 200 % text size never clips. */
+.customers-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--space) * 2);
+  background: rgba(16, 24, 33, 0.5);
+}
+
+.customers-dialog {
+  inline-size: min(520px, 100%);
+  max-block-size: 100%;
+  overflow-y: auto;
+  padding: calc(var(--space) * 3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(16, 24, 33, 0.25);
+}
+
+.customers-dialog:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.customers-dialog__title {
+  margin-block-start: 0;
+}
+
+.customers-form .form__error {
+  margin: 0;
+}

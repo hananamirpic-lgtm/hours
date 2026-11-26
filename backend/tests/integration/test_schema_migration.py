@@ -36,6 +36,22 @@ EXPECTED_TABLES = {
     "payroll_site_allocations",
     "billing_records",
     "exports",
+    # Added by the staffing-company feature (migration 0007). The set was not extended then, so the
+    # two tests that compare against it failed on main before the service-tickets feature began.
+    "staffing_companies",
+    # Added by the service-tickets feature (migration 0011). Every table is prefixed `svc_`.
+    "svc_customers",
+    "svc_categories",
+    "svc_tickets",
+    "svc_history_entries",
+    "svc_settings",
+    "svc_field_labels",
+    "svc_signin_failures",
+    # Added by migration 0013 (settlement and part lists, part links, branding).
+    "svc_localities",
+    "svc_parts",
+    "svc_ticket_parts",
+    "svc_branding",
 }
 
 

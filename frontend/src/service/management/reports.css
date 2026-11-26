@@ -1,0 +1,131 @@
+/*
+ * Management report screen (task 24.6). Logical properties only, tokens from global.css, 44 px targets.
+ * Status and the SOS indicator are text first (R23.12); badge colours only reinforce them.
+ */
+
+.reports__filters {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+  margin-block-end: calc(var(--space) * 2);
+  padding: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.reports__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: calc(var(--space) * 2);
+  align-items: end;
+}
+
+.reports__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space) calc(var(--space) * 2);
+}
+
+/* The export status: a live region that is always present and takes no space while empty. */
+.reports__export-status:not(:empty) {
+  margin-block: 0 calc(var(--space) * 2);
+  color: var(--color-muted);
+}
+
+.reports__alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space) calc(var(--space) * 2);
+  margin-block: 0 calc(var(--space) * 2);
+}
+
+.reports__alert p {
+  margin: 0;
+}
+
+.reports__heading {
+  margin-block: calc(var(--space) * 2) var(--space);
+  font-size: 1.1rem;
+}
+
+.reports__hint {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+/* --- figures: a definition list drawn as cards --- */
+.reports__figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: calc(var(--space) * 2);
+  margin: 0;
+  padding: 0;
+}
+
+.reports__figure {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) / 2);
+  margin: 0;
+}
+
+.reports__figure dt {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.reports__value {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* --- table --- */
+.table tbody th[scope='row'] {
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.reports__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  font-weight: 700;
+}
+
+.reports__sos {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space) / 2);
+  color: var(--color-down);
+  font-weight: 700;
+}
+
+.reports__sos svg {
+  flex: none;
+}
+
+.reports__sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- focus --- */
+.reports a:focus-visible,
+.reports button:focus-visible,
+.reports select:focus-visible,
+.reports input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

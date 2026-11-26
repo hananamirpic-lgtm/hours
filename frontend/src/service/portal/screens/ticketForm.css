@@ -1,0 +1,126 @@
+/*
+ * Ticket form and confirmation (task 23.3). Logical properties only, tokens from portal.css, 44 px
+ * targets (the controls get theirs from portal.css; the checkbox row and the links below keep it).
+ * An error is never colour alone: the message starts with the word "Error:" and the field has a border
+ * plus `aria-invalid` (R23.5).
+ */
+.portal-ticket-form {
+  display: block;
+}
+.portal-field-mark {
+  color: var(--portal-muted);
+  font-weight: 400;
+}
+.portal-field .portal-error,
+.portal-field .portal-hint {
+  margin: 0;
+}
+.portal-field-error-text {
+  margin: 0;
+}
+/* The Urgent checkbox sits on its own row with its label. */
+.portal-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+.portal-check-row label {
+  flex: 1 1 auto;
+  min-block-size: var(--portal-target);
+  display: inline-flex;
+  align-items: center;
+}
+.portal-photo-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+.portal-photo-preview p {
+  margin: 0;
+}
+.portal-photo-preview-img {
+  max-inline-size: min(100%, 16rem);
+  border: 1px solid var(--portal-border);
+  border-radius: 0.5rem;
+}
+.portal-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-block-start: 1.5rem;
+}
+.portal-error-summary ul {
+  margin-block: 0.5rem 0;
+  padding-inline-start: 1.25rem;
+}
+.portal-error-summary a {
+  color: inherit;
+  font-weight: 600;
+}
+.portal-error-summary p,
+.portal-ticket-form .portal-notice p {
+  margin-block: 0 0.25rem;
+}
+.portal-form-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.portal-form-load-error p {
+  margin: 0;
+}
+.portal-confirmation-actions {
+  margin-block-start: 1rem;
+}
+
+/* --- the settlement control and its dialog (R30.2, R30.8) --- */
+.settlement-control {
+  inline-size: 100%;
+  justify-content: flex-start;
+  text-align: start;
+}
+.settlement-control-placeholder {
+  color: var(--portal-muted);
+}
+.settlement-control-value {
+  color: var(--portal-text);
+}
+.settlement-status {
+  margin-block: 0.5rem;
+  color: var(--portal-muted);
+}
+.settlement-options {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  /* The list scrolls inside the dialog; the search box and Cancel stay in view. */
+  max-block-size: 45vh;
+  overflow-y: auto;
+  border: 1px solid var(--portal-border);
+  border-radius: 0.5rem;
+}
+.settlement-options li {
+  margin: 0;
+}
+.settlement-option {
+  inline-size: 100%;
+  min-block-size: var(--portal-target);
+  justify-content: flex-start;
+  text-align: start;
+  border-radius: 0;
+}
+.settlement-option[aria-selected='true'] {
+  font-weight: 700;
+  /* Not colour alone: the selected option also has a mark and a heavier weight. */
+  box-shadow: inset 0.25rem 0 0 var(--portal-primary);
+}
+.settlement-option[aria-selected='true']::after {
+  content: '\2713';
+  margin-inline-start: 0.5rem;
+}

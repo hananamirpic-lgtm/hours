@@ -1,0 +1,245 @@
+// Wire types of the staff endpoints under `/api/service/staff` (task 24.1).
+//
+// Hand-written mirror of the response and request models in backend/app/service_tickets/schemas.py
+// (`StaffTicketRow`, `StaffTicketDetail`, `CustomerRecord`, `ReportResponse`, ...). Pure types: no React,
+// no DOM. The management pages of tasks 24.2 to 24.7 import them from `./staff`.
+import type { TicketStatus } from '../types';
+import type { FormLabelKey, LabelTexts } from './formTypes';
+
+export type { FormLabelKey, FormSettings, LabelTexts } from './formTypes';
+export type { TicketStatus } from '../types';
+
+/** The four statuses in lifecycle order, as the API names them. */
+export const TICKET_STATUSES: readonly TicketStatus[] = ['received', 'in_progress', 'closed', 'cancelled'];
+
+/** `CategoryRef`: the category of a ticket, with both names. */
+export interface StaffCategoryRef {
+  readonly id: string;
+  readonly name_he: string;
+  readonly name_en: string;
+}
+
+/** `LocalityRef`: a settlement with its current names, active or not. */
+export interface StaffLocalityRef {
+  readonly id: string;
+  readonly name_he: string;
+  readonly name_en: string;
+}
+/** `StaffTicketRow`: a row of the staff list and of the report table. */
+export interface StaffTicketRow {
+  /** 10000 to 99999. */
+  readonly ticket_number: number;
+  /** An ISO 8601 instant. Staff see it in Asia/Jerusalem, to the minute. */
+  readonly created_at: string;
+  readonly customer_name: string;
+  readonly city: string;
+  readonly apartment: string;
+  readonly category: StaffCategoryRef;
+  readonly status: TicketStatus;
+  /** Empty when no technician is assigned. */
+  readonly assigned_technician_name: string;
+  readonly urgent: boolean;
+  /** The settlement with its current names; null or absent for a ticket with a text city (R30.5). */
+  readonly locality?: StaffLocalityRef | null;
+}
+
+/** `HistoryEntryOut`: one treatment-history entry. `edited_at` is null until the entry is edited. */
+export interface StaffHistoryEntry {
+  readonly id: string;
+  readonly entry_text: string;
+  readonly technician_name: string;
+  readonly created_at: string;
+  readonly edited_at: string | null;
+}
+
+/** `StaffTicketDetail`: the row plus contact data, the history (oldest first) and the last-modified time. */
+export interface StaffTicketDetail extends StaffTicketRow {
+  readonly phone: string;
+  readonly description: string;
+  readonly has_photo: boolean;
+  readonly history: readonly StaffHistoryEntry[];
+  readonly updated_at: string;
+  /** The staff username that opened the ticket for the customer; null or absent when the customer opened it. */
+  readonly opened_by_username?: string | null;
+  /** The parts recorded by the last resolution, in part order, with their current names (R29.7). */
+  readonly parts_replaced?: readonly StaffReplacedPart[];
+}
+
+/** `PartRef`: a part replaced on a ticket, with its current names, active or not. */
+export interface StaffReplacedPart {
+  readonly id: string;
+  readonly name_he: string;
+  readonly name_en: string;
+}
+
+/** `StaffTicketPage`: 25 per page. */
+export interface StaffTicketPage {
+  readonly items: readonly StaffTicketRow[];
+  readonly page: number;
+  readonly page_size: number;
+  readonly total: number;
+}
+
+/** `ServiceDashboardResponse`. The warning is present only for configuration staff, below 1,000 left. */
+export interface StaffDashboard {
+  readonly open: number;
+  readonly in_progress: number;
+  readonly urgent: number;
+  readonly ticket_number_warning: { readonly remaining: number } | null;
+}
+
+/** `CustomerRecord`: no password hash, no token version. */
+export interface StaffCustomer {
+  readonly id: string;
+  readonly full_name: string;
+  readonly phone: string;
+  readonly city: string | null;
+  readonly apartment: string | null;
+  readonly is_active: boolean;
+  /** The settlement with its current names; null or absent when the city is only text (R30.6). */
+  readonly locality?: StaffLocalityRef | null;
+}
+
+/** `CustomerRecordPage`: 50 per page. */
+export interface StaffCustomerPage {
+  readonly items: readonly StaffCustomer[];
+  readonly page: number;
+  readonly page_size: number;
+  readonly total: number;
+}
+
+/** `CategoryRecord`: active and inactive categories, for configuration and for the list filters. */
+export interface StaffCategory {
+  readonly id: string;
+  readonly name_he: string;
+  readonly name_en: string;
+  readonly is_active: boolean;
+}
+
+/** `CategoryDeleteResult`: removed, or kept and deactivated because tickets use it. */
+export type CategoryDeleteResult = 'removed' | 'deactivated';
+
+/** `StatusCounts`: all four are always present, zero included. */
+export interface StaffStatusCounts {
+  readonly received: number;
+  readonly in_progress: number;
+  readonly closed: number;
+  readonly cancelled: number;
+}
+
+/** `CategoryCount`. */
+export interface StaffCategoryCount {
+  readonly category: StaffCategoryRef;
+  readonly count: number;
+}
+
+/**
+ * `ReportTicketRow`: the staff list row plus the parts replaced on the ticket (R29.7), ordered by part
+ * sequence with their current names. Optional here so that fixtures and older answers without it still type.
+ */
+export interface StaffReportRow extends StaffTicketRow {
+  readonly parts?: readonly StaffReplacedPart[];
+}
+
+/** `ReportTicketPage`: the report table, 25 per page. */
+export interface StaffReportTicketPage extends Omit<StaffTicketPage, 'items'> {
+  readonly items: readonly StaffReportRow[];
+}
+
+/** `ReportResponse`. */
+export interface StaffReport {
+  readonly total: number;
+  readonly open: number;
+  readonly by_status: StaffStatusCounts;
+  readonly by_category: readonly StaffCategoryCount[];
+  readonly tickets: StaffReportTicketPage;
+}
+
+/** The labels of the seven form fields as `PUT /staff/labels` returns them. */
+export type StaffLabels = Readonly<Record<FormLabelKey, LabelTexts>>;
+
+// --- request bodies --------------------------------------------------------------------------------
+
+export interface StatusChangeBody {
+  /** The status the caller last saw. A different stored status gives 409 `ticket_status_changed`. */
+  readonly expected_status: TicketStatus;
+  readonly target_status: TicketStatus;
+  /** Used only when a received ticket moves to in progress. */
+  readonly assigned_technician_name?: string;
+  /** Required for the target `closed` (422 `resolution_required` without it), refused for any other target. */
+  readonly resolution?: ResolutionBody;
+}
+
+/** The `resolution` of a status change to closed (R29.1): the service history and the replaced parts. */
+export interface ResolutionBody {
+  /** 1 to 2000 characters after trimming. */
+  readonly entry_text: string;
+  /** 1 to 100 characters after trimming. */
+  readonly technician_name: string;
+  readonly parts_replaced: boolean;
+  /** 1 to 20 distinct active part ids when `parts_replaced` is true, empty when it is false. */
+  readonly part_ids: readonly string[];
+}
+
+export interface HistoryEntryBody {
+  readonly entry_text: string;
+  /** On add, an absent name becomes the acting username. On edit it is required. */
+  readonly technician_name?: string;
+}
+
+export interface CustomerBody {
+  readonly phone: string;
+  readonly full_name: string;
+  readonly city?: string | null;
+  readonly apartment?: string | null;
+}
+
+export interface CategoryBody {
+  readonly name_he: string;
+  readonly name_en: string;
+}
+
+/** The query of `GET /staff/tickets`. Every value is optional; an absent one is not sent. */
+export interface TicketListQuery {
+  readonly page?: number;
+  /** The raw search box text. The server trims it and answers 422 `invalid_ticket_number` when malformed. */
+  readonly search?: string;
+  readonly status?: readonly TicketStatus[];
+  readonly categoryId?: string;
+  readonly city?: string;
+  readonly urgentOnly?: boolean;
+  /** `YYYY-MM-DD`, inclusive. */
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
+  readonly urgentFirst?: boolean;
+}
+
+/** The query of `GET /staff/customers`. `active` omitted means every customer. */
+export interface CustomerListQuery {
+  readonly page?: number;
+  readonly search?: string;
+  readonly active?: boolean;
+}
+
+/**
+ * The "part replaced" report filter (R29.8): `any` (no filter), `yes`, `no`, or the id of one part. Any
+ * other value is refused by the API with 422 `invalid_filter`.
+ */
+export type ReportPartFilter = string;
+
+/** The query of `GET /staff/reports`. */
+export interface ReportQuery {
+  readonly page?: number;
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
+  readonly city?: string;
+  readonly categoryId?: string;
+  /** Absent or blank is `any`. */
+  readonly partFilter?: ReportPartFilter;
+}
+
+/** The language of the exported workbook (R31.2); the API default is `he`. */
+export type ReportExportLang = 'he' | 'en';
+
+/** The filters of `GET /staff/reports/export`: those of the report, without the page. */
+export type ReportExportQuery = Omit<ReportQuery, 'page'>;

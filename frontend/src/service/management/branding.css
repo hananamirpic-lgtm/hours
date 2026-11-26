@@ -1,0 +1,64 @@
+/* The Branding screen (task 30.7): the name row, the logo previews and the buttons under them. It builds on the
+ * console's classes and on config.css. Logical properties throughout, so Hebrew mirrors from the same rules. */
+
+.config-branding {
+  max-inline-size: 640px;
+}
+
+.config-branding__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: center;
+}
+
+.config-branding__row .input {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+}
+
+.config-branding__previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2);
+  margin-block: calc(var(--space) * 2) var(--space);
+}
+
+.config-branding__figure {
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.config-branding__figure figcaption {
+  margin-block-end: calc(var(--space) / 2);
+  font-weight: 600;
+}
+
+.config-branding__file {
+  display: block;
+  font-weight: 400;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The logo is at most 400 by 200 pixels once stored; a chosen file may be larger, so the box limits both. */
+.config-branding__image {
+  display: block;
+  max-inline-size: min(400px, 100%);
+  max-block-size: 200px;
+  padding: var(--space);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.config-branding__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+}
+
+.config-branding__warning .field__hint {
+  margin-block: calc(var(--space) / 2) 0;
+  font-weight: 600;
+}

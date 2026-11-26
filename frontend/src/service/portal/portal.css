@@ -1,0 +1,388 @@
+/*
+ * Customer portal stylesheet (R8.9, R23.3, R23.4, R23.7, R23.8, R24.7).
+ *
+ * Imported only by `mountPortal.tsx`, so it ships in the portal chunk and the staff app never loads it.
+ * It does not rely on, and does not load after, `src/styles/global.css`.
+ *
+ * Rules this file keeps:
+ *  - System font stack only. No @font-face, @import or url(): no request to any other host (R24.7).
+ *  - CSS logical properties only (inline/block, start/end), so `<html dir="rtl">` mirrors the layout with
+ *    no `[dir=rtl]` overrides and no physical left/right/top/bottom/width/height.
+ *  - `rem` for every font size and spacing. No `px` for font sizes. `px` appears only in the 44 px touch
+ *    target floor, the 3 px focus ring and 1-2 px borders.
+ *  - Wrapping flex, no fixed heights, long words break: 320 px to 1920 px and 200 % text do not clip.
+ *
+ * Colour tokens and their measured WCAG 2.0 contrast ratios (relative luminance formula). Text needs
+ * 4.5:1 (large text 3:1); UI component boundaries and the focus ring need 3:1 against adjacent colours.
+ *
+ *   text      #1b1f23 on page #ffffff 16.58:1 | on surface #f4f6f8 15.30:1 | on quiet hover #e4e7ec 13.37:1
+ *   muted     #475467 on page          7.69:1 | on surface         7.10:1 | on disabled #e4e7ec     6.20:1
+ *   primary   #0b5cad (links, quiet-button text) on page 6.67:1 | on surface 6.16:1 | on #e4e7ec    5.38:1
+ *   on-primary #ffffff on primary #0b5cad       6.67:1 | on primary hover #084a8c  8.87:1
+ *   error     #b42318 on page          6.57:1 | on error surface #fef3f2 6.05:1 | white on error #b42318 6.57:1
+ *   success   #05603a on #ecfdf3       7.26:1      warning #93370d on #fffaeb 7.21:1
+ *   border    #6b7280 on page          4.83:1 | on surface         4.46:1 | on disabled #e4e7ec     3.90:1  (need 3:1)
+ *   focus     #0b4a8f on page          8.79:1 | on surface         8.11:1                           (need 3:1)
+ *
+ * Status and urgency are never conveyed by colour alone: the screens always print the status text and the
+ * urgent marker text next to any colour (R23.5).
+ */
+
+:root {
+  color-scheme: light;
+
+  --portal-page: #ffffff;
+  --portal-surface: #f4f6f8;
+  --portal-text: #1b1f23;
+  --portal-muted: #475467;
+  --portal-primary: #0b5cad;
+  --portal-primary-hover: #084a8c;
+  --portal-on-primary: #ffffff;
+  --portal-quiet-hover: #e4e7ec;
+  --portal-border: #6b7280;
+  --portal-focus: #0b4a8f;
+  --portal-error: #b42318;
+  --portal-error-surface: #fef3f2;
+  --portal-success: #05603a;
+  --portal-success-surface: #ecfdf3;
+  --portal-warning: #93370d;
+  --portal-warning-surface: #fffaeb;
+
+  /* 44 px floor for every target, growing with the text size. */
+  --portal-target: max(44px, 2.75rem);
+  --portal-gap: 1rem;
+  --portal-measure: 48rem;
+
+  --portal-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Hebrew', 'Arial Hebrew', Arial,
+    'Helvetica Neue', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--portal-page);
+  color: var(--portal-text);
+  font-family: var(--portal-font);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* --- focus (R23.3): 3 px ring on every focusable element, 3:1 or better against the page --- */
+:focus-visible {
+  outline: 3px solid var(--portal-focus);
+  outline-offset: 2px;
+}
+
+/* A programmatic focus target (main, headings) gets no ring when only the mouse put focus there. */
+[tabindex='-1']:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* --- page frame --- */
+.portal-app {
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-skip-link {
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  inset-block-start: -20rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--portal-target);
+  padding-inline: 1rem;
+  background: var(--portal-text);
+  color: var(--portal-page);
+  font-weight: 600;
+}
+
+.portal-skip-link:focus {
+  inset-block-start: 0.5rem;
+}
+
+.portal-header,
+.portal-footer {
+  background: var(--portal-surface);
+  padding-block: 0.75rem;
+  padding-inline: 1rem;
+}
+
+.portal-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  border-block-end: 1px solid var(--portal-border);
+}
+
+.portal-footer {
+  border-block-start: 1px solid var(--portal-border);
+  color: var(--portal-text);
+}
+
+.portal-footer p {
+  margin-block: 0.5rem 0;
+  color: var(--portal-muted);
+}
+
+.portal-brand {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.portal-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.portal-main {
+  flex: 1 1 auto;
+  inline-size: 100%;
+  max-inline-size: var(--portal-measure);
+  margin-inline: auto;
+  padding-block: 1.5rem;
+  padding-inline: 1rem;
+  overflow-wrap: anywhere;
+}
+
+/* --- text --- */
+h1 {
+  margin-block: 0 1rem;
+  font-size: 1.75rem;
+  line-height: 1.25;
+}
+
+h2 {
+  margin-block: 1.5rem 0.75rem;
+  font-size: 1.375rem;
+  line-height: 1.3;
+}
+
+p {
+  margin-block: 0 1rem;
+}
+
+a {
+  color: var(--portal-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--portal-primary-hover);
+}
+
+/* Footer and other stand-alone links are targets; a link inside a sentence of running text is exempt (R23.8). */
+.portal-footer a,
+a.portal-button {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--portal-target);
+  min-inline-size: var(--portal-target);
+}
+
+bdi,
+[dir='ltr'] {
+  unicode-bidi: isolate;
+}
+
+/* --- controls (R23.8) --- */
+.portal-button,
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--portal-target);
+  min-inline-size: var(--portal-target);
+  padding-block: 0.5rem;
+  padding-inline: 1.25rem;
+  border: 2px solid var(--portal-primary);
+  border-radius: 0.5rem;
+  background: var(--portal-primary);
+  color: var(--portal-on-primary);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.portal-button:hover,
+button:hover {
+  background: var(--portal-primary-hover);
+  border-color: var(--portal-primary-hover);
+  color: var(--portal-on-primary);
+}
+
+.portal-button--quiet {
+  background: transparent;
+  color: var(--portal-primary);
+}
+
+.portal-button--quiet:hover {
+  background: var(--portal-quiet-hover);
+  color: var(--portal-primary-hover);
+}
+
+.portal-button--danger {
+  background: var(--portal-error);
+  border-color: var(--portal-error);
+}
+
+button:disabled,
+.portal-button[aria-disabled='true'] {
+  background: var(--portal-quiet-hover);
+  border-color: var(--portal-border);
+  color: var(--portal-muted);
+  cursor: not-allowed;
+}
+
+/* --- form fields (R23.1, R23.2) --- */
+.portal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-block-end: 1rem;
+}
+
+label,
+.portal-label {
+  font-weight: 600;
+}
+
+.portal-hint {
+  color: var(--portal-muted);
+  font-size: 0.9375rem;
+}
+
+input,
+select,
+textarea {
+  inline-size: 100%;
+  min-block-size: var(--portal-target);
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border: 2px solid var(--portal-border);
+  border-radius: 0.5rem;
+  background: var(--portal-page);
+  color: var(--portal-text);
+  font: inherit;
+}
+
+textarea {
+  min-block-size: 8rem;
+  resize: vertical;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  inline-size: var(--portal-target);
+  min-inline-size: var(--portal-target);
+  accent-color: var(--portal-primary);
+}
+
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--portal-error);
+}
+
+.portal-error {
+  color: var(--portal-error);
+  font-weight: 600;
+}
+
+/* --- messages --- */
+.portal-notice {
+  margin-block-end: 1rem;
+  padding: 0.75rem 1rem;
+  border-inline-start: 0.375rem solid var(--portal-primary);
+  background: var(--portal-surface);
+}
+
+.portal-notice--error {
+  border-inline-start-color: var(--portal-error);
+  background: var(--portal-error-surface);
+  color: var(--portal-error);
+}
+
+.portal-notice--success {
+  border-inline-start-color: var(--portal-success);
+  background: var(--portal-success-surface);
+  color: var(--portal-success);
+}
+
+.portal-notice--warning {
+  border-inline-start-color: var(--portal-warning);
+  background: var(--portal-warning-surface);
+  color: var(--portal-warning);
+}
+
+/* --- tables and images must never force a horizontal page scrollbar (R8.9) --- */
+table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border-block-end: 1px solid var(--portal-border);
+  text-align: start;
+  vertical-align: top;
+}
+
+img {
+  max-inline-size: 100%;
+  block-size: auto;
+}
+
+/* --- live regions: in the page for assistive technology, not visible --- */
+.portal-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- user settings --- */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .portal-button,
+  button {
+    border-color: ButtonText;
+  }
+}

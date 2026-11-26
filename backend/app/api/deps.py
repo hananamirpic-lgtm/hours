@@ -17,6 +17,7 @@ from app.core import authz
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.user import User, UserRole
+from app.service_tickets import customer_token
 from app.services import auth as auth_service
 from app.services import authz as authz_service
 from app.services.audit import AuditContext
@@ -44,6 +45,11 @@ def get_audit_context(request: Request) -> AuditContext:
 RequestContext = Annotated[AuditContext, Depends(get_audit_context)]
 
 
+#: A valid service-ticket customer token was presented to an Hours endpoint. The caller is
+#: authenticated, as a customer, and Hours accepts no customer credential: 403, not 401.
+CODE_CUSTOMER_TOKEN_NOT_ACCEPTED = "customer_token_not_accepted"
+
+
 def get_current_user(session: DbSession, credentials: BearerCredentials) -> User:
     """Resolve the caller from the bearer access token.
 
@@ -56,6 +62,8 @@ def get_current_user(session: DbSession, credentials: BearerCredentials) -> User
     try:
         return auth_service.resolve_access_token(session, credentials.credentials)
     except auth_service.AuthError as error:
+        if customer_token.is_valid_customer_token(credentials.credentials):
+            raise forbidden(CODE_CUSTOMER_TOKEN_NOT_ACCEPTED) from error
         raise unauthorized(error.code) from error
 
 
@@ -90,6 +98,8 @@ def get_enrolled_user(user: CurrentUser) -> User:
     `POST /auth/2fa/setup` and `POST /auth/2fa/verify` to enrol, `GET /auth/me` so the front end can
     see why it is blocked, and `POST /auth/logout` so a wrong account can be got out of.
     """
+    if user.role is UserRole.TECHNICIAN:
+        raise forbidden(CODE_INSUFFICIENT_ROLE)
     if user.is_2fa_enrolment_required:
         raise forbidden(auth_service.TotpEnrolmentRequired.code)
     # A non-administrator who was created with an administrator-chosen password (or predates the

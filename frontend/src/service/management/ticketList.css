@@ -1,0 +1,166 @@
+/*
+ * Management ticket list (task 24.3). Logical properties only, tokens from global.css, 44 px targets.
+ * Status and the SOS indicator are text first (R23.12); the row background of an urgent open ticket
+ * (R15.7) and the badge colours only reinforce it.
+ */
+
+.ticket-list__filters {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 2);
+  margin-block-end: calc(var(--space) * 2);
+  padding: calc(var(--space) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.ticket-list__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: calc(var(--space) * 2);
+  align-items: end;
+}
+
+.ticket-list__fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ticket-list__fieldset legend {
+  padding: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.ticket-list__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 calc(var(--space) * 2);
+}
+
+.ticket-list__filters .checkbox-field,
+.ticket-list__order .checkbox-field {
+  align-items: center;
+  min-block-size: 44px;
+}
+
+.ticket-list__filters input[type='checkbox'],
+.ticket-list__order input[type='checkbox'] {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.ticket-list__buttons,
+.ticket-list__order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space) calc(var(--space) * 2);
+}
+
+.ticket-list__order {
+  margin-block-end: var(--space);
+}
+
+.ticket-list__hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.ticket-list__alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space) calc(var(--space) * 2);
+  margin-block: 0 calc(var(--space) * 2);
+}
+
+.ticket-list__alert p {
+  margin: 0;
+}
+
+.ticket-list__total {
+  margin-block: 0 var(--space);
+  font-weight: 600;
+}
+
+/* --- table --- */
+.table tbody tr.ticket-list__row {
+  cursor: default;
+}
+
+.table tbody th[scope='row'] {
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.ticket-list__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  font-weight: 700;
+}
+
+.ticket-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) / 2);
+}
+
+/* The "Resolve…" action is a link styled as a button (task 30.9): centre its text and drop the underline. */
+.ticket-list__actions a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* An urgent open ticket: its own background and a bar on the inline-start edge. */
+.table tbody tr.ticket-list__row--urgent-open {
+  background: #fdecea;
+}
+
+.table tbody tr.ticket-list__row--urgent-open:hover,
+.table tbody tr.ticket-list__row--urgent-open:focus-within {
+  background: #f9d6d2;
+}
+
+.table tbody tr.ticket-list__row--urgent-open > :first-child {
+  border-inline-start: 4px solid var(--color-down);
+}
+
+.ticket-list__sos {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space) / 2);
+  color: var(--color-down);
+  font-weight: 700;
+}
+
+.ticket-list__sos svg {
+  flex: none;
+}
+
+.ticket-list__sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- focus --- */
+.ticket-list a:focus-visible,
+.ticket-list button:focus-visible,
+.ticket-list select:focus-visible,
+.ticket-list input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

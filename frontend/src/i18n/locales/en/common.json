@@ -549,7 +549,8 @@
     "operations_admin": "Operations admin",
     "site_manager": "Site manager",
     "accounting": "Accounting",
-    "employee": "Employee"
+    "employee": "Employee",
+    "technician": "Technician"
   },
   "staffingCompany": {
     "new": "New staffing company",
@@ -581,7 +582,8 @@
     "reports": "Reports",
     "users": "Users",
     "audit": "Audit",
-    "settings": "Settings"
+    "settings": "Settings",
+    "tickets": "Service tickets"
   },
   "settings": {
     "title": "Settings",
